@@ -238,7 +238,99 @@ async function login(page, email) {
   await page.waitForURL(/Requests\/Detail\/\d+/);
   check((await page.locator('.timeline').textContent()).includes('Room booking: $37.50'), 'ticket subject rendered from formula');
 
-  note('8. admin + help + mobile');
+  note('8. start from a previous request');
+  const setCopy = async (mode, excludeNeededBy) => {
+    await login(page, 'admin@example.org');
+    await page.goto(base + '/Builder');
+    await page.click('.wf-tile:has-text("Technology Purchase") a.btn');
+    await page.waitForSelector('.fld-card');
+    await page.locator('.bld-inspector .b-row:has-text("copy a previous request") select').selectOption(mode);
+    if (excludeNeededBy) {
+      await page.click('.fld-card:has-text("Needed by")');
+      await page.locator('.bld-inspector .b-toggle:has-text("Don\'t copy")').click();
+      check(await page.locator('.fld-card:has-text("Needed by") .pill:has-text("Not copied")').count() === 1, 'excluded field is badged in the builder');
+    }
+    await page.click('.bld-actions button:has-text("Publish")');
+    await page.waitForFunction(() => /Published version/.test(document.querySelector('.toast')?.textContent || ''));
+  };
+  const getJson = (url) => page.evaluate(async (u) => { const r = await fetch(u); return [r.status, r.ok ? await r.json() : null]; }, url);
+
+  await login(page, 'teacher@example.org');
+  check((await getJson('/api/forms/1/previous'))[0] === 404, 'copy API is off until the builder turns it on');
+  await page.goto(base + '/Start/1');
+  await page.waitForSelector('.sf-form');
+  check(await page.locator('.copy-bar').count() === 0, 'no copy bar while the setting is off');
+
+  await setCopy('own', true);
+  await login(page, 'principal@example.org');
+  let prev = await getJson('/api/forms/1/previous');
+  check(prev[0] === 200 && prev[1].items.length === 0, '"own" mode: another person sees no previous requests');
+  check((await getJson('/api/forms/1/previous/1'))[0] === 404, '"own" mode: another person cannot fetch someone else\'s answers');
+  await login(page, 'teacher@example.org');
+  prev = await getJson('/api/forms/1/previous');
+  check(prev[1].items.length === 1 && prev[1].items[0].mine === true, '"own" mode: the submitter sees their own request');
+  check((await getJson('/api/forms/2/previous'))[0] === 404, 'a form without the setting stays closed');
+
+  await setCopy('everyone', false);
+  await login(page, 'principal@example.org');
+  const copied = await getJson('/api/forms/1/previous/1');
+  check(copied[0] === 200 && copied[1].values.title === 'Graphing calculators', '"everyone" mode: answers can be fetched');
+  check(!('needed_by' in copied[1].values) && !('total' in copied[1].values) && !('approval' in copied[1].values) && !('ticket' in copied[1].values) && !('submitter' in copied[1].values),
+    'excluded, calculated and internal data are not returned (' + Object.keys(copied[1].values).join(',') + ')');
+  await page.goto(base + '/Start/1');
+  await page.waitForSelector('.copy-bar');
+  await page.click('.copy-bar button');
+  await page.waitForSelector('.copy-item');
+  check((await page.locator('.copy-item').first().textContent()).includes('Taylor Teacher'), 'picker lists the other person\'s request');
+  await page.fill('dialog input[type=search]', 'zzz-no-match');
+  await page.waitForSelector('dialog .copy-list p.muted');
+  await page.fill('dialog input[type=search]', 'calculators');
+  await page.waitForSelector('.copy-item');
+  await page.screenshot({ path: S + '/shots/15-copy-picker.png' });
+  await page.click('.copy-item');
+  await page.waitForSelector('.copy-bar.filled');
+  await page.waitForFunction(() => [...document.querySelectorAll('.sf-field.is-calc output')].some((o) => o.textContent === '$503.00'));
+  check(await field('What do you need?').locator('input').inputValue() === 'Graphing calculators', 'text prefilled');
+  await page.waitForFunction(() => { const s = document.querySelector('.sf-field select'); return s && !s.disabled && s.selectedOptions[0]?.textContent === 'Mathematics'; });
+  check(true, 'Freshservice lookup prefilled (Mathematics)');
+  check(await page.locator('.sf-option:has-text("Both") input').isChecked(), 'choice prefilled');
+  check(await field('License length').locator('input').inputValue() === '2', 'conditional field prefilled and visible');
+  check(await page.locator('.sf-table tbody tr').count() === 2, 'table rows prefilled (' + await page.locator('.sf-table tbody tr').count() + ')');
+  check(await page.locator('.sf-table tbody tr').nth(1).locator('input').first().inputValue() === 'Desmos Pro', 'table cell prefilled');
+  check(await page.locator('.sf-table tbody tr').nth(1).locator('output').textContent() === '$303.00', 'table line total recalculated');
+  check(await field("Approver's email").locator('input').inputValue() === 'principal@example.org', 'email prefilled');
+  await page.screenshot({ path: S + '/shots/16-copy-prefilled.png', fullPage: true });
+  await page.click('button[type=submit]');
+  await page.waitForSelector('.sf-banner:not([hidden])');
+  check((await field("Approver's email").locator('.sf-error').textContent()).includes('own request'), 'copied answers are still validated for the new submitter');
+  await field("Approver's email").locator('input').fill('admin@example.org');
+  await page.click('button[type=submit]');
+  await page.waitForURL(/Requests\/Detail\/\d+/);
+  check((await page.locator('.page-head .pill').textContent()) === 'Awaiting approval', 'copied request submitted as a new request');
+  check((await page.locator('.page-head').textContent()).includes('Submitted by Pat Principal'), 'new request belongs to the new submitter');
+  check(await page.locator('a:has-text("Start a new request from this one")').count() === 1, 'request page offers "start from this one"');
+  await page.click('a:has-text("Start a new request from this one")');
+  await page.waitForSelector('.copy-bar.filled');
+  check(true, 'link from a request page prefills the form');
+  await page.click('.copy-bar button:has-text("Start blank")');
+  await page.waitForSelector('.copy-bar:not(.filled)');
+  check(await field('What do you need?').locator('input').inputValue() === '', '"Start blank" clears the form');
+
+  await login(page, 'admin@example.org');
+  await page.goto(base + '/Builder');
+  await page.click('[data-open-dialog]');
+  await page.fill('#new-name', 'Field Trip Request');
+  await page.selectOption('#new-copy', 'everyone');
+  await page.click('dialog button.primary');
+  await page.waitForSelector('.bld-inspector');
+  check(await page.locator('.bld-inspector .b-row:has-text("copy a previous request") select').inputValue() === 'everyone', 'choice made at creation is carried into the builder');
+  await page.goto(base + '/Builder');
+  await page.click('[data-open-dialog]');
+  await page.click('input[name=trigger][value=ticket]');
+  check(await page.locator('#new-copy').isHidden(), 'copy question hidden for ticket-triggered workflows');
+  await page.keyboard.press('Escape');
+
+  note('9. admin + help + mobile');
   await page.goto(base + '/Admin/Settings');
   await page.click('button:has-text("Test connection")');
   check((await page.locator('.panel .flash').first().textContent()).includes('Simulation mode'), 'test connection reports simulation');

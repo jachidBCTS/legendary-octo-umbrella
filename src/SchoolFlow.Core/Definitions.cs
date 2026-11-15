@@ -33,6 +33,18 @@ public sealed class FormDefinition
     public List<FieldDef> Fields { get; set; } = new();
     public string? SubmitLabel { get; set; }
     public string? Intro { get; set; }
+    /// <summary>
+    /// Whether people may start from a previous request: empty (off), "own" (their own earlier
+    /// requests) or "everyone" (anyone's earlier requests of this form).
+    /// </summary>
+    public string? AllowCopy { get; set; }
+}
+
+public static class CopyModes
+{
+    public const string Own = "own", Everyone = "everyone";
+    public static bool IsOn(string? mode) => mode is Own or Everyone;
+    public static bool IsValid(string? mode) => string.IsNullOrEmpty(mode) || IsOn(mode);
 }
 
 public static class FieldTypes
@@ -82,6 +94,8 @@ public sealed class FieldDef
     public string? Source { get; set; }
 
     public List<RuleDef>? Rules { get; set; }
+    /// <summary>When true, this field is never copied (or shown) from a previous request.</summary>
+    public bool? NoCopy { get; set; }
 
     public List<ColumnDef>? Columns { get; set; }
     public int? MinRows { get; set; }

@@ -12,6 +12,7 @@
             @if (Model.Workflow.Description.Length > 0) { <p class="sub">@Model.Workflow.Description</p> }
         </div>
     </header>
+    <div id="copy-bar"></div>
     <div id="form-root" data-workflow-id="@Model.Workflow.Id"></div>
     <script type="application/json" id="form-definition">@Html.Raw(Model.FormJson)</script>
 </div>

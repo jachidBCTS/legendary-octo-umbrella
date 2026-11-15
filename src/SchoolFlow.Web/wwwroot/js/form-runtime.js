@@ -44,7 +44,7 @@
   /**
    * @param root      element to render into
    * @param options   { definition, evaluate(values, init) → Promise<state>, submit(values) → Promise<{ok, state, runId}>,
-   *                    onSuccess(runId), preview }
+   *                    onSuccess(runId), preview, initialValues (answers to prefill, e.g. from a previous request) }
    */
   function mountForm(root, options) {
     const definition = options.definition || {};
@@ -90,7 +90,8 @@
       const mine = ++sequence;
       busy.hidden = false;
       try {
-        const state = await options.evaluate(values, init);
+        // The first call carries any prefill; the server normalises it and applies defaults to the rest.
+        const state = await options.evaluate(init ? Object.assign({}, options.initialValues || {}) : values, init);
         if (destroyed || mine < applied) return; // a newer answer has already been applied
         applied = mine;
         apply(state, init);
@@ -272,14 +273,31 @@
         values[field.key] = item ? { id: item.id, name: item.name, email: item.email || undefined } : null;
         changed(field.key, true);
       });
-      loadLookup(field.source).then((loaded) => {
-        items = loaded;
+      let wanted = null; // a prefilled choice waiting for the list to load
+      let loaded = false;
+      const choose = (id) => {
+        const item = items.find((i) => String(i.id) === String(id));
+        select.value = item ? String(item.id) : '';
+        const before = values[field.key];
+        values[field.key] = item ? { id: item.id, name: item.name, email: item.email || undefined } : null;
+        // A prefilled choice that no longer exists in Freshservice is dropped; let the server know.
+        if (!item && before) scheduleEvaluate();
+      };
+      control.set = (v) => {
+        if (!v || typeof v !== 'object' || v.id === undefined || v.id === null) return;
+        values[field.key] = { id: v.id, name: v.name, email: v.email || undefined };
+        if (loaded) choose(v.id); else wanted = v.id;
+      };
+      loadLookup(field.source).then((result) => {
+        items = result;
         select.textContent = '';
         select.appendChild(h('option', { value: '' }, items.length ? 'Choose…' : 'Nothing to choose from'));
         for (const item of items) {
           select.appendChild(h('option', { value: String(item.id) }, item.detail ? item.name + ' (' + item.detail + ')' : item.name));
         }
         select.disabled = false;
+        loaded = true;
+        if (wanted !== null) { choose(wanted); wanted = null; }
       }).catch((e) => {
         select.textContent = '';
         select.appendChild(h('option', { value: '' }, 'Could not load choices'));
@@ -320,6 +338,11 @@
         changed(field.key, true);
       }
       function close() { list.hidden = true; box.setAttribute('aria-expanded', 'false'); }
+      control.set = (v) => {
+        if (!v || typeof v !== 'object' || !v.name || v.id === undefined || v.id === null) return;
+        values[field.key] = { id: v.id, name: v.name, email: v.email || undefined };
+        box.value = v.name;
+      };
       box.addEventListener('input', () => {
         // Typing after a choice clears it: only a picked person counts as a value.
         if (values[field.key]) { values[field.key] = null; changed(field.key, false); }
@@ -400,9 +423,12 @@
       }
 
       control.set = (v) => {
-        if (!Array.isArray(v)) return;
+        if (!Array.isArray(v) || v.length === 0) return;
+        // Replace the empty starter row rather than leaving it above the prefilled rows.
+        while (rows.length) rows.pop().tr.remove();
         v.forEach((r) => addRow(r && typeof r === 'object' ? r : {}));
         collect();
+        addButton.disabled = Number.isInteger(field.maxRows) && rows.length >= field.maxRows;
       };
       control.update = (value, state) => {
         const serverRows = Array.isArray(value) ? value : [];

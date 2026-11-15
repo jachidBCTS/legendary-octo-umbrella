@@ -18,12 +18,27 @@ front-end dependencies.
 | Field logic | A spreadsheet-style formula language (about 60 functions) used for calculated fields, *show when*, *required when*, default values and validation rules. Formulas are checked as you type |
 | Flow builder | Drag-and-connect canvas: Decision, Approval, Create/Update ticket, Add note, Service request, Look up, Wait for ticket, Set value, End |
 | Freshservice | Creates and updates tickets, adds notes, places service catalog requests, looks up requesters/agents/departments/groups/locations/assets, and reacts to ticket events through a webhook |
+| Start from a previous request | Per form, a builder can let people prefill a new request from an earlier one — their own, or anyone's (for yearly forms such as field trips). Individual fields can be excluded |
 | Running requests | Timeline of every step, approvals inbox, retry of failed steps, cancel |
 | Safety | Draft vs. published versions; a request always finishes on the version it started with; publishing is blocked while the checker finds problems |
 
 Formulas are evaluated **on the server only**. The browser sends the current answers and gets back
 what to show, the calculated values and any errors, and the same code runs again on submit — so
 what a person sees can never disagree with what is stored.
+
+### Starting from a previous request
+
+When creating a workflow (or later under **Form → Form settings**) choose whether people can copy
+a previous request: *No*, *their own previous requests*, or *anyone's previous requests*. On the
+form, people then get a "Start from a previous request" button with a searchable list.
+
+- Only answers to fields that still exist on the current form are copied. Calculated fields are
+  always worked out fresh, and the copied answers go through the same validation as typed ones.
+- Tick **Don't copy from previous requests** on a field to leave it out (dates, sign-off tick
+  boxes, anything private). Excluded answers are never sent to the other person's browser.
+- With *anyone's*, everybody who can open the form can read what others submitted on it, apart
+  from excluded fields. Don't use it on forms that collect private details.
+- Cancelled requests are not offered.
 
 ## Run it locally
 

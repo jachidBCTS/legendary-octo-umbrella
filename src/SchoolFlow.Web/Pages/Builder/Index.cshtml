@@ -54,6 +54,16 @@
         <label class="lbl">How does it start?</label>
         <label class="choice"><input type="radio" name="trigger" value="form" checked /> <span><strong>Someone fills in a form</strong><small>Staff or students submit a request.</small></span></label>
         <label class="choice"><input type="radio" name="trigger" value="ticket" /> <span><strong>A Freshservice ticket event</strong><small>Freshservice notifies SchoolFlow when a ticket is created or updated.</small></span></label>
+        <div data-show-when-trigger="form">
+            <label class="lbl" for="new-copy">Can people start from a previous request?</label>
+            <select id="new-copy" name="allowCopy">
+                <option value="">No — every request starts blank</option>
+                <option value="own">Yes — from their own previous requests</option>
+                <option value="everyone">Yes — from anyone's previous requests</option>
+            </select>
+            <p class="muted small">Useful for forms that are filled in again each year, such as a field trip request.
+                “Anyone's” lets every person who can open this form see what others submitted on it. You can change this later, and exclude individual fields.</p>
+        </div>
         <div class="actions end">
             <button type="button" class="btn" data-close-dialog>Cancel</button>
             <button class="btn primary">Create and open builder</button>

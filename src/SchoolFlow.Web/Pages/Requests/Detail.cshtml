@@ -19,6 +19,10 @@
             }
         </p>
     </div>
+    @if (Model.CopyUrl is not null)
+    {
+        <div class="actions"><a class="btn" href="@Model.CopyUrl">Start a new request from this one</a></div>
+    }
     @if (Model.CanManage)
     {
         <div class="actions">

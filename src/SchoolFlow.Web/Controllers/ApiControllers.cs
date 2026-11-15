@@ -101,6 +101,76 @@ public sealed class FormsController : ControllerBase
         return new JsonResult(new { ok = runId is not null, runId, state = Shape(form) }, Json.Options);
     }
 
+    // ---- start from a previous request ---------------------------------------------------
+
+    /// <summary>
+    /// Loads the workflow if "start from a previous request" is switched on for its published form,
+    /// and returns the query for the earlier requests this person is allowed to copy from.
+    /// </summary>
+    private async Task<(FormDefinition Form, IQueryable<WorkflowRun> Runs)?> CopySourceAsync(int workflowId, CancellationToken ct)
+    {
+        var workflow = await _db.Workflows.AsNoTracking().FirstOrDefaultAsync(w => w.Id == workflowId, ct);
+        if (workflow is null || !workflow.IsLive || workflow.TriggerType != TriggerTypes.Form) return null;
+        var form = Json.ParseDefinition(workflow.PublishedJson!).Form;
+        if (!CopyModes.IsOn(form.AllowCopy)) return null;
+
+        var email = User.Email();
+        var runs = _db.Runs.AsNoTracking()
+            .Where(r => r.WorkflowId == workflowId && r.SubmitterEmail != "" && r.Status != RunStatus.Cancelled);
+        // "own" (and anyone without an email) only ever sees their own requests.
+        if (form.AllowCopy != CopyModes.Everyone || email.Length == 0) runs = runs.Where(r => r.SubmitterEmail == email && email != "");
+        return (form, runs);
+    }
+
+    [HttpGet("forms/{workflowId:int}/previous")]
+    public async Task<IActionResult> Previous(int workflowId, string? q, CancellationToken ct)
+    {
+        var source = await CopySourceAsync(workflowId, ct);
+        if (source is null) return NotFound();
+        var (form, runs) = source.Value;
+        var email = User.Email();
+        q = (q ?? "").Trim();
+        if (q.Length > 100) q = q[..100];
+
+        // Search runs in memory over the copyable answers only, never over the raw stored record.
+        var recent = await runs.OrderByDescending(r => r.Id).Take(300)
+            .Select(r => new { r.Id, r.SubmitterName, r.SubmitterEmail, r.CreatedAt, r.ContextJson }).ToListAsync(ct);
+        var items = new List<object>();
+        foreach (var run in recent)
+        {
+            var context = Json.ToValues(run.ContextJson);
+            if (q.Length > 0 && !run.SubmitterName.Contains(q, StringComparison.OrdinalIgnoreCase)
+                             && !FormCopy.SearchText(form, context).Contains(q, StringComparison.OrdinalIgnoreCase)) continue;
+            items.Add(new
+            {
+                runId = run.Id,
+                submitter = run.SubmitterName,
+                mine = run.SubmitterEmail == email,
+                date = Ui.Local(run.CreatedAt).ToString("MMM d, yyyy", Values.DisplayCulture),
+                summary = FormCopy.Summary(form, context),
+            });
+            if (items.Count >= 50) break;
+        }
+        return Ok(new { items, everyone = form.AllowCopy == CopyModes.Everyone });
+    }
+
+    [HttpGet("forms/{workflowId:int}/previous/{runId:int}")]
+    public async Task<IActionResult> PreviousValues(int workflowId, int runId, CancellationToken ct)
+    {
+        var source = await CopySourceAsync(workflowId, ct);
+        if (source is null) return NotFound();
+        var (form, runs) = source.Value;
+        var run = await runs.Where(r => r.Id == runId)
+            .Select(r => new { r.SubmitterName, r.CreatedAt, r.ContextJson }).FirstOrDefaultAsync(ct);
+        if (run is null) return NotFound();
+        return new JsonResult(new
+        {
+            values = FormCopy.Extract(form, Json.ToValues(run.ContextJson)),
+            submitter = run.SubmitterName,
+            date = Ui.Local(run.CreatedAt).ToString("MMM d, yyyy", Values.DisplayCulture),
+        }, Json.Options);
+    }
+
     [HttpGet("lookup")]
     public async Task<IActionResult> Lookup(string source, string? q, CancellationToken ct)
     {

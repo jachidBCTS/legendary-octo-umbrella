@@ -34,6 +34,8 @@ public class DetailModel : PageModel
     public List<Answer> Fields { get; private set; } = new();
     public bool CanManage => User.IsBuilder();
     public string? TicketUrl { get; private set; }
+    /// <summary>Link to start a new request prefilled from this one, when the form allows it for this person.</summary>
+    public string? CopyUrl { get; private set; }
 
     /// <summary>Loads the run if the current user may see it: the submitter, anyone asked to approve it, builders and admins.</summary>
     private async Task<bool> LoadAsync(int id)
@@ -53,6 +55,15 @@ public class DetailModel : PageModel
 
         if (run.TicketId is long ticketId && _freshservice.IsLive && !string.IsNullOrWhiteSpace(_config["Freshservice:Domain"]))
             TicketUrl = new Uri(FreshserviceClient.BaseAddressFor(_config["Freshservice:Domain"]!), $"a/tickets/{ticketId}").ToString();
+
+        var workflow = await _db.Workflows.AsNoTracking().FirstOrDefaultAsync(w => w.Id == run.WorkflowId);
+        if (workflow is { IsLive: true, TriggerType: TriggerTypes.Form } && run.Status != RunStatus.Cancelled && run.SubmitterEmail.Length > 0)
+        {
+            // Same rule as the picker on the form: the current published setting decides.
+            var mode = Json.ParseDefinition(workflow.PublishedJson!).Form.AllowCopy;
+            if (mode == CopyModes.Everyone || (mode == CopyModes.Own && run.SubmitterEmail == email))
+                CopyUrl = $"/Start/{workflow.Id}?copy={run.Id}";
+        }
 
         var def = Json.ParseDefinition(run.DefinitionJson);
         var context = Json.ToValues(run.ContextJson);

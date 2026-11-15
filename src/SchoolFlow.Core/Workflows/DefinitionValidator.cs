@@ -43,6 +43,9 @@ public static class DefinitionValidator
 
     private static void ValidateForm(FormDefinition form, HashSet<string> known, List<Issue> issues)
     {
+        if (!CopyModes.IsValid(form.AllowCopy))
+            issues.Add(new Issue("error", "form", null, $"Unknown “start from a previous request” setting '{form.AllowCopy}'."));
+
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var f in form.Fields)
         {

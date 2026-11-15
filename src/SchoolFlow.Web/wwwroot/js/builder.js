@@ -471,6 +471,7 @@
     if (f.visibleWhen) badges.push(['Shown when…', 'info']);
     if (f.type === 'calculated') badges.push(['ƒx', 'ok']);
     if (f.rules && f.rules.length) badges.push([f.rules.length + ' rule' + (f.rules.length === 1 ? '' : 's'), 'warn']);
+    if (f.noCopy && state.def.form.allowCopy) badges.push(['Not copied', 'muted']);
     return badges.map(([text, tone]) => h('span', { class: 'pill tiny ' + tone }, text));
   }
 
@@ -571,7 +572,24 @@
       h('h3', null, 'Form settings'),
       h('p', { class: 'muted small' }, 'Select a field to edit it. These settings apply to the whole form.'),
       row('Introduction', textArea(form.intro, (v) => { form.intro = clean(v); }, 4), 'Shown at the top of the form.'),
-      row('Submit button text', textInput(form.submitLabel, (v) => { form.submitLabel = clean(v); }, { placeholder: 'Submit' })));
+      row('Submit button text', textInput(form.submitLabel, (v) => { form.submitLabel = clean(v); }, { placeholder: 'Submit' })),
+      h('h4', { class: 'b-section' }, 'Start from a previous request'),
+      row('Can people copy a previous request?', select(form.allowCopy || '', [
+        ['', 'No — every request starts blank'],
+        ['own', 'Yes — their own previous requests'],
+        ['everyone', "Yes — anyone's previous requests"],
+      ], (v) => { form.allowCopy = clean(v); renderAll(); }),
+      form.allowCopy === 'everyone'
+        ? 'Everyone who can open this form can see what others submitted on it (except fields you exclude). Good for yearly requests such as field trips; avoid it for forms with private details.'
+        : form.allowCopy === 'own'
+          ? 'People see a list of their own earlier requests and can prefill the form from one.'
+          : 'Turn this on for forms that are filled in again and again, so people can prefill from an earlier request.'));
+    if (form.allowCopy) {
+      const excluded = form.fields.filter((f) => f.noCopy).map((f) => f.label || f.key);
+      panel.append(h('p', { class: 'b-help' }, excluded.length
+        ? 'Not copied: ' + excluded.join(', ') + '. Calculated fields are always worked out fresh.'
+        : 'Every answer is copied. To leave one out (a date, a signature tick box…), select the field and tick “Don\'t copy from previous requests”. Calculated fields are always worked out fresh.'));
+    }
   }
 
   function renderFieldInspector(panel, field) {
@@ -630,6 +648,10 @@
     panel.append(h('h4', { class: 'b-section' }, 'Logic'));
     panel.append(row('Show this ' + (isSection ? 'heading' : 'field') + ' only when', formulaInput(field.visibleWhen, (v) => { field.visibleWhen = clean(v); refresh(); },
       { placeholder: 'Always shown. e.g. kind == "Software"' }), isSection ? null : 'While hidden, the field is cleared and never required.'));
+
+    if (!isSection && !isCalc && state.def.form.allowCopy)
+      panel.append(toggle("Don't copy from previous requests", field.noCopy, (v) => { if (v) field.noCopy = true; else delete field.noCopy; refresh(); }),
+        h('p', { class: 'b-help' }, 'When someone starts from a previous request, this field stays blank (or takes its default) and its old answer is not shown.'));
 
     if (!isSection && !isCalc) {
       panel.append(

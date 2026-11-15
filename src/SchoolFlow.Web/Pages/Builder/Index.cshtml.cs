@@ -22,7 +22,7 @@ public class IndexModel : PageModel
             .ToDictionaryAsync(x => x.Key, x => x.Count);
     }
 
-    public async Task<IActionResult> OnPostCreateAsync(string? name, string? trigger)
+    public async Task<IActionResult> OnPostCreateAsync(string? name, string? trigger, string? allowCopy)
     {
         name = (name ?? "").Trim();
         if (name.Length == 0 || name.Length > 200)
@@ -44,6 +44,7 @@ public class IndexModel : PageModel
                 },
             },
         };
+        if (!isTicket && CopyModes.IsOn(allowCopy)) def.Form.AllowCopy = allowCopy;
         var workflow = new Workflow
         {
             Name = name, DraftJson = Json.Serialize(def), TriggerType = def.Trigger.Type,

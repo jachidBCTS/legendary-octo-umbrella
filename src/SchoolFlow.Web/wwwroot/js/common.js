@@ -96,7 +96,14 @@
   });
 
   document.addEventListener('change', (e) => {
-    if (e.target.matches && e.target.matches('[data-autosubmit]') && e.target.form) e.target.form.submit();
+    if (!e.target.matches) return;
+    if (e.target.matches('[data-autosubmit]') && e.target.form) e.target.form.submit();
+    // Parts of the "new workflow" dialog only apply to one way of starting.
+    if (e.target.matches('input[name="trigger"]') && e.target.form) {
+      e.target.form.querySelectorAll('[data-show-when-trigger]').forEach((el) => {
+        el.hidden = el.getAttribute('data-show-when-trigger') !== e.target.value;
+      });
+    }
   });
 
   document.addEventListener('click', (e) => {
