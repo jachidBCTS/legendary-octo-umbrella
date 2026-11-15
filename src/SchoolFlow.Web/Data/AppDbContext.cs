@@ -137,6 +137,20 @@ public class Location
     public DateTime UpdatedAt { get; set; }
 }
 
+/// <summary>A form someone has started and saved to finish later. Only its owner can see it.</summary>
+public class FormDraft
+{
+    public int Id { get; set; }
+    public int WorkflowId { get; set; }
+    public string OwnerEmail { get; set; } = "";
+    /// <summary>Short description built from the first answers, for the drafts list.</summary>
+    public string Summary { get; set; } = "";
+    /// <summary>The answers exactly as typed (not yet validated); checked again when the draft is opened and submitted.</summary>
+    public string ValuesJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
 /// <summary>A saved approval chain. OwnerEmail "" means a shared template; otherwise it is that person's own.</summary>
 public class ApprovalChainTemplate
 {
@@ -195,6 +209,7 @@ public class AppDbContext : DbContext
     protected AppDbContext(DbContextOptions options) : base(options) { }
 
     public DbSet<Location> Locations => Set<Location>();
+    public DbSet<FormDraft> FormDrafts => Set<FormDraft>();
 
     public DbSet<Workflow> Workflows => Set<Workflow>();
     public DbSet<WorkflowRun> Runs => Set<WorkflowRun>();
@@ -259,6 +274,12 @@ public class AppDbContext : DbContext
         {
             e.Property(x => x.Name).HasMaxLength(200);
             e.Property(x => x.FinalRule).HasMaxLength(10);
+        });
+        b.Entity<FormDraft>(e =>
+        {
+            e.Property(x => x.OwnerEmail).HasMaxLength(320);
+            e.Property(x => x.Summary).HasMaxLength(300);
+            e.HasIndex(x => new { x.OwnerEmail, x.WorkflowId });
         });
         b.Entity<Location>(e =>
         {

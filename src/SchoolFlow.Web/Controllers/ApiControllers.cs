@@ -28,6 +28,16 @@ public sealed class SubmitRequest
 {
     public int WorkflowId { get; set; }
     public JsonElement Values { get; set; }
+    /// <summary>The saved draft this submission came from, if any; it is removed once the request is submitted.</summary>
+    public int? DraftId { get; set; }
+}
+
+public sealed class SaveDraftRequest
+{
+    public int WorkflowId { get; set; }
+    /// <summary>Null to create a new draft; otherwise the draft to update.</summary>
+    public int? DraftId { get; set; }
+    public JsonElement Values { get; set; }
 }
 
 [ApiController]
@@ -99,7 +109,84 @@ public sealed class FormsController : ControllerBase
             return NotFound(new { error = "This form is no longer available." });
 
         var (form, runId) = await _runs.SubmitFormAsync(workflow, Json.ToValues(request.Values), email, User.DisplayName(), ct);
+        if (runId is not null && request.DraftId is int draftId)
+        {
+            // The draft has become a real request, so it no longer belongs in the drafts list.
+            var draft = await _db.FormDrafts.FirstOrDefaultAsync(d => d.Id == draftId && d.OwnerEmail == email && d.WorkflowId == workflow.Id, ct);
+            if (draft is not null)
+            {
+                _db.FormDrafts.Remove(draft);
+                await _db.SaveChangesAsync(ct);
+            }
+        }
         return new JsonResult(new { ok = runId is not null, runId, state = Shape(form) }, Json.Options);
+    }
+
+    // ---- save and finish later -------------------------------------------------------------
+
+    private const int MaxDraftsPerPerson = 50;
+    private const int MaxDraftBytes = 300_000;
+
+    [HttpPost("forms/drafts")]
+    public async Task<IActionResult> SaveDraft([FromBody] SaveDraftRequest request, CancellationToken ct)
+    {
+        var email = User.Email();
+        if (email.Length == 0) return BadRequest(new { error = "Your account has no email address, so a draft cannot be saved." });
+        var workflow = await _db.Workflows.AsNoTracking().FirstOrDefaultAsync(w => w.Id == request.WorkflowId, ct);
+        if (workflow is null || !workflow.IsLive || workflow.TriggerType != TriggerTypes.Form)
+            return NotFound(new { error = "This form is no longer available." });
+        if (request.Values.ValueKind != JsonValueKind.Object) return BadRequest(new { error = "There is nothing to save." });
+        var raw = request.Values.GetRawText();
+        if (raw.Length > MaxDraftBytes) return BadRequest(new { error = "This form holds too much to save as a draft." });
+
+        FormDraft? draft;
+        if (request.DraftId is int id)
+        {
+            // Someone else's draft looks exactly like a missing one.
+            draft = await _db.FormDrafts.FirstOrDefaultAsync(d => d.Id == id && d.OwnerEmail == email && d.WorkflowId == workflow.Id, ct);
+            if (draft is null) return NotFound(new { error = "That draft no longer exists. Save again to keep your answers as a new draft." });
+        }
+        else
+        {
+            if (await _db.FormDrafts.CountAsync(d => d.OwnerEmail == email, ct) >= MaxDraftsPerPerson)
+                return BadRequest(new { error = $"You already have {MaxDraftsPerPerson} saved drafts. Submit or delete some first." });
+            draft = new FormDraft { WorkflowId = workflow.Id, OwnerEmail = email, CreatedAt = DateTime.UtcNow };
+            _db.FormDrafts.Add(draft);
+        }
+
+        var form = Json.ParseDefinition(workflow.PublishedJson!).Form;
+        var summary = FormCopy.Summary(form, Json.ToValues(request.Values));
+        draft.Summary = summary.Length > 300 ? summary[..300] : summary;
+        draft.ValuesJson = raw;
+        draft.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return Ok(new { draftId = draft.Id, savedAt = Ui.Local(draft.UpdatedAt).ToString("h:mm tt", Values.DisplayCulture) });
+    }
+
+    [HttpGet("forms/drafts/{id:int}")]
+    public async Task<IActionResult> GetDraft(int id, CancellationToken ct)
+    {
+        var email = User.Email();
+        var draft = await _db.FormDrafts.AsNoTracking().FirstOrDefaultAsync(d => d.Id == id && d.OwnerEmail == email && email != "", ct);
+        if (draft is null) return NotFound(new { error = "That draft no longer exists." });
+        return new JsonResult(new
+        {
+            draftId = draft.Id,
+            workflowId = draft.WorkflowId,
+            values = Json.ToValues(draft.ValuesJson),
+            savedAt = Ui.When(draft.UpdatedAt),
+        }, Json.Options);
+    }
+
+    [HttpDelete("forms/drafts/{id:int}")]
+    public async Task<IActionResult> DeleteDraft(int id, CancellationToken ct)
+    {
+        var email = User.Email();
+        var draft = await _db.FormDrafts.FirstOrDefaultAsync(d => d.Id == id && d.OwnerEmail == email && email != "", ct);
+        if (draft is null) return NotFound();
+        _db.FormDrafts.Remove(draft);
+        await _db.SaveChangesAsync(ct);
+        return Ok(new { ok = true });
     }
 
     // ---- start from a previous request ---------------------------------------------------

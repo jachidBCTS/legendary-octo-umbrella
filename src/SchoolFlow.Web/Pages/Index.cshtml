@@ -22,6 +22,27 @@
     </section>
 }
 
+@if (Model.Drafts.Count > 0)
+{
+    <h2 class="section-title">Your drafts</h2>
+    <div class="panel draft-list">
+        @foreach (var (draft, workflow) in Model.Drafts)
+        {
+            <div class="draft tone-@workflow.Color">
+                <span class="wf-dot">@Ui.Initials(workflow.Name)</span>
+                <a class="grow draft-main" href="/Start/@workflow.Id?draft=@draft.Id">
+                    <strong>@workflow.Name</strong>
+                    <span class="muted small">@(draft.Summary.Length > 0 ? draft.Summary : "Nothing filled in yet") · saved @Ui.When(draft.UpdatedAt)</span>
+                </a>
+                <a class="btn small primary" href="/Start/@workflow.Id?draft=@draft.Id">Continue</a>
+                <form method="post" asp-page-handler="DeleteDraft" data-confirm="Delete this draft? What you filled in will be lost.">
+                    <input type="hidden" name="id" value="@draft.Id" /><button class="btn small ghost-danger">Delete</button>
+                </form>
+            </div>
+        }
+    </div>
+}
+
 <h2 class="section-title">Start a request</h2>
 @if (Model.Groups.Count == 0)
 {

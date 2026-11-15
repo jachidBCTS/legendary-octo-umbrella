@@ -9,17 +9,46 @@
   const definition = JSON.parse(document.getElementById('form-definition').textContent);
   const copyBar = document.getElementById('copy-bar');
   const copyMode = definition.allowCopy === 'own' || definition.allowCopy === 'everyone' ? definition.allowCopy : null;
+  const draftBar = document.getElementById('draft-bar');
   let mounted = null;
+  let draftId = null; // set once this form has been saved for later (or was opened from a draft)
 
   function mount(initialValues) {
     if (mounted) mounted.destroy();
     mounted = mountForm(root, {
       definition,
       initialValues,
+      draftAlreadySaved: draftId !== null,
       evaluate: (values, init) => api('POST', '/api/forms/evaluate', { workflowId, values, init }),
-      submit: (values) => api('POST', '/api/forms/submit', { workflowId, values }),
+      submit: (values) => api('POST', '/api/forms/submit', { workflowId, values, draftId }),
+      saveDraft: async (values) => {
+        const saved = await api('POST', '/api/forms/drafts', { workflowId, draftId, values });
+        if (draftId !== saved.draftId) {
+          draftId = saved.draftId;
+          // Put the draft in the address so a refresh (or a bookmark) comes back to it.
+          window.history.replaceState(null, '', window.location.pathname + '?draft=' + encodeURIComponent(draftId));
+        }
+        showDraftBar('Saved as a draft. Changes you make from now on are saved automatically.');
+        return saved;
+      },
       onSuccess: (runId) => { window.location.href = '/Requests/Detail/' + encodeURIComponent(runId); },
     });
+  }
+
+  function showDraftBar(message) {
+    draftBar.textContent = '';
+    draftBar.className = 'copy-bar filled';
+    draftBar.append(h('span', { class: 'grow' }, message),
+      h('button', { type: 'button', class: 'btn small ghost-danger', onclick: async () => {
+        if (!window.confirm('Delete this draft? What you filled in will be lost.')) return;
+        try {
+          await api('DELETE', '/api/forms/drafts/' + encodeURIComponent(draftId));
+        } catch (e) {
+          // Already gone is fine; anything else is reported.
+          if (!/no longer|Not Found|404/i.test(e.message)) { window.SF.toast(e.message, 'bad'); return; }
+        }
+        window.location.href = window.location.pathname;
+      } }, 'Delete draft'));
   }
 
   function showOffer() {
@@ -95,9 +124,25 @@
     load();
   }
 
+  const query = new URLSearchParams(window.location.search);
+  const requestedDraft = Number(query.get('draft'));
   // A link such as /Start/3?copy=41 (from a request's page) prefills straight away.
-  const requested = copyMode ? Number(new URLSearchParams(window.location.search).get('copy')) : 0;
-  if (Number.isInteger(requested) && requested > 0) {
+  const requested = copyMode ? Number(query.get('copy')) : 0;
+  if (Number.isInteger(requestedDraft) && requestedDraft > 0) {
+    // Continue a saved draft.
+    api('GET', '/api/forms/drafts/' + encodeURIComponent(requestedDraft)).then((draft) => {
+      if (draft.workflowId !== workflowId) throw new Error('That draft belongs to a different form.');
+      draftId = draft.draftId;
+      mount(draft.values || {});
+      showDraftBar('Continuing your draft, last saved ' + draft.savedAt + '. Changes are saved automatically.');
+      showOffer();
+    }).catch((e) => {
+      window.history.replaceState(null, '', window.location.pathname);
+      mount();
+      showOffer();
+      window.SF.toast('That draft could not be opened. ' + e.message, 'bad');
+    });
+  } else if (Number.isInteger(requested) && requested > 0) {
     useRun(requested).catch((e) => {
       mount();
       showOffer();

@@ -492,7 +492,70 @@ async function login(page, email) {
   });
   check(spoof.includes('no longer available'), 'a made-up location is refused');
 
-  note('11. admin + help + mobile');
+  note('11. save and finish later');
+  await login(page, 'teacher@example.org');
+  await page.goto(base + '/Start/2');
+  await page.waitForSelector('.sf-form');
+  await field('Device name or asset tag').locator('input').fill('Laptop 7');
+  await field('What is wrong?').locator('select').selectOption('Liquid damage');
+  await field('I need a loaner').locator('input').check();
+  await page.click('button:has-text("Save for later")');
+  await page.waitForFunction(() => /Draft saved at/.test(document.querySelector('.sf-draft-status')?.textContent || ''));
+  check(/[?&]draft=\d+/.test(page.url()), 'saving puts the draft in the address (' + page.url().replace(base, '') + ')');
+  const draftNo = Number(new URL(page.url()).searchParams.get('draft'));
+  await field('Details').locator('textarea').fill('Coffee spilled on the keyboard');
+  await page.waitForFunction(() => /saved automatically/.test(document.querySelector('.sf-draft-status')?.textContent || ''), null, { timeout: 15000 });
+  check(true, 'later changes are saved automatically');
+  await page.goto(base + '/');
+  check(await page.locator('.draft').count() === 1 && (await page.locator('.draft').textContent()).includes('Laptop 7'), 'draft is listed on the home page with a summary');
+  await page.screenshot({ path: S + '/shots/24-drafts-home.png' });
+  await page.click('.draft a.btn');
+  await page.waitForSelector('#draft-bar.filled');
+  await page.waitForFunction(() => document.querySelector('.sf-form textarea')?.value === 'Coffee spilled on the keyboard');
+  check(await field('Device name or asset tag').locator('input').inputValue() === 'Laptop 7', 'draft reopens with the text answers');
+  check(await field('What is wrong?').locator('select').inputValue() === 'Liquid damage', 'draft reopens with the choice');
+  check(await field('I need a loaner').locator('input').isChecked(), 'draft reopens with the tick box');
+  check(true, 'the automatically saved change was kept');
+  await page.screenshot({ path: S + '/shots/25-draft-resumed.png', fullPage: true });
+
+  await login(page, 'principal@example.org');
+  check((await getJson('/api/forms/drafts/' + draftNo))[0] === 404, "another person cannot read someone's draft");
+  const hijack = await page.evaluate(async (id) => {
+    const token = document.querySelector('meta[name=csrf-token]').content;
+    const save = await fetch('/api/forms/drafts', { method: 'POST', headers: { 'Content-Type': 'application/json', RequestVerificationToken: token }, body: JSON.stringify({ workflowId: 2, draftId: id, values: { details: 'overwritten' } }) });
+    const del = await fetch('/api/forms/drafts/' + id, { method: 'DELETE', headers: { RequestVerificationToken: token } });
+    return [save.status, del.status];
+  }, draftNo);
+  check(hijack[0] === 404 && hijack[1] === 404, "another person cannot overwrite or delete someone's draft (" + hijack.join(',') + ')');
+  check(await page.locator('.draft').count() === 0, 'other people do not see the draft');
+
+  await login(page, 'teacher@example.org');
+  await page.goto(base + '/Start/2?draft=' + draftNo);
+  await page.waitForSelector('#draft-bar.filled');
+  await page.waitForFunction(() => document.querySelector('.sf-form textarea')?.value === 'Coffee spilled on the keyboard');
+  await page.click('button[type=submit]');
+  await page.waitForURL(/Requests\/Detail\/\d+/);
+  check((await page.locator('.answers').textContent()).includes('Coffee spilled on the keyboard'), 'a draft can be submitted as a request');
+  await page.goto(base + '/');
+  check(await page.locator('.draft').count() === 0, 'the draft is removed once it has been submitted');
+  check((await getJson('/api/forms/drafts/' + draftNo))[0] === 404, 'submitted draft no longer exists');
+
+  await page.goto(base + '/Start/4');
+  await page.waitForSelector('.sf-form');
+  await field('Where are you going?').locator('input').fill('Aquarium');
+  await page.click('button:has-text("Save for later")');
+  await page.waitForFunction(() => /Draft saved at/.test(document.querySelector('.sf-draft-status')?.textContent || ''));
+  await page.goto(base + '/');
+  page.once('dialog', (d) => d.accept());
+  await page.click('.draft button:has-text("Delete")');
+  await page.waitForSelector('.flash.ok');
+  check(await page.locator('.draft').count() === 0, 'a draft can be deleted from the home page');
+  const bogus = await page.goto(base + '/Start/4?draft=999999');
+  await page.waitForSelector('.sf-form');
+  await page.waitForSelector('.toast.show');
+  check(!page.url().includes('draft='), 'a missing draft falls back to a blank form');
+
+  note('12. admin + help + mobile');
   await login(page, 'admin@example.org');
   await page.goto(base + '/Admin/Settings');
   await page.click('button:has-text("Test connection")');

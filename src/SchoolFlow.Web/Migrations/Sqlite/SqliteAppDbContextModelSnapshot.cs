@@ -175,6 +175,42 @@ namespace SchoolFlow.Web.Migrations.Sqlite
                     b.ToTable("Departments");
                 });
 
+            modelBuilder.Entity("SchoolFlow.Web.Data.FormDraft", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OwnerEmail")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ValuesJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("WorkflowId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerEmail", "WorkflowId");
+
+                    b.ToTable("FormDrafts");
+                });
+
             modelBuilder.Entity("SchoolFlow.Web.Data.Location", b =>
                 {
                     b.Property<int>("Id")

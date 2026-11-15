@@ -23,6 +23,7 @@ front-end dependencies.
 | Departments | Admins keep a list of departments, each with its final approver(s). A request is filed under the department chosen on the form, and that department's final approver is always added to the end of the chain — requesters cannot change or skip it |
 | Notifications | In the app (bell with unread count) and by email through Microsoft 365. Sent automatically when an approval is needed and when a request is completed, not approved, cancelled or stuck; a *Send notification* step covers anything else, including outside addresses |
 | Locations | A locations table filled from Freshservice with one click (Admin → Locations → Sync), plus any you add by hand. Forms use it through a *Location* field |
+| Save and finish later | Every form has a *Save for later* button. The draft appears under *Your drafts* on the home page; once saved, further changes are saved automatically. Drafts are private to their owner and are removed when submitted |
 | Running requests | Timeline of every step, approvals inbox, retry of failed steps, cancel |
 | Safety | Draft vs. published versions; a request always finishes on the version it started with; publishing is blocked while the checker finds problems |
 

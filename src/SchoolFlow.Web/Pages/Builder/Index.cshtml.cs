@@ -88,6 +88,8 @@ public class IndexModel : PageModel
         var w = await _db.Workflows.FirstOrDefaultAsync(x => x.Id == id);
         if (w is null) return NotFound();
         _db.Workflows.Remove(w);
+        // Unfinished drafts of a form that no longer exists cannot be completed.
+        _db.FormDrafts.RemoveRange(_db.FormDrafts.Where(d => d.WorkflowId == id));
         await _db.SaveChangesAsync();
         TempData["Flash"] = $"Deleted “{w.Name}”.";
         return RedirectToPage();

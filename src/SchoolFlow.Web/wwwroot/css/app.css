@@ -314,6 +314,18 @@ pre.code { background: #171b3a; color: #e4e7ff; padding: 14px 16px; border-radiu
 .dept-save .b-toggle { margin: 0; }
 .panel.inactive { opacity: .65; }
 
+/* drafts */
+.draft-list { padding: 4px 0; }
+.draft { display: flex; gap: 12px; align-items: center; padding: 12px 18px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.draft:last-child { border-bottom: 0; }
+.draft form { margin: 0; }
+.draft-main { display: grid; gap: 1px; color: inherit; min-width: 160px; }
+.draft-main:hover { text-decoration: none; }
+.draft-main:hover strong { text-decoration: underline; }
+.draft-main .muted { overflow-wrap: anywhere; }
+.sf-draft-status { flex: 1 1 100%; }
+.sf-draft-status.bad { color: var(--bad); }
+
 /* start from a previous request */
 .copy-bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 12px 26px; background: #fafaff; border-bottom: 1px solid var(--line); }
 .copy-bar.filled { background: var(--info-soft); color: #134a94; }

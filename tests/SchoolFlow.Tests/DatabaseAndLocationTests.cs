@@ -85,6 +85,32 @@ public sealed class MigrationTests : IDisposable
     }
 
     [Fact]
+    public async Task UpgradingAnExistingDatabase_KeepsItsData()
+    {
+        // A site deployed at the first release…
+        using (var db = Sqlite())
+        {
+            db.GetService<IMigrator>().Migrate("Initial");
+            db.Users.Add(new AppUser { Email = "keep@school.org", Name = "Keep", Role = Roles.Admin });
+            db.Departments.Add(new Department { Name = "Science", FinalApprovers = ";head@school.org;" });
+            db.Runs.Add(new WorkflowRun { WorkflowName = "Trip", Status = "Completed", ContextJson = "{\"a\":1}", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+            await db.SaveChangesAsync();
+            Assert.NotEmpty(db.Database.GetPendingMigrations());
+        }
+        // …is upgraded in place by simply starting the new version.
+        using (var db = Sqlite())
+        {
+            DatabaseSetup.Migrate(db, NullLogger.Instance);
+            Assert.Empty(db.Database.GetPendingMigrations());
+            Assert.Equal(Roles.Admin, (await db.Users.SingleAsync()).Role);
+            Assert.Equal("Science", (await db.Departments.SingleAsync()).Name);
+            Assert.Equal("{\"a\":1}", (await db.Runs.SingleAsync()).ContextJson);
+            db.FormDrafts.Add(new FormDraft { WorkflowId = 1, OwnerEmail = "keep@school.org", ValuesJson = "{}", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+            await db.SaveChangesAsync(); // the table added by the upgrade is usable
+        }
+    }
+
+    [Fact]
     public void DatabaseFromBeforeMigrations_IsRefusedWithInstructions_NotCorrupted()
     {
         using (var old = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options))

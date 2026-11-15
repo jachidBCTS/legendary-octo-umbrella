@@ -79,6 +79,10 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
 - **Notifications** are rows in `Notifications`; `EmailOutboxWorker` sends pending ones through
   `IEmailSender` (Graph) with retries. Notifications are added to the same `SaveChanges` as the
   change that caused them.
+- **Drafts** ("save and finish later"): `FormDraft` rows hold the raw, unvalidated answers per
+  owner. Opening one feeds them to the form as `initialValues`, so they are re-normalised by
+  `FormEvaluator` like any other input; submit deletes the draft. Autosave only starts after the
+  person has pressed *Save for later* once (never create a draft they did not ask for).
 - **Freshservice**: `IFreshserviceClient` has a live client and `SimulatedFreshserviceClient`
   (used when no domain/API key is configured; timeline entries are prefixed `[Simulated]`).
 - **Roles**: Staff / Builder / Admin in the `Users` table; `Auth:Admins` config emails are always

@@ -44,7 +44,9 @@
   /**
    * @param root      element to render into
    * @param options   { definition, evaluate(values, init) → Promise<state>, submit(values) → Promise<{ok, state, runId}>,
-   *                    onSuccess(runId), preview, initialValues (answers to prefill, e.g. from a previous request) }
+   *                    onSuccess(runId), preview, initialValues (answers to prefill, e.g. from a previous request),
+   *                    saveDraft(values) → Promise<{savedAt}> (adds a "Save for later" button; after the first
+   *                    save, later changes are saved automatically) }
    */
   function mountForm(root, options) {
     const definition = options.definition || {};
@@ -63,10 +65,41 @@
     const grid = h('div', { class: 'sf-grid' });
     const submitButton = h('button', { type: 'submit', class: 'btn primary lg' }, definition.submitLabel || 'Submit');
     const busy = h('span', { class: 'sf-busy muted', hidden: true }, 'Checking…');
+    const draftStatus = h('span', { class: 'sf-draft-status muted small', role: 'status' });
+    let draftSaved = !!options.draftAlreadySaved; // autosave only starts once the person has chosen to keep a draft
+    let draftSaving = false;
+    let draftDirty = false;
+    const draftButton = options.saveDraft
+      ? h('button', { type: 'button', class: 'btn lg', onclick: () => saveDraft(false) }, 'Save for later')
+      : null;
+
+    async function saveDraft(automatic) {
+      if (!options.saveDraft || submitting || destroyed) return;
+      if (draftSaving) { draftDirty = true; return; }
+      draftSaving = true;
+      draftDirty = false;
+      if (!automatic) { draftButton.disabled = true; draftStatus.textContent = 'Saving…'; }
+      try {
+        const result = await options.saveDraft(values);
+        draftSaved = true;
+        draftStatus.textContent = (automatic ? 'Draft saved automatically at ' : 'Draft saved at ') + result.savedAt + '. You can close this page and finish later from the home page.';
+        draftStatus.classList.remove('bad');
+      } catch (e) {
+        draftStatus.textContent = 'Could not save the draft: ' + e.message;
+        draftStatus.classList.add('bad');
+      } finally {
+        draftSaving = false;
+        if (draftButton) draftButton.disabled = false;
+        // Something changed while the save was in flight: save once more so the draft is never stale.
+        if (draftDirty && !destroyed) autosave();
+      }
+    }
+    const autosave = debounce(() => { if (draftSaved) saveDraft(true); }, 2500);
+
     const form = h('form', { class: 'sf-form', novalidate: true, onsubmit: onSubmit },
       definition.intro ? h('p', { class: 'sf-intro' }, definition.intro) : null,
       banner, grid,
-      h('div', { class: 'sf-submit-row' }, submitButton, busy,
+      h('div', { class: 'sf-submit-row' }, submitButton, draftButton, busy, draftStatus,
         options.preview ? h('span', { class: 'muted' }, 'Preview — nothing is submitted.') : null));
     root.appendChild(form);
 
@@ -83,6 +116,7 @@
 
     function changed(key, immediate) {
       touched.add(key);
+      if (draftSaved) autosave();
       if (immediate) { scheduleEvaluate.cancel(); evaluate(false); } else scheduleEvaluate();
     }
 
@@ -134,6 +168,7 @@
       submitting = true;
       showAllErrors = true;
       scheduleEvaluate.cancel();
+      autosave.cancel();
       submitButton.disabled = true;
       setBanner(null);
       try {
@@ -265,7 +300,7 @@
     }
 
     function input(el, key, control, immediate) {
-      el.addEventListener('input', () => { values[key] = el.value; if (!immediate) scheduleEvaluate(); });
+      el.addEventListener('input', () => { values[key] = el.value; if (!immediate) scheduleEvaluate(); if (draftSaved) autosave(); });
       el.addEventListener('change', () => { values[key] = el.value; changed(key, true); });
       el.addEventListener('blur', () => { if (!touched.has(key)) changed(key, true); });
       control.set = (v) => {
@@ -569,7 +604,7 @@
     evaluate(true);
 
     return {
-      destroy() { destroyed = true; scheduleEvaluate.cancel(); root.textContent = ''; },
+      destroy() { destroyed = true; scheduleEvaluate.cancel(); autosave.cancel(); root.textContent = ''; },
     };
   }
 
