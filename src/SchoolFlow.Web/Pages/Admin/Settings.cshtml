@@ -23,6 +23,37 @@
 </section>
 
 <section class="panel">
+    <h2>Email notifications (Microsoft 365)</h2>
+    @if (Model.Email.IsEnabled)
+    {
+        <p><span class="pill ok">On</span> Sending as <strong>@Model.Email.From</strong> through Microsoft Graph. Links in emails point to <code>@Model.Email.BaseUrl</code>.</p>
+        @if (Model.PendingEmails > 0) { <p class="muted">@Model.PendingEmails email@(Model.PendingEmails == 1 ? " is" : "s are") waiting to be sent or retried.</p> }
+    }
+    else
+    {
+        <p><span class="pill warn">Off</span> Notifications appear inside SchoolFlow only.</p>
+        <p class="muted">To turn email on, set <code>Email:Mode</code> to <code>Graph</code>, <code>Email:From</code> to the mailbox to send as (for example a shared no-reply mailbox)
+            and <code>Email:BaseUrl</code> to this site's address, then give the Entra app registration the Microsoft Graph <em>application</em> permission <code>Mail.Send</code> with admin consent.
+            @if (string.Equals(Model.Email.Mode, "Graph", StringComparison.OrdinalIgnoreCase) && Model.Email.MissingSettings.Count > 0)
+            {
+                <strong>Still missing: @string.Join(", ", Model.Email.MissingSettings).</strong>
+            }
+        </p>
+    }
+    <form method="post" asp-page-handler="TestEmail"><button class="btn">Send me a test email</button></form>
+    @if (Model.EmailTestResult is not null) { <div class="flash @(Model.EmailTestOk ? "ok" : "bad")">@Model.EmailTestResult</div> }
+    @if (Model.FailedEmails.Count > 0)
+    {
+        <h3>Emails that could not be sent</h3>
+        <div class="table-wrap"><table class="table compact">
+            <thead><tr><th>When</th><th>To</th><th>Subject</th><th>Problem</th></tr></thead>
+            <tbody>@foreach (var n in Model.FailedEmails) { <tr><td class="muted">@Ui.When(n.CreatedAt)</td><td>@n.UserEmail</td><td>@n.Title</td><td>@n.EmailError</td></tr> }</tbody>
+        </table></div>
+        <p class="muted small">The person still has the notification inside SchoolFlow.</p>
+    }
+</section>
+
+<section class="panel">
     <h2>Ticket events from Freshservice (webhook)</h2>
     @if (!Model.WebhookEnabled)
     {

@@ -35,7 +35,7 @@ public static class FormCopy
         foreach (var field in form.Fields.Where(IsCopyable))
         {
             if (parts.Count >= maxParts) break;
-            if (field.Type is FieldTypes.TextArea or FieldTypes.Table or FieldTypes.Checkbox or FieldTypes.MultiSelect) continue;
+            if (field.Type is FieldTypes.TextArea or FieldTypes.Table or FieldTypes.Checkbox or FieldTypes.MultiSelect or FieldTypes.ApprovalChain) continue;
             if (!TryGet(previous, field.Key, out var value) || Values.IsBlank(value)) continue;
             var text = field.Type == FieldTypes.Date && Values.TryToDate(value, out var date)
                 ? date.ToString("MMM d, yyyy", Values.DisplayCulture)

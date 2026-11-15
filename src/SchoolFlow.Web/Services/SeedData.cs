@@ -6,18 +6,27 @@ namespace SchoolFlow.Web.Services;
 /// <summary>Adds example workflows to an empty database so there is something to explore and copy.</summary>
 public static class SeedData
 {
-    public static void EnsureStarterWorkflows(AppDbContext db)
+    /// <param name="sampleDepartments">Also add example departments (development only; real ones are set by admins).</param>
+    public static void EnsureStarterWorkflows(AppDbContext db, bool sampleDepartments = false)
     {
         if (db.Workflows.Any()) return;
+        if (sampleDepartments && !db.Departments.Any())
+        {
+            db.Departments.AddRange(
+                new Department { Name = "Science", FinalApprovers = ApprovalTask.Pack(new[] { "principal@example.org" }) },
+                new Department { Name = "Mathematics", FinalApprovers = ApprovalTask.Pack(new[] { "principal@example.org", "admin@example.org" }), FinalRule = "all" },
+                new Department { Name = "Athletics", FinalApprovers = ApprovalTask.Pack(new[] { "admin@example.org" }) });
+        }
         Add(db, "Technology Purchase Request", "Request hardware or software. Totals are calculated, and larger purchases need approval.", "Purchasing", "indigo", Purchase, publish: true);
         Add(db, "Device Repair Request", "Report a damaged or faulty school device and get a help desk ticket.", "Help Desk", "teal", Repair, publish: true);
         Add(db, "Escalate urgent tickets (example)", "Ticket-triggered example: adds a private note when an urgent ticket arrives. Unpublished — open it in the builder to see how it works.", "Help Desk", "rose", Escalate, publish: false);
+        Add(db, "Field Trip Request", "Plan a trip, choose who signs it off, and reuse last year's request as a starting point.", "Trips", "green", FieldTrip, publish: true);
         db.SaveChanges();
     }
 
     /// <summary>The starter definitions, exposed so tests can check they stay valid.</summary>
     public static IReadOnlyList<(string Name, string Json)> Templates =>
-        new[] { ("Purchase", Purchase), ("Repair", Repair), ("Escalate", Escalate) };
+        new[] { ("Purchase", Purchase), ("Repair", Repair), ("Escalate", Escalate), ("FieldTrip", FieldTrip) };
 
     private static void Add(AppDbContext db, string name, string description, string category, string color, string json, bool publish)
     {
@@ -152,6 +161,58 @@ public static class SeedData
           { "from": "is_lost", "port": "true", "to": "lost_note" },
           { "from": "is_lost", "port": "false", "to": "done" },
           { "from": "lost_note", "port": "next", "to": "done" }
+        ]
+      }
+    }
+    """;
+
+    private const string FieldTrip = """
+    {
+      "trigger": { "type": "form" },
+      "form": {
+        "allowCopy": "everyone",
+        "intro": "Tip: if this trip has run before, use “Start from a previous request” and just update what has changed.",
+        "submitLabel": "Send for approval",
+        "fields": [
+          { "key": "destination", "label": "Where are you going?", "type": "text", "required": true, "placeholder": "e.g. Liberty Science Center" },
+          { "key": "department", "label": "Department", "type": "department", "required": true, "width": "half", "help": "Decides who gives final approval." },
+          { "key": "trip_date", "label": "Date of trip", "type": "date", "required": true, "width": "half", "noCopy": true,
+            "rules": [ { "check": "trip_date >= DATEADD(TODAY(), 10, 'weekdays')", "message": "Trips need at least 10 school days' notice." } ] },
+          { "key": "students", "label": "Number of students", "type": "number", "required": true, "min": 1, "decimals": 0, "width": "half" },
+          { "key": "chaperones", "label": "Number of chaperones", "type": "number", "required": true, "min": 1, "decimals": 0, "width": "half",
+            "rules": [ { "check": "students / chaperones <= 10", "message": "You need at least one chaperone for every 10 students." } ] },
+          { "key": "ratio", "label": "Students per chaperone", "type": "calculated", "formula": "IF(chaperones > 0, ROUND(students / chaperones, 1), blank)", "width": "half" },
+          { "key": "cost_per_student", "label": "Cost per student", "type": "currency", "min": 0, "width": "half" },
+          { "key": "bus_needed", "label": "We need a bus", "type": "checkbox" },
+          { "key": "bus_cost", "label": "Bus quote", "type": "currency", "visibleWhen": "bus_needed", "required": true, "min": 0 },
+          { "key": "total_cost", "label": "Total cost", "type": "calculated", "format": "currency", "decimals": 2, "formula": "students * cost_per_student + bus_cost" },
+          { "key": "purpose", "label": "How does this trip support the curriculum?", "type": "textarea", "required": true },
+          { "key": "approvers", "label": "Who needs to approve this first?", "type": "approval_chain",
+            "help": "Optional. For example your team leader, then the nurse." }
+        ]
+      },
+      "flow": {
+        "nodes": [
+          { "id": "start", "type": "start", "label": "Form submitted", "x": 290, "y": 40 },
+          { "id": "signoff", "type": "approval_chain", "label": "Trip sign-off", "x": 290, "y": 150,
+            "config": { "chainSource": "field", "chainField": "approvers", "departmentSource": "field", "departmentField": "department",
+              "instructions": "{{submitter.name}} is planning a trip to {{destination}} on {{TEXT(trip_date, 'MMM d, yyyy')}} for {{students}} students with {{chaperones}} chaperones.\nTotal cost: {{TEXT(total_cost, 'C2')}}\n\n{{purpose}}" } },
+          { "id": "ticket", "type": "fs_create_ticket", "label": "Log the trip", "x": 290, "y": 320,
+            "config": { "subject": "Field trip: {{destination}} on {{TEXT(trip_date, 'MMM d')}}",
+              "description": "Organiser: {{submitter.name}} ({{submitter.email}})\nDepartment: {{department.name}}\nDate: {{TEXT(trip_date, 'MMM d, yyyy')}}\nStudents: {{students}}, chaperones: {{chaperones}}\nBus needed: {{IF(bus_needed, 'Yes', 'No')}}\nTotal cost: {{TEXT(total_cost, 'C2')}}\n\n{{purpose}}",
+              "priority": "2", "status": "2", "tags": "field-trip" } },
+          { "id": "tell", "type": "notify", "label": "Tell the organiser", "x": 290, "y": 470,
+            "config": { "to": "{{submitter.email}}", "subject": "Your trip to {{destination}} is approved",
+              "message": "Final approval was given by {{approval.by}}.\nA help desk ticket (#{{ticket.id}}) has been opened for transport and logistics." } },
+          { "id": "done", "type": "end", "label": "Trip approved", "x": 290, "y": 610 },
+          { "id": "declined", "type": "end", "label": "Trip not approved", "x": 30, "y": 320, "config": { "outcome": "rejected" } }
+        ],
+        "edges": [
+          { "from": "start", "port": "next", "to": "signoff" },
+          { "from": "signoff", "port": "approved", "to": "ticket" },
+          { "from": "signoff", "port": "rejected", "to": "declined" },
+          { "from": "ticket", "port": "next", "to": "tell" },
+          { "from": "tell", "port": "next", "to": "done" }
         ]
       }
     }

@@ -27,6 +27,6 @@ public class IndexModel : PageModel
             .OrderByDescending(r => r.UpdatedAt).Take(6).ToListAsync();
         var needle = ";" + email + ";";
         Pending = email.Length == 0 ? new() : await _db.ApprovalTasks.AsNoTracking()
-            .Where(t => t.Status == ApprovalStatus.Pending && t.Assignees.Contains(needle)).OrderBy(t => t.CreatedAt).ToListAsync();
+            .Where(t => t.Status == ApprovalStatus.Pending && t.Assignees.Contains(needle) && !t.ApprovedBy.Contains(needle)).OrderBy(t => t.CreatedAt).ToListAsync();
     }
 }

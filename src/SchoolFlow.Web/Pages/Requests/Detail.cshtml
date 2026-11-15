@@ -11,6 +11,7 @@
         <p class="sub">
             <span class="pill @css">@label</span>
             Submitted by @Model.Run.SubmitterName · @Ui.When(Model.Run.CreatedAt)
+            @if (Model.Run.DepartmentName.Length > 0) { <span>· @Model.Run.DepartmentName</span> }
             @if (Model.Run.TicketId is long ticketId)
             {
                 <span>·</span>
@@ -48,7 +49,12 @@
 @foreach (var task in Model.MyTasks)
 {
     <section class="panel approve-box">
-        <h2><partial name="_Icons" model='"check"' /> @task.Title</h2>
+        <h2><partial name="_Icons" model='"check"' /> @task.Title @if (task.Position.Length > 0) { <span class="pill info">@task.Position</span> }</h2>
+        @if (task.Rule == "all" && task.AssigneeList.Count() > 1)
+        {
+            <p class="muted">Everyone listed must approve: @string.Join(", ", task.AssigneeList).
+                @if (task.ApprovedByList.Any()) { <span>Approved so far: @string.Join(", ", task.ApprovedByList).</span> }</p>
+        }
         @if (task.Instructions.Length > 0) { <p class="pre">@task.Instructions</p> }
         <form method="post" asp-page-handler="Decide">
             <input type="hidden" name="taskId" value="@task.Id" />
@@ -59,6 +65,24 @@
                 <button class="btn danger" name="approved" value="false">Reject</button>
             </div>
         </form>
+    </section>
+}
+
+@if (Model.Chain.Count > 0)
+{
+    <section class="panel">
+        <h2>Approval chain</h2>
+        <ol class="chain-track">
+            @foreach (var step in Model.Chain)
+            {
+                <li class="chain-@step.Status">
+                    <span class="chain-mark"></span>
+                    <strong>@step.Name</strong>
+                    <span class="muted small">@step.Approvers@(step.Rule == "all" && step.Status is "pending" or "waiting" ? " (all must approve)" : "")</span>
+                    <span class="pill tiny @(step.Status switch { "approved" => "ok", "rejected" => "bad", "waiting" => "warn", _ => "muted" })">@(step.Status switch { "approved" => "Approved", "rejected" => "Rejected", "waiting" => "Waiting", "skipped" => "Not reached", _ => "Up next" })</span>
+                </li>
+            }
+        </ol>
     </section>
 }
 

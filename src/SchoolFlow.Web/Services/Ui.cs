@@ -43,6 +43,7 @@ public static class Ui
     public static string Display(object? value, string type, string? format, int? decimals)
     {
         if (Values.IsBlank(value)) return "—";
+        if (ChainValue.IsChain(value)) return ChainValue.Describe(value);
         if (value is bool b) return b ? "Yes" : "No";
         if (value is decimal d)
         {

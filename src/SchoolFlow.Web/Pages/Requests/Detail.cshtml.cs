@@ -25,6 +25,10 @@ public class DetailModel : PageModel
         _config = config;
     }
 
+    public sealed record ChainStepView(string Name, string Approvers, string Status, string Rule);
+    /// <summary>Steps of the approval chain this request is going (or went) through, if any.</summary>
+    public List<ChainStepView> Chain { get; private set; } = new();
+
     public sealed record Answer(string Label, string Value, List<string>? Columns = null, List<List<string>>? Rows = null);
 
     public WorkflowRun Run { get; private set; } = null!;
@@ -49,7 +53,8 @@ public class DetailModel : PageModel
 
         Run = run;
         var pending = tasks.Where(t => t.Status == ApprovalStatus.Pending).ToList();
-        MyTasks = pending.Where(t => t.IsAssignedTo(email) || User.IsAdmin()).ToList();
+        // Someone who has already approved an "all must approve" step has nothing left to do.
+        MyTasks = pending.Where(t => (t.IsAssignedTo(email) && !t.HasApproved(email)) || (User.IsAdmin() && !t.IsAssignedTo(email))).ToList();
         PendingAssignees = pending.SelectMany(t => t.AssigneeList).Distinct().ToList();
         Events = await _db.RunEvents.AsNoTracking().Where(e => e.RunId == id).OrderBy(e => e.At).ThenBy(e => e.Id).ToListAsync();
 
@@ -67,6 +72,19 @@ public class DetailModel : PageModel
 
         var def = Json.ParseDefinition(run.DefinitionJson);
         var context = Json.ToValues(run.ContextJson);
+        if (context.GetValueOrDefault("chain") is Dictionary<string, object?> chain && chain.GetValueOrDefault("steps") is List<object?> chainSteps)
+        {
+            foreach (var step in chainSteps.OfType<Dictionary<string, object?>>())
+            {
+                var status = Values.ToText(step.GetValueOrDefault("status"));
+                // A chain that ended early (rejected, cancelled) leaves later steps unreached.
+                if (status is "pending" or "waiting" && RunStatus.IsFinished(run.Status)) status = "skipped";
+                var by = Values.ToText(step.GetValueOrDefault("by"));
+                Chain.Add(new ChainStepView(Values.ToText(step.GetValueOrDefault("name")),
+                    status is "approved" or "rejected" && by.Length > 0 ? by : Values.ToText(step.GetValueOrDefault("approvers")),
+                    status, Values.ToText(step.GetValueOrDefault("rule"))));
+            }
+        }
         foreach (var f in def.Form.Fields.Where(f => f.Type != FieldTypes.Section))
         {
             var value = context.GetValueOrDefault(f.Key);

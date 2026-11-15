@@ -20,7 +20,9 @@
     { type: 'multiselect', label: 'Checkboxes', hint: 'Pick several' },
     { type: 'checkbox', label: 'Yes / no', hint: 'Single tick box' },
     { type: 'email', label: 'Email', hint: 'e.g. an approver' },
-    { type: 'lookup', label: 'Freshservice lookup', hint: 'Department, device…' },
+    { type: 'lookup', label: 'Freshservice lookup', hint: 'Device, location…' },
+    { type: 'department', label: 'Department', hint: 'Sets the final approver' },
+    { type: 'approval_chain', label: 'Approval chain', hint: 'Requester picks approvers' },
     { type: 'calculated', label: 'Calculated', hint: 'Formula result' },
     { type: 'table', label: 'Table', hint: 'Repeating rows' },
     { type: 'section', label: 'Section heading', hint: 'Group fields' },
@@ -30,6 +32,8 @@
   const NODE_TYPES = [
     { type: 'condition', label: 'Decision', hint: 'Yes / No branch from a formula', tone: 'amber' },
     { type: 'approval', label: 'Approval', hint: 'Wait for someone to approve', tone: 'violet' },
+    { type: 'approval_chain', label: 'Approval chain', hint: 'Several approvers in order, then the department', tone: 'violet' },
+    { type: 'notify', label: 'Send notification', hint: 'In the app and by email', tone: 'rose' },
     { type: 'fs_create_ticket', label: 'Create ticket', hint: 'Open a Freshservice ticket', tone: 'teal' },
     { type: 'fs_update_ticket', label: 'Update ticket', hint: 'Status, priority, group, fields', tone: 'teal' },
     { type: 'fs_add_note', label: 'Add note', hint: 'Private or public note', tone: 'teal' },
@@ -41,7 +45,8 @@
   ];
   const NODE_INFO = Object.fromEntries(NODE_TYPES.map((n) => [n.type, n]));
   NODE_INFO.start = { type: 'start', label: 'Start', hint: '', tone: 'indigo' };
-  const PORTS = { condition: [['true', 'Yes'], ['false', 'No']], approval: [['approved', 'Approved'], ['rejected', 'Rejected']], end: [] };
+  const APPROVAL_PORTS = [['approved', 'Approved'], ['rejected', 'Rejected']];
+  const PORTS = { condition: [['true', 'Yes'], ['false', 'No']], approval: APPROVAL_PORTS, approval_chain: APPROVAL_PORTS, end: [] };
   const portsOf = (type) => PORTS[type] || [['next', '']];
   const COLORS = ['indigo', 'blue', 'teal', 'green', 'amber', 'rose', 'violet', 'slate'];
   const NODE_W = 230;
@@ -72,7 +77,7 @@
     if (/^[0-9]/.test(s)) s = 'f_' + s;
     return s;
   };
-  const RESERVED = ['submitter', 'ticket', 'approval', 'approvals', 'run', 'event', 'true', 'false', 'null', 'blank', 'and', 'or', 'not'];
+  const RESERVED = ['submitter', 'ticket', 'approval', 'approvals', 'run', 'event', 'chain', 'true', 'false', 'null', 'blank', 'and', 'or', 'not'];
   function uniqueKey(base, taken) {
     let key = RESERVED.includes(base) ? base + '_field' : base;
     let n = 2;
@@ -301,6 +306,10 @@
         } else if (f.type === 'lookup') {
           items.push([f.key + '.name', (f.label || f.key) + ' (name)']);
           items.push([f.key + '.id', (f.label || f.key) + ' (Freshservice ID)']);
+        } else if (f.type === 'department') {
+          items.push([f.key + '.name', (f.label || f.key) + ' (name)']);
+        } else if (f.type === 'approval_chain') {
+          // A chain is not a simple value; it is used by the "Approval chain" flow step.
         } else {
           items.push([f.key, f.label || f.key]);
         }
@@ -613,7 +622,12 @@
     if (['text', 'textarea', 'number', 'currency', 'email', 'lookup'].includes(field.type) && field.source !== 'departments')
       panel.append(row('Placeholder', textInput(field.placeholder, (v) => { field.placeholder = clean(v); })));
 
-    if (!isSection && !['table', 'textarea'].includes(field.type))
+    if (field.type === 'department')
+      panel.append(h('p', { class: 'b-help' }, 'People choose from the departments admins have set up (Admin → Departments). The request is filed under it, and an “Approval chain” flow step can add that department\'s final approver.'));
+    if (field.type === 'approval_chain')
+      panel.append(h('p', { class: 'b-help' }, 'People pick a saved chain or list their own approvers in order. Add an “Approval chain” step to the flow and point it at this field to run it.'));
+
+    if (!isSection && !['table', 'textarea', 'approval_chain'].includes(field.type))
       panel.append(row('Width', select(field.width || '', [['', 'Full width'], ['half', 'Half width (side by side)']], (v) => { field.width = clean(v); refresh(); })));
 
     if (['select', 'radio', 'multiselect'].includes(field.type))
@@ -640,7 +654,7 @@
 
     if (field.type === 'table') renderColumnsEditor(panel, field);
 
-    if (!isSection && !isCalc && field.type !== 'table' && field.type !== 'lookup')
+    if (!isSection && !isCalc && !['table', 'lookup', 'department', 'approval_chain'].includes(field.type))
       panel.append(row('Default value (formula)', formulaInput(field.default, (v) => { field.default = clean(v); }, { placeholder: field.type === 'date' ? 'TODAY()' : 'e.g. submitter.email' }),
         'Worked out once when the form opens. Put plain text in quotes.'));
 
@@ -757,6 +771,14 @@
     if (type === 'fs_lookup') Object.assign(node.config, { kind: 'requester', saveAs: 'person' });
     if (type === 'wait_ticket') node.config.until = 'ticket.status >= 4';
     if (type === 'end') node.label = 'Done';
+    if (type === 'approval_chain') {
+      // Point at the form's chain and department fields when it has them.
+      const chainField = state.def.form.fields.find((f) => f.type === 'approval_chain');
+      const departmentField = state.def.form.fields.find((f) => f.type === 'department');
+      if (chainField) Object.assign(node.config, { chainSource: 'field', chainField: chainField.key });
+      if (departmentField) Object.assign(node.config, { departmentSource: 'field', departmentField: departmentField.key });
+    }
+    if (type === 'notify') Object.assign(node.config, { to: isFormTrigger() ? '{{submitter.email}}' : '', subject: '' });
     state.def.flow.nodes.push(node);
     // Convenience: if the selected step has a free single output, connect it.
     if (anchor) {
@@ -794,6 +816,14 @@
       case 'start': return isFormTrigger() ? 'When the form is submitted' : 'When Freshservice sends a ticket event';
       case 'condition': return c.expression || 'No condition yet';
       case 'approval': return c.approvers ? 'Ask ' + c.approvers : 'No approver yet';
+      case 'approval_chain': {
+        const parts = [];
+        if (c.chainSource === 'template') parts.push('a saved chain');
+        if (c.chainSource === 'field') parts.push('the requester\'s chain');
+        if (c.departmentSource === 'field' || c.departmentSource === 'fixed') parts.push('the department\'s final approver');
+        return parts.length ? 'Runs ' + parts.join(', then ') : 'Nobody to approve yet';
+      }
+      case 'notify': return c.to ? 'To ' + c.to + (c.subject ? ': ' + c.subject : '') : 'No recipients yet';
       case 'fs_create_ticket': return c.subject || 'No subject yet';
       case 'fs_update_ticket': return 'Change ' + (['status', 'priority', 'priorityFormula', 'groupId', 'responderId'].filter((k) => c[k]).map((k) => k.replace('Formula', '').replace('Id', '')).concat(Object.keys(n.customFields || {})).join(', ') || 'nothing yet');
       case 'fs_add_note': return (c.visibility === 'public' ? 'Public: ' : 'Private: ') + (c.body || 'empty');
@@ -1027,6 +1057,24 @@
     return wrap;
   }
 
+  /** Dropdown whose options arrive from the server ([[value, label], …]); keeps an unknown saved value visible. */
+  function asyncSelect(loader, value, onChange, noneLabel) {
+    const sel = h('select', { disabled: true }, h('option', { value: '' }, 'Loading…'));
+    sel.addEventListener('change', () => { onChange(sel.value); markDirty(); });
+    loader().then((options) => {
+      sel.textContent = '';
+      sel.appendChild(h('option', { value: '' }, noneLabel));
+      options.forEach(([v, label]) => sel.appendChild(h('option', { value: String(v) }, label)));
+      if (value && !options.some(([v]) => String(v) === String(value))) sel.appendChild(h('option', { value }, 'No longer available (#' + value + ')'));
+      sel.value = value || '';
+      sel.disabled = false;
+    }).catch(() => {
+      sel.textContent = '';
+      sel.appendChild(h('option', { value: value || '' }, 'Could not load the list'));
+    });
+    return sel;
+  }
+
   function customFieldsEditor(node) {
     const box = h('div', { class: 'b-cf' });
     let rows = Object.entries(node.customFields || {}).map(([name, value]) => ({ name, value }));
@@ -1085,8 +1133,48 @@
         break;
       case 'approval':
         panel.append(
-          row('Approvers', tpl('approvers', 1, 'e.g. {{approver_email}} or principal@school.org'), 'One or more emails separated by commas. Any one of them can decide.'),
-          row('Instructions for the approver', tpl('instructions', 4, 'What should they check? e.g. Total: {{TEXT(total, "C2")}}')));
+          row('Approvers', tpl('approvers', 1, 'e.g. {{approver_email}} or principal@school.org'), 'One or more emails separated by commas.'),
+          row('If there is more than one', select(c.rule || 'any', [['any', 'Any one of them can decide'], ['all', 'All of them must approve']], (v) => { set('rule')(v === 'any' ? '' : v); })),
+          row('Instructions for the approver', tpl('instructions', 4, 'What should they check? e.g. Total: {{TEXT(total, "C2")}}')),
+          h('p', { class: 'b-help' }, 'For several approvers in sequence, or a department\'s final approver, use an “Approval chain” step instead.'));
+        break;
+      case 'approval_chain': {
+        const fieldsOf = (type) => state.def.form.fields.filter((f) => f.type === type).map((f) => [f.key, f.label || f.key]);
+        const chainFields = fieldsOf('approval_chain');
+        const departmentFields = fieldsOf('department');
+        panel.append(row('First, these approvers', select(c.chainSource || '', [
+          ['', 'None — only the department\'s final approver'],
+          ['field', 'The chain the requester builds on the form'],
+          ['template', 'A saved chain template (same for everyone)'],
+        ], (v) => { set('chainSource')(v); renderAll(); })));
+        if (c.chainSource === 'field')
+          panel.append(row('Form field', chainFields.length
+            ? select(c.chainField || '', [['', 'Choose a field…']].concat(chainFields), set('chainField'))
+            : h('p', { class: 'b-fx-status bad' }, 'The form has no Approval chain field yet. Add one on the Form tab.')));
+        if (c.chainSource === 'template')
+          panel.append(row('Chain template', asyncSelect(() => api('GET', '/api/chains').then((d) => d.shared.map((ch) => [ch.id, ch.name])), c.chainId, set('chainId'), 'Choose a template…'),
+            'Shared templates are managed under Approval chains in the menu.'));
+        panel.append(row('Then, the department\'s final approver', select(c.departmentSource || '', [
+          ['', 'None'],
+          ['field', 'For the department chosen on the form'],
+          ['fixed', 'Always the same department'],
+        ], (v) => { set('departmentSource')(v); renderAll(); }), 'Admins set each department\'s final approver. Requesters cannot change or skip it.'));
+        if (c.departmentSource === 'field')
+          panel.append(row('Form field', departmentFields.length
+            ? select(c.departmentField || '', [['', 'Choose a field…']].concat(departmentFields), set('departmentField'))
+            : h('p', { class: 'b-fx-status bad' }, 'The form has no Department field yet. Add one on the Form tab.')));
+        if (c.departmentSource === 'fixed')
+          panel.append(row('Department', asyncSelect(() => api('GET', '/api/departments').then((d) => d.items.map((dep) => [dep.id, dep.name])), c.departmentId, set('departmentId'), 'Choose a department…')));
+        panel.append(row('Instructions for the approvers', tpl('instructions', 4, 'Shown at every step. e.g. Trip to {{destination}} on {{TEXT(trip_date, "MMM d")}}')),
+          h('p', { class: 'b-help' }, 'Each step waits for its approver(s) before the next begins. A rejection at any step follows the Rejected line.'));
+        break;
+      }
+      case 'notify':
+        panel.append(
+          row('Send to', tpl('to', 1, 'e.g. {{submitter.email}}, office@school.org'), 'Emails separated by commas. Staff also see it in their Notifications; outside addresses only get the email.'),
+          row('Subject', tpl('subject', 1, 'e.g. Your trip to {{destination}} is approved')),
+          row('Message', tpl('message', 5, 'Plain text. Use {{field}} placeholders.')),
+          h('p', { class: 'b-help' }, 'Approvers and requesters are notified automatically (approval needed, completed, not approved). Use this step for anything extra.'));
         break;
       case 'set_variable':
         panel.append(

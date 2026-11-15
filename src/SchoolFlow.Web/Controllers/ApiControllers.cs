@@ -84,7 +84,8 @@ public sealed class FormsController : ControllerBase
             if (workflow is null || !workflow.IsLive || workflow.TriggerType != TriggerTypes.Form) return NotFound();
             form = Json.ParseDefinition(workflow.PublishedJson!).Form;
         }
-        var result = FormEvaluator.Evaluate(form, Json.ToValues(request.Values), Ambient(), applyDefaults: request.Init);
+        var result = FormEvaluator.Evaluate(form, Json.ToValues(request.Values), Ambient(), applyDefaults: request.Init,
+            departments: await _runs.ActiveDepartmentsAsync(ct));
         return new JsonResult(Shape(result), Json.Options);
     }
 

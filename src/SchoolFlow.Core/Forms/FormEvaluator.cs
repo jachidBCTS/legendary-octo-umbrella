@@ -34,10 +34,17 @@ public static class FormEvaluator
     /// <param name="input">Raw values keyed by field key (strings, numbers, bools, lists, records).</param>
     /// <param name="ambient">Extra variables formulas can read, e.g. submitter.</param>
     /// <param name="applyDefaults">When true, fields missing from <paramref name="input"/> get their default.</param>
+    /// <param name="departments">
+    /// Active departments (id → name). When given, department fields only accept these; when null
+    /// (builder preview, unit tests) any well-formed department value is accepted.
+    /// </param>
     public static FormResult Evaluate(FormDefinition form, IDictionary<string, object?> input,
-        IDictionary<string, object?>? ambient = null, bool applyDefaults = false, Func<DateTime>? now = null)
+        IDictionary<string, object?>? ambient = null, bool applyDefaults = false, Func<DateTime>? now = null,
+        IReadOnlyDictionary<long, string>? departments = null)
     {
         var result = new FormResult();
+        var submitterEmail = ambient is not null && ambient.TryGetValue("submitter", out var who) && who is Dictionary<string, object?> person
+            ? Values.ToText(Workflows.ChainValue.Get(person, "email")).Trim() : "";
         var ambientScope = new Scope(ambient, now: now);
         var scope = new Scope(result.Values, ambientScope);
         var fields = form.Fields.Where(f => !string.IsNullOrWhiteSpace(f.Key)).ToList();
@@ -78,9 +85,13 @@ public static class FormEvaluator
                         try { raw = Formula.Evaluate(field.Default, scope); }
                         catch (ExpressionException ex) { state.Errors.Add($"Default value formula: {ex.Message}"); }
                     }
-                    value = field.Type == FieldTypes.Table
-                        ? NormalizeTable(field, raw, scope, state)
-                        : NormalizeScalar(field.Type, field.Options, raw, state.Errors);
+                    value = field.Type switch
+                    {
+                        FieldTypes.Table => NormalizeTable(field, raw, scope, state),
+                        FieldTypes.Department => NormalizeDepartment(raw, departments, state.Errors),
+                        FieldTypes.ApprovalChain => Workflows.ChainValue.Normalize(raw, submitterEmail.Length > 0 ? submitterEmail : null, state.Errors),
+                        _ => NormalizeScalar(field.Type, field.Options, raw, state.Errors),
+                    };
                 }
             }
             state.Value = value;
@@ -268,6 +279,38 @@ public static class FormEvaluator
                 return Truncate(text, MaxTextLength);
             }
         }
+    }
+
+    private static object? NormalizeDepartment(object? raw, IReadOnlyDictionary<long, string>? departments, List<string> errors)
+    {
+        if (raw is not Dictionary<string, object?> record) return null;
+        var rawId = Member(record, "id");
+        if (Values.IsBlank(rawId)) return null;
+        if (rawId is bool || !Values.TryToNumber(rawId, out var number) || number != Math.Floor(number) || number <= 0 || number > int.MaxValue)
+        {
+            errors.Add("Choose a department from the list.");
+            return null;
+        }
+        var id = (long)number;
+        var name = Values.ToText(Member(record, "name")).Trim();
+        if (departments is not null)
+        {
+            // The server's list is the authority: ignore whatever name the browser sent.
+            if (!departments.TryGetValue(id, out var known))
+            {
+                errors.Add("That department is no longer available. Choose another.");
+                return null;
+            }
+            name = known;
+        }
+        else if (name.Length == 0)
+        {
+            return null;
+        }
+        var clean = Values.NewDict();
+        clean["id"] = (decimal)id;
+        clean["name"] = Truncate(name, 200);
+        return clean;
     }
 
     private static object? Member(Dictionary<string, object?> record, string key)

@@ -17,7 +17,7 @@ public static class DefinitionValidator
     /// <summary>Names formulas can always read, so fields and variables may not reuse them.</summary>
     public static readonly HashSet<string> Reserved = new(StringComparer.OrdinalIgnoreCase)
     {
-        "submitter", "ticket", "approval", "approvals", "run", "event",
+        "submitter", "ticket", "approval", "approvals", "run", "event", "chain",
         "true", "false", "null", "blank", "and", "or", "not",
     };
 
@@ -239,6 +239,39 @@ public static class DefinitionValidator
                     Text("instructions", "instructions", false);
                     if (!flow.Edges.Any(e => e.From == n.Id && e.Port == "approved"))
                         Warn(n.Id, $"“{name}”: the Approved branch is not connected, so nothing happens after approval.");
+                    break;
+                case NodeTypes.ApprovalChain:
+                {
+                    Text("instructions", "instructions", false);
+                    var chainSource = n.Get("chainSource");
+                    var departmentSource = n.Get("departmentSource");
+                    FieldDef? FieldOf(string key) => def.Form.Fields.FirstOrDefault(f => string.Equals(f.Key, key.Trim(), StringComparison.OrdinalIgnoreCase));
+                    if (chainSource == "template" && !long.TryParse(n.Get("chainId"), out _))
+                        Error(n.Id, $"“{name}”: choose which approval chain template to use.");
+                    if (chainSource == "field")
+                    {
+                        if (!isForm) Error(n.Id, $"“{name}”: a ticket-triggered workflow has no form, so the chain cannot come from a form field.");
+                        else if (FieldOf(n.Get("chainField"))?.Type != FieldTypes.ApprovalChain)
+                            Error(n.Id, $"“{name}”: choose an Approval chain field from the form (add one on the Form tab if there is none).");
+                    }
+                    if (departmentSource == "fixed" && !long.TryParse(n.Get("departmentId"), out _))
+                        Error(n.Id, $"“{name}”: choose the department whose final approver should sign off.");
+                    if (departmentSource == "field")
+                    {
+                        if (!isForm) Error(n.Id, $"“{name}”: a ticket-triggered workflow has no form, so the department cannot come from a form field.");
+                        else if (FieldOf(n.Get("departmentField"))?.Type != FieldTypes.Department)
+                            Error(n.Id, $"“{name}”: choose a Department field from the form (add one on the Form tab if there is none).");
+                    }
+                    if (chainSource is not ("template" or "field") && departmentSource is not ("fixed" or "field"))
+                        Error(n.Id, $"“{name}”: nobody would approve. Choose an approval chain, a department, or both.");
+                    if (!flow.Edges.Any(e => e.From == n.Id && e.Port == "approved"))
+                        Warn(n.Id, $"“{name}”: the Approved branch is not connected, so nothing happens after approval.");
+                    break;
+                }
+                case NodeTypes.Notify:
+                    Text("to", "recipients", true);
+                    Text("subject", "subject", true);
+                    Text("message", "message", false);
                     break;
                 case NodeTypes.SetVariable:
                     if (!IsValidKey(n.Get("name").Trim())) Error(n.Id, $"“{name}”: the value name must start with a letter and use only letters, digits and underscores.");

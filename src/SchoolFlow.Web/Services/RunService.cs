@@ -19,15 +19,22 @@ public sealed class RunService
     private readonly AppDbContext _db;
     private readonly IFreshserviceClient _freshservice;
     private readonly WorkflowEngine _engine;
+    private readonly NotificationService _notifications;
     private readonly ILogger<RunService> _log;
 
-    public RunService(AppDbContext db, IFreshserviceClient freshservice, ILogger<RunService> log)
+    public RunService(AppDbContext db, IFreshserviceClient freshservice, NotificationService notifications, ILogger<RunService> log)
     {
         _db = db;
         _freshservice = freshservice;
-        _engine = new WorkflowEngine(freshservice);
+        _notifications = notifications;
+        _engine = new WorkflowEngine(freshservice, directory: new ApprovalDirectory(db));
         _log = log;
     }
+
+    /// <summary>Active departments (id → name), the list a Department field accepts.</summary>
+    public async Task<Dictionary<long, string>> ActiveDepartmentsAsync(CancellationToken ct) =>
+        (await _db.Departments.AsNoTracking().Where(d => d.IsActive).Select(d => new { d.Id, d.Name }).ToListAsync(ct))
+        .ToDictionary(d => (long)d.Id, d => d.Name);
 
     public static Dictionary<string, object?> SubmitterRecord(string email, string name)
     {
@@ -46,7 +53,7 @@ public sealed class RunService
         var def = Json.ParseDefinition(workflow.PublishedJson ?? "{}");
         var ambient = Values.NewDict();
         ambient["submitter"] = SubmitterRecord(email, name);
-        var form = FormEvaluator.Evaluate(def.Form, input, ambient);
+        var form = FormEvaluator.Evaluate(def.Form, input, ambient, departments: await ActiveDepartmentsAsync(ct));
         if (!form.IsValid) return (form, null);
 
         var context = Values.NewDict();
@@ -54,6 +61,14 @@ public sealed class RunService
         context["submitter"] = SubmitterRecord(email, name);
 
         var run = NewRun(workflow, email, name);
+        // The first Department field on the form categorises the request.
+        var departmentField = def.Form.Fields.FirstOrDefault(f => f.Type == FieldTypes.Department && form.Values.GetValueOrDefault(f.Key) is Dictionary<string, object?>);
+        if (departmentField is not null && form.Values[departmentField.Key] is Dictionary<string, object?> department
+            && Values.TryToNumber(department.GetValueOrDefault("id"), out var departmentId))
+        {
+            run.DepartmentId = (long)departmentId;
+            run.DepartmentName = Values.ToText(department.GetValueOrDefault("name"));
+        }
         var id = await StartAsync(run, def, context, ct);
         return (form, id);
     }
@@ -106,6 +121,38 @@ public sealed class RunService
 
         comment = string.IsNullOrWhiteSpace(comment) ? null : comment.Trim();
         if (comment?.Length > 2000) comment = comment[..2000];
+        var who = string.IsNullOrWhiteSpace(name) ? email : $"{name} ({email})";
+
+        // "All must approve": collect approvals until everyone has; a rejection still ends it at once.
+        // An admin who is not one of the approvers acts as an override and completes the step.
+        if (approved && task.Rule == ApprovalRules.All && task.IsAssignedTo(email))
+        {
+            if (task.HasApproved(email)) return ActionResult.Fail("You have already approved this. It is waiting for the other approvers.");
+            var approvedBy = task.ApprovedByList.Append(email).Distinct().ToList();
+            var remaining = task.AssigneeList.Except(approvedBy).ToList();
+            task.ApprovedBy = ApprovalTask.Pack(approvedBy);
+            if (remaining.Count > 0)
+            {
+                var note = comment is null ? "" : $" — “{comment}”";
+                _db.RunEvents.Add(new RunEventRow
+                {
+                    RunId = run.Id, At = DateTime.UtcNow, NodeId = task.NodeId, Kind = "approved",
+                    Message = $"Approved by {who}{note} ({approvedBy.Count} of {approvedBy.Count + remaining.Count}). Still waiting for {string.Join(", ", remaining)}.",
+                });
+                run.UpdatedAt = DateTime.UtcNow;
+                run.Version++;
+                try
+                {
+                    await _db.SaveChangesAsync(ct);
+                    return new ActionResult(true, RunId: run.Id);
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    _db.ChangeTracker.Clear();
+                    return ActionResult.Fail("Someone else acted on this request at the same moment. Refresh to see the latest.");
+                }
+            }
+        }
 
         task.Status = approved ? ApprovalStatus.Approved : ApprovalStatus.Rejected;
         task.DecidedBy = email;
@@ -117,7 +164,7 @@ public sealed class RunService
         await _engine.ResumeWithDecisionAsync(def.Flow, state, new ApprovalDecision
         {
             Approved = approved,
-            By = string.IsNullOrWhiteSpace(name) ? email : $"{name} ({email})",
+            By = who,
             Comment = comment,
         }, ct);
 
@@ -267,6 +314,9 @@ public sealed class RunService
 
     private async Task SaveAsync(WorkflowRun run, RunState state, CancellationToken ct)
     {
+        var statusBefore = run.Status;
+        var link = $"/Requests/Detail/{run.Id}";
+        var label = $"{run.WorkflowName} #{run.Id}";
         run.Status = state.Status;
         run.CurrentNodeId = state.CurrentNodeId;
         run.ContextJson = Json.Serialize(state.Context);
@@ -300,14 +350,51 @@ public sealed class RunService
                     Title = approval.Title.Length > 300 ? approval.Title[..300] : approval.Title,
                     Instructions = approval.Instructions,
                     Assignees = ApprovalTask.Pack(approval.Assignees),
+                    Rule = ApprovalRules.Normalize(approval.Rule),
+                    Position = approval.Position,
                     CreatedAt = DateTime.UtcNow,
                 });
+                var from = string.IsNullOrEmpty(run.SubmitterName) ? "A request" : run.SubmitterName + "’s request";
+                await _notifications.NotifyAsync(approval.Assignees, $"Approval needed: {label}",
+                    $"{from} is waiting for your decision: {approval.Title}{(approval.Position.Length > 0 ? $" ({approval.Position.ToLowerInvariant()})" : "")}." +
+                    (approval.Instructions.Length > 0 ? "\n\n" + approval.Instructions : ""), link, ct);
             }
         }
         else if (state.Status != RunStatus.WaitingApproval)
         {
             // The run moved on (cancelled, failed elsewhere…): nothing should stay in anyone's inbox.
             foreach (var t in pending) t.Status = ApprovalStatus.Cancelled;
+        }
+
+        // Messages from "Send notification" steps.
+        foreach (var group in state.NewNotifications.GroupBy(n => (n.Title, n.Body)))
+            await _notifications.NotifyAsync(group.Select(n => n.Email), group.Key.Title, group.Key.Body, link, ct);
+        state.NewNotifications.Clear();
+
+        // Tell the people who are waiting on the outcome.
+        if (state.Status != statusBefore)
+        {
+            var submitter = new[] { run.SubmitterEmail };
+            var decision = state.Context.GetValueOrDefault("approval") as Dictionary<string, object?>;
+            var comment = Values.ToText(decision?.GetValueOrDefault("comment"));
+            switch (state.Status)
+            {
+                case RunStatus.Completed:
+                    await _notifications.NotifyAsync(submitter, $"Completed: {label}", "Your request has been completed.", link, ct);
+                    break;
+                case RunStatus.Rejected:
+                    await _notifications.NotifyAsync(submitter, $"Not approved: {label}",
+                        $"Your request was not approved{(decision is null ? "" : " by " + Values.ToText(decision.GetValueOrDefault("by")))}." +
+                        (comment.Length > 0 ? $"\n\nComment: {comment}" : ""), link, ct);
+                    break;
+                case RunStatus.Cancelled:
+                    await _notifications.NotifyAsync(submitter, $"Cancelled: {label}", "Your request was cancelled.", link, ct);
+                    break;
+                case RunStatus.Failed:
+                    await _notifications.NotifyAsync(await _notifications.AdminEmailsAsync(ct), $"Needs attention: {label}",
+                        $"This request stopped because of a problem and needs someone to look at it.\n\n{state.Error}", link, ct);
+                    break;
+            }
         }
 
         await _db.SaveChangesAsync(ct);

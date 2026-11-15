@@ -19,7 +19,7 @@ public class ApprovalsModel : PageModel
         if (email.Length == 0) return;
         var needle = ";" + email + ";";
         var tasks = await _db.ApprovalTasks.AsNoTracking()
-            .Where(t => t.Status == ApprovalStatus.Pending && t.Assignees.Contains(needle)).OrderBy(t => t.CreatedAt).ToListAsync();
+            .Where(t => t.Status == ApprovalStatus.Pending && t.Assignees.Contains(needle) && !t.ApprovedBy.Contains(needle)).OrderBy(t => t.CreatedAt).ToListAsync();
         var runIds = tasks.Select(t => t.RunId).ToList();
         var runs = await _db.Runs.AsNoTracking().Where(r => runIds.Contains(r.Id)).ToDictionaryAsync(r => r.Id);
         Pending = tasks.Where(t => runs.ContainsKey(t.RunId)).Select(t => (t, runs[t.RunId])).ToList();

@@ -94,6 +94,13 @@ else
     builder.Services.AddSingleton<IFreshserviceClient, SimulatedFreshserviceClient>();
 }
 
+// ---- Notifications and email ------------------------------------------------------------
+var emailSettings = new EmailSettings(config);
+builder.Services.AddSingleton(emailSettings);
+builder.Services.AddSingleton<IEmailSender>(_ => new GraphEmailSender(new HttpClient { Timeout = TimeSpan.FromSeconds(30) }, emailSettings));
+builder.Services.AddScoped<NotificationService>();
+builder.Services.AddHostedService<EmailOutboxWorker>();
+
 builder.Services.AddScoped<RunService>();
 builder.Services.AddRazorPages(options =>
 {
@@ -114,7 +121,7 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.EnsureCreated();
-    SeedData.EnsureStarterWorkflows(db);
+    SeedData.EnsureStarterWorkflows(db, sampleDepartments: app.Environment.IsDevelopment());
 }
 
 app.UseForwardedHeaders();

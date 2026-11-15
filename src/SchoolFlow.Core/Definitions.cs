@@ -51,11 +51,13 @@ public static class FieldTypes
 {
     public const string Text = "text", TextArea = "textarea", Email = "email", Number = "number", Currency = "currency",
         Date = "date", Select = "select", Radio = "radio", MultiSelect = "multiselect", Checkbox = "checkbox",
-        Lookup = "lookup", Calculated = "calculated", Table = "table", Section = "section";
+        Lookup = "lookup", Calculated = "calculated", Table = "table", Section = "section",
+        Department = "department", ApprovalChain = "approval_chain";
 
     public static readonly string[] All =
     {
         Text, TextArea, Email, Number, Currency, Date, Select, Radio, MultiSelect, Checkbox, Lookup, Calculated, Table, Section,
+        Department, ApprovalChain,
     };
 
     public static readonly string[] Column = { Text, Number, Currency, Date, Select, Checkbox, Calculated };
@@ -139,18 +141,19 @@ public static class NodeTypes
 {
     public const string Start = "start", Condition = "condition", Approval = "approval", SetVariable = "set_variable",
         CreateTicket = "fs_create_ticket", ServiceRequest = "fs_service_request", UpdateTicket = "fs_update_ticket",
-        AddNote = "fs_add_note", Lookup = "fs_lookup", WaitTicket = "wait_ticket", End = "end";
+        AddNote = "fs_add_note", Lookup = "fs_lookup", WaitTicket = "wait_ticket", End = "end",
+        ApprovalChain = "approval_chain", Notify = "notify";
 
     public static readonly string[] All =
     {
-        Start, Condition, Approval, SetVariable, CreateTicket, ServiceRequest, UpdateTicket, AddNote, Lookup, WaitTicket, End,
+        Start, Condition, Approval, ApprovalChain, Notify, SetVariable, CreateTicket, ServiceRequest, UpdateTicket, AddNote, Lookup, WaitTicket, End,
     };
 
     /// <summary>Output ports for each node type.</summary>
     public static string[] Ports(string type) => type switch
     {
         Condition => new[] { "true", "false" },
-        Approval => new[] { "approved", "rejected" },
+        Approval or ApprovalChain => new[] { "approved", "rejected" },
         End => Array.Empty<string>(),
         _ => new[] { "next" },
     };

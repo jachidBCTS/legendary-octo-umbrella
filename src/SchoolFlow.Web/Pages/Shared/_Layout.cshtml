@@ -12,10 +12,12 @@
     string Active(string prefix, bool exact = false) =>
         (exact ? path == prefix || path == "/Index" : path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) ? "active" : "";
     var pendingCount = 0;
+    var unreadCount = 0;
     if (signedIn && email.Length > 0)
     {
         var needle = ";" + email + ";";
-        pendingCount = await Db.ApprovalTasks.CountAsync(t => t.Status == ApprovalStatus.Pending && t.Assignees.Contains(needle));
+        pendingCount = await Db.ApprovalTasks.CountAsync(t => t.Status == ApprovalStatus.Pending && t.Assignees.Contains(needle) && !t.ApprovedBy.Contains(needle));
+        unreadCount = await Db.Notifications.CountAsync(n => n.UserEmail == email && n.ReadAt == null);
     }
     var wide = ViewData["Wide"] as bool? == true;
 }
@@ -46,6 +48,10 @@
             <a class="@Active("/Approvals")" href="/Approvals"><partial name="_Icons" model='"check"' /> Approvals
                 @if (pendingCount > 0) { <span class="badge">@pendingCount</span> }
             </a>
+            <a class="@Active("/Notifications")" href="/Notifications"><partial name="_Icons" model='"bell"' /> Notifications
+                @if (unreadCount > 0) { <span class="badge">@(unreadCount > 99 ? "99+" : unreadCount.ToString())</span> }
+            </a>
+            <a class="@Active("/Chains")" href="/Chains"><partial name="_Icons" model='"chain"' /> Approval chains</a>
             @if (User.IsBuilder())
             {
                 <div class="nav-label">Build</div>
@@ -55,7 +61,8 @@
             @if (User.IsAdmin())
             {
                 <div class="nav-label">Admin</div>
-                <a class="@Active("/Admin")" href="/Admin/Settings"><partial name="_Icons" model='"gear"' /> Settings</a>
+                <a class="@Active("/Admin/Departments")" href="/Admin/Departments"><partial name="_Icons" model='"building"' /> Departments</a>
+                <a class="@Active("/Admin/Settings")" href="/Admin/Settings"><partial name="_Icons" model='"gear"' /> Settings</a>
             }
         </nav>
         <div class="sidebar-user">

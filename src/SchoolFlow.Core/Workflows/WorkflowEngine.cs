@@ -21,7 +21,14 @@ public sealed class PendingApproval
     public string Title { get; set; } = "";
     public string Instructions { get; set; } = "";
     public List<string> Assignees { get; set; } = new();
+    /// <summary>"any" (one approver decides) or "all" (every approver must approve).</summary>
+    public string Rule { get; set; } = ApprovalRules.Any;
+    /// <summary>For chains: "Step 2 of 3".</summary>
+    public string Position { get; set; } = "";
 }
+
+/// <summary>A message the engine wants delivered (in the app and, where possible, by email).</summary>
+public sealed record OutgoingNotification(string Email, string Title, string Body);
 
 public sealed class ApprovalDecision
 {
@@ -37,6 +44,7 @@ public sealed class RunState
     public string? CurrentNodeId { get; set; }
     public Dictionary<string, object?> Context { get; set; } = Values.NewDict();
     public List<RunEvent> NewEvents { get; } = new();
+    public List<OutgoingNotification> NewNotifications { get; } = new();
     public PendingApproval? PendingApproval { get; set; }
     public long? WaitingTicketId { get; set; }
     public string? Error { get; set; }
@@ -51,11 +59,13 @@ public sealed class WorkflowEngine
     public const int MaxStepsPerAdvance = 200;
 
     private readonly IFreshserviceClient _freshservice;
+    private readonly IApprovalDirectory? _directory;
     private readonly Func<DateTime> _now;
 
-    public WorkflowEngine(IFreshserviceClient freshservice, Func<DateTime>? now = null)
+    public WorkflowEngine(IFreshserviceClient freshservice, Func<DateTime>? now = null, IApprovalDirectory? directory = null)
     {
         _freshservice = freshservice;
+        _directory = directory;
         _now = now ?? (() => DateTime.Now);
     }
 
@@ -102,9 +112,137 @@ public sealed class WorkflowEngine
             $"{(decision.Approved ? "Approved" : "Rejected")} by {decision.By}{comment}");
 
         state.PendingApproval = null;
+
+        if (node.Type == NodeTypes.ApprovalChain)
+        {
+            // Move to the next step of the chain, or leave the chain when it is finished or rejected.
+            if (state.Context.GetValueOrDefault("chain") is not Dictionary<string, object?> chain
+                || chain.GetValueOrDefault("steps") is not List<object?> steps
+                || !Values.TryToNumber(chain.GetValueOrDefault("index"), out var position)
+                || position < 0 || position >= steps.Count)
+            {
+                Fail(state, node.Id, "The approval chain's progress could not be read.");
+                return Task.CompletedTask;
+            }
+            var index = (int)position;
+            if (steps[index] is Dictionary<string, object?> current)
+            {
+                current["status"] = decision.Approved ? "approved" : "rejected";
+                current["by"] = decision.By;
+            }
+            if (decision.Approved && index + 1 < steps.Count)
+            {
+                chain["index"] = (decimal)(index + 1);
+                try
+                {
+                    EnterChainStep(state, node, chain);
+                }
+                catch (ExpressionException ex)
+                {
+                    Fail(state, node.Id, ex.Message);
+                }
+                return Task.CompletedTask;
+            }
+            chain["finished"] = true;
+        }
+
         state.Status = RunStatus.Running;
         Follow(flow, state, node, decision.Approved ? "approved" : "rejected");
         return AdvanceAsync(flow, state, ct);
+    }
+
+    private void EnterChainStep(RunState state, NodeDef node, Dictionary<string, object?> chain)
+    {
+        var steps = (List<object?>)chain["steps"]!;
+        var index = (int)Values.ToNumber(chain["index"]);
+        var step = ChainValue.ToSteps(chain)[index];
+        if (steps[index] is Dictionary<string, object?> record) record["status"] = "waiting";
+        state.PendingApproval = new PendingApproval
+        {
+            NodeId = node.Id,
+            Title = step.Name,
+            Instructions = Template.Render(node.Get("instructions"), NewScope(state)),
+            Assignees = step.Approvers,
+            Rule = step.Rule,
+            Position = $"Step {index + 1} of {steps.Count}",
+        };
+        state.Status = RunStatus.WaitingApproval;
+        var who = string.Join(step.Rule == ApprovalRules.All && step.Approvers.Count > 1 ? " and " : " or ", step.Approvers);
+        Log(state, node.Id, "waiting", $"{step.Name} ({state.PendingApproval.Position.ToLowerInvariant()}): waiting for {who}");
+    }
+
+    /// <summary>Works out the full list of steps: the chosen chain, then the department's final approver(s).</summary>
+    private async Task<List<ChainStep>> BuildChainAsync(NodeDef node, RunState state, CancellationToken ct)
+    {
+        var steps = new List<ChainStep>();
+        var submitter = state.Context.GetValueOrDefault("submitter") is Dictionary<string, object?> person
+            ? Values.ToText(person.GetValueOrDefault("email")).Trim().ToLowerInvariant() : "";
+
+        switch (node.Get("chainSource"))
+        {
+            case "template":
+            {
+                if (!long.TryParse(node.Get("chainId"), out var chainId))
+                    throw new ExpressionException($"{Name(node)}: choose which approval chain template to use.");
+                var template = _directory is null ? null : await _directory.GetChainAsync(chainId, ct);
+                steps.AddRange(template ?? throw new ExpressionException($"{Name(node)}: the approval chain template it uses no longer exists."));
+                break;
+            }
+            case "field":
+            {
+                var key = node.Get("chainField").Trim();
+                if (key.Length == 0) throw new ExpressionException($"{Name(node)}: choose which form field holds the approval chain.");
+                steps.AddRange(ChainValue.ToSteps(new Scope(state.Context).TryGet(key, out var value) ? value : null));
+                break;
+            }
+        }
+
+        long? departmentId = null;
+        switch (node.Get("departmentSource"))
+        {
+            case "fixed":
+                departmentId = long.TryParse(node.Get("departmentId"), out var fixedId) ? fixedId
+                    : throw new ExpressionException($"{Name(node)}: choose the department.");
+                break;
+            case "field":
+            {
+                var key = node.Get("departmentField").Trim();
+                var value = key.Length > 0 && new Scope(state.Context).TryGet(key, out var found) ? found : null;
+                if (value is Dictionary<string, object?> record && Values.TryToNumber(record.GetValueOrDefault("id"), out var id) && id > 0)
+                    departmentId = (long)id;
+                else
+                    throw new ExpressionException($"{Name(node)}: no department was chosen on the form, so the final approver cannot be worked out.");
+                break;
+            }
+        }
+        if (departmentId is long deptId)
+        {
+            var department = (_directory is null ? null : await _directory.GetDepartmentAsync(deptId, ct))
+                             ?? throw new ExpressionException($"{Name(node)}: the department no longer exists.");
+            if (department.FinalApprovers.Count == 0)
+                throw new ExpressionException($"{Name(node)}: {department.Name} has no final approver set. An admin needs to add one under Admin → Departments.");
+            steps.Add(new ChainStep
+            {
+                Name = $"Final approval — {department.Name}",
+                Approvers = department.FinalApprovers.Select(a => a.Trim().ToLowerInvariant()).Distinct().ToList(),
+                Rule = ApprovalRules.Normalize(department.FinalRule),
+            });
+        }
+
+        // Nobody approves their own request where someone else can; a step left with only the
+        // submitter is kept (an admin put them there) rather than silently skipped.
+        foreach (var step in steps)
+        {
+            step.Approvers = step.Approvers.Select(a => a.Trim().ToLowerInvariant()).Where(a => a.Contains('@')).Distinct().ToList();
+            if (submitter.Length > 0 && step.Approvers.Count > 1) step.Approvers.Remove(submitter);
+        }
+        if (steps.Any(s => s.Approvers.Count == 0))
+            throw new ExpressionException($"{Name(node)}: the step “{steps.First(s => s.Approvers.Count == 0).Name}” has no approvers.");
+        if (steps.Count == 0)
+            throw new ExpressionException($"{Name(node)}: there is nobody to approve this — no approval chain was given and no department is set.");
+        if (steps.Count > ChainValue.MaxSteps + 1)
+            throw new ExpressionException($"{Name(node)}: the approval chain is too long.");
+        return steps;
     }
 
     /// <summary>
@@ -238,15 +376,58 @@ public sealed class WorkflowEngine
                 var assignees = ParseEmails(Template.Render(node.Get("approvers"), scope));
                 if (assignees.Count == 0)
                     throw new ExpressionException($"{Name(node)}: no approver email could be worked out. Check the Approvers setting.");
+                var rule = ApprovalRules.Normalize(node.Get("rule"));
                 state.PendingApproval = new PendingApproval
                 {
                     NodeId = node.Id,
                     Title = Name(node),
                     Instructions = Template.Render(node.Get("instructions"), scope),
                     Assignees = assignees,
+                    Rule = rule,
                 };
                 state.Status = RunStatus.WaitingApproval;
-                Log(state, node.Id, "waiting", $"Waiting for approval from {string.Join(", ", assignees)}");
+                Log(state, node.Id, "waiting", rule == ApprovalRules.All && assignees.Count > 1
+                    ? $"Waiting for approval from all of: {string.Join(", ", assignees)}"
+                    : $"Waiting for approval from {string.Join(", ", assignees)}");
+                break;
+            }
+
+            case NodeTypes.ApprovalChain:
+            {
+                var steps = await BuildChainAsync(node, state, ct);
+                var chain = Values.NewDict();
+                chain["node"] = node.Id;
+                chain["index"] = 0m;
+                chain["steps"] = steps.Select(s =>
+                {
+                    var record = Values.NewDict();
+                    record["name"] = s.Name;
+                    record["approvers"] = s.Approvers.Cast<object?>().ToList();
+                    record["rule"] = s.Rule;
+                    record["status"] = "pending";
+                    return (object?)record;
+                }).ToList();
+                state.Context["chain"] = chain;
+                EnterChainStep(state, node, chain);
+                break;
+            }
+
+            case NodeTypes.Notify:
+            {
+                var recipients = ParseEmails(Template.Render(node.Get("to"), scope));
+                var title = Template.Render(node.Get("subject"), scope).Trim();
+                var message = Template.Render(node.Get("message"), scope).Trim();
+                if (title.Length == 0) throw new ExpressionException($"{Name(node)}: the notification has no subject.");
+                if (title.Length > 200) title = title[..200];
+                // A notification should never stop a request, so missing recipients are noted, not fatal.
+                if (recipients.Count == 0)
+                    Log(state, node.Id, "info", $"{Name(node)}: nobody to notify (the recipient list was empty).");
+                else
+                {
+                    foreach (var email in recipients.Take(50)) state.NewNotifications.Add(new OutgoingNotification(email, title, message));
+                    Log(state, node.Id, "info", $"Notified {string.Join(", ", recipients.Take(50))}: {title}");
+                }
+                Follow(flow, state, node, "next");
                 break;
             }
 

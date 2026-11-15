@@ -19,6 +19,9 @@ front-end dependencies.
 | Flow builder | Drag-and-connect canvas: Decision, Approval, Create/Update ticket, Add note, Service request, Look up, Wait for ticket, Set value, End |
 | Freshservice | Creates and updates tickets, adds notes, places service catalog requests, looks up requesters/agents/departments/groups/locations/assets, and reacts to ticket events through a webhook |
 | Start from a previous request | Per form, a builder can let people prefill a new request from an earlier one — their own, or anyone's (for yearly forms such as field trips). Individual fields can be excluded |
+| Approval chains | An *Approval chain* step runs several approvers in order. The builder either locks a workflow to a shared chain template or lets the requester pick a template / build their own chain on the form (and save it for reuse). Each step is "any one" or "all must approve" |
+| Departments | Admins keep a list of departments, each with its final approver(s). A request is filed under the department chosen on the form, and that department's final approver is always added to the end of the chain — requesters cannot change or skip it |
+| Notifications | In the app (bell with unread count) and by email through Microsoft 365. Sent automatically when an approval is needed and when a request is completed, not approved, cancelled or stuck; a *Send notification* step covers anything else, including outside addresses |
 | Running requests | Timeline of every step, approvals inbox, retry of failed steps, cancel |
 | Safety | Draft vs. published versions; a request always finishes on the version it started with; publishing is blocked while the checker finds problems |
 
@@ -69,6 +72,9 @@ Settings come from `appsettings.json`, `appsettings.Production.json` or environm
 | `AzureAd:TenantId`, `AzureAd:ClientId`, `AzureAd:ClientSecret` | Microsoft Entra ID app registration |
 | `Database:Provider` | `Sqlite` (default) or `SqlServer` |
 | `Database:ConnectionString` | Connection string for the chosen provider |
+| `Email:Mode` | `Off` (default) or `Graph` to send email through Microsoft 365 |
+| `Email:From` | Mailbox to send as, e.g. a shared `no-reply@yourschool.org` mailbox |
+| `Email:BaseUrl` | Public address of this site, used for links in emails, e.g. `https://flow.yourschool.org` |
 | `Freshservice:Domain` | e.g. `yourschool` or `yourschool.freshservice.com` |
 | `Freshservice:ApiKey` | API key of the Freshservice agent account SchoolFlow acts as |
 | `Freshservice:WebhookSecret` | 16+ random characters; enables the ticket-event webhook |
@@ -88,6 +94,40 @@ application in Entra and assign the right groups.
 
 Roles are managed in **Admin → Settings**: *Staff* (default), *Builder* (create workflows, see all
 requests, retry/cancel) and *Admin* (settings and roles).
+
+### Email through Microsoft 365
+
+Email uses Microsoft Graph with the **same app registration as sign-in** (set `Email:TenantId`,
+`Email:ClientId`, `Email:ClientSecret` only if you want a separate one).
+
+1. In the app registration: API permissions → Add → Microsoft Graph → **Application** permissions →
+   `Mail.Send` → Grant admin consent.
+2. Recommended: limit the app to the one sender mailbox with an
+   [application access policy](https://learn.microsoft.com/graph/auth-limit-mailbox-access) (or RBAC
+   for Applications in Exchange Online). Without it, `Mail.Send` lets the app send as any mailbox.
+3. Set `Email:Mode=Graph`, `Email:From` and `Email:BaseUrl`, restart, then use
+   **Admin → Settings → Send me a test email**.
+
+Emails are queued in the database and sent by a background worker, so a Microsoft 365 hiccup never
+blocks a request; temporary failures are retried (2, 4, 8, 16 minutes) and permanent ones are listed
+under Admin → Settings. Everyone can turn their own emails off on the Notifications page and still
+see notifications in the app. Addresses outside the sender's domain get the email without a link
+(they cannot sign in).
+
+### Departments and approval chains
+
+- **Admin → Departments**: add each department and its final approver(s), and choose whether any
+  one of them or all of them must approve. Untick *Active* to stop offering a department on forms.
+- **Approval chains** (in everyone's menu): builders and admins create shared templates; anyone can
+  save chains of their own.
+- In a workflow: add a **Department** field and (optionally) an **Approval chain** field to the
+  form, then an **Approval chain** step to the flow. The step runs the chain first — from the form
+  field or a fixed template — and then the department's final approver. See the *Field Trip
+  Request* starter workflow for a complete example.
+- Nobody approves their own request: requesters cannot list themselves, and a requester who is one
+  of several final approvers is left out of that step.
+- A request keeps the approvers it started with; later edits to a template or department apply to
+  new requests only.
 
 ### Freshservice
 
@@ -128,9 +168,12 @@ The in-app **Formula guide** (Build → Formula guide) documents the formula lan
   requester name search and "my devices" asset filter used by lookup fields.
 - **Entra sign-in could not be exercised end to end** in the build environment (it needs a real
   tenant). Startup, the redirect to Microsoft and the role handling are covered.
-- **No email notifications.** Approvers see requests in their Approvals inbox and the sidebar badge.
-- **Database schema** is created automatically on first run (`EnsureCreated`). There are no
-  migrations yet, so a future version that changes tables will need a migration step.
+- **Email could not be tested against a real Microsoft 365 tenant.** The Graph calls are unit-tested
+  against recorded-style responses; use the test-email button after configuring it.
+- **Database schema** is created automatically on first run (`EnsureCreated`) and there are no
+  migrations yet. A version that adds tables or columns (as the notifications/departments/chains
+  release did) needs a fresh database: delete the local `schoolflow.db` and restart. Proper
+  migrations should be added before the first production deployment holds real data.
 - Any signed-in person can use lookup fields, including the people search. If students will sign in,
   consider limiting sign-in to staff (see above).
 - Dates and "today" use the server's time zone.

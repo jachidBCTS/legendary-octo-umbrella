@@ -230,6 +230,13 @@
         case 'lookup':
           body = field.source === 'requesters' ? buildPersonLookup(field, id, control) : buildLookupSelect(field, id, control);
           break;
+        case 'department':
+          body = buildDepartment(field, id, control);
+          break;
+        case 'approval_chain':
+          labelFor = null;
+          body = buildChain(field, control);
+          break;
         case 'calculated': {
           labelFor = null;
           const out = h('output', { class: 'sf-calc' }, '—');
@@ -245,7 +252,7 @@
           body = input(h('input', { id, type: 'text', placeholder: field.placeholder || null, maxlength: 10000 }), field.key, control);
       }
 
-      const wide = field.type === 'table' || field.type === 'textarea';
+      const wide = field.type === 'table' || field.type === 'textarea' || field.type === 'approval_chain';
       control.wrap = h('div', { class: 'sf-field' + (field.width === 'half' && !wide ? ' half' : '') + (field.type === 'calculated' ? ' is-calc' : '') },
         h('label', { class: 'sf-label', for: labelFor }, field.label || field.key, ' ', required),
         body,
@@ -305,6 +312,109 @@
         control.error.hidden = false;
       });
       return select;
+    }
+
+    function buildDepartment(field, id, control) {
+      const select = h('select', { id, disabled: true }, h('option', { value: '' }, 'Loading…'));
+      const hint = h('p', { class: 'sf-help', hidden: true });
+      let items = [];
+      let wanted = null;
+      let loaded = false;
+      const choose = (wantedId) => {
+        const item = items.find((i) => String(i.id) === String(wantedId));
+        select.value = item ? String(item.id) : '';
+        const before = values[field.key];
+        values[field.key] = item ? { id: item.id, name: item.name } : null;
+        hint.hidden = !item;
+        if (item) {
+          hint.textContent = item.finalApprovers.length
+            ? 'Final approval: ' + item.finalApprovers.join(item.rule === 'all' ? ' and ' : ' or ')
+            : 'This department has no final approver set yet — ask an admin before submitting.';
+        }
+        if (!item && before) scheduleEvaluate();
+      };
+      select.addEventListener('change', () => { choose(select.value); changed(field.key, true); });
+      control.set = (v) => {
+        if (!v || typeof v !== 'object' || v.id === undefined || v.id === null) return;
+        values[field.key] = { id: v.id, name: v.name };
+        if (loaded) choose(v.id); else wanted = v.id;
+      };
+      api('GET', '/api/departments').then((data) => {
+        items = data.items || [];
+        select.textContent = '';
+        select.appendChild(h('option', { value: '' }, items.length ? 'Choose…' : 'No departments have been set up yet'));
+        items.forEach((i) => select.appendChild(h('option', { value: String(i.id) }, i.name)));
+        select.disabled = false;
+        loaded = true;
+        if (wanted !== null) { choose(wanted); wanted = null; }
+      }).catch((e) => {
+        select.textContent = '';
+        select.appendChild(h('option', { value: '' }, 'Could not load departments'));
+        control.error.textContent = e.message;
+        control.error.hidden = false;
+      });
+      return h('div', null, select, hint);
+    }
+
+    function buildChain(field, control) {
+      const holder = h('div');
+      const templates = h('select', { 'aria-label': 'Start from a saved chain' }, h('option', { value: '' }, 'Start from a saved chain…'));
+      let chains = [];
+      let chainName = '';
+      const store = (steps) => { values[field.key] = steps.length ? { name: chainName, steps } : null; };
+      const editor = window.SF.chainEditor(holder, { steps: [], onChange: (steps) => { store(steps); changed(field.key, false); } });
+
+      const fillTemplates = () => api('GET', '/api/chains').then((data) => {
+        chains = (data.shared || []).concat(data.mine || []);
+        templates.textContent = '';
+        templates.appendChild(h('option', { value: '' }, chains.length ? 'Start from a saved chain…' : 'No saved chains yet'));
+        const group = (label, list) => {
+          if (!list.length) return;
+          const g = h('optgroup', { label });
+          list.forEach((c) => g.appendChild(h('option', { value: String(c.id) }, c.name)));
+          templates.appendChild(g);
+        };
+        group('Shared templates', data.shared || []);
+        group('My chains', data.mine || []);
+      }).catch(() => { /* templates are a convenience; the editor still works without them */ });
+      fillTemplates();
+
+      templates.addEventListener('change', () => {
+        const chosen = chains.find((c) => String(c.id) === templates.value);
+        templates.value = '';
+        if (!chosen) return;
+        if (editor.get().length && !window.confirm('Replace the steps below with “' + chosen.name + '”?')) return;
+        chainName = chosen.name;
+        editor.set(chosen.steps);
+        store(editor.get());
+        changed(field.key, true);
+      });
+
+      const saveButton = h('button', { type: 'button', class: 'btn small', onclick: async () => {
+        const steps = editor.get();
+        if (!steps.length) { window.SF.toast('Add at least one step first.', 'bad'); return; }
+        const name = window.prompt('Name for this chain, so you can reuse it:', chainName || '');
+        if (!name || !name.trim()) return;
+        try {
+          await api('POST', '/api/chains', { name: name.trim(), description: '', shared: false, steps });
+          chainName = name.trim();
+          store(steps);
+          window.SF.toast('Saved to your chains.');
+          fillTemplates();
+        } catch (e) {
+          window.SF.toast(e.message, 'bad');
+        }
+      } }, 'Save as my chain');
+
+      control.set = (v) => {
+        if (!v || typeof v !== 'object' || !Array.isArray(v.steps)) return;
+        chainName = v.name || '';
+        editor.set(v.steps);
+        store(editor.get());
+      };
+      return h('div', { class: 'sf-chain' },
+        h('div', { class: 'sf-chain-top' }, templates, saveButton), holder,
+        h('p', { class: 'sf-help' }, 'Approvers decide in this order. If the request has a department, its final approver is added automatically at the end.'));
     }
 
     function buildPersonLookup(field, id, control) {
