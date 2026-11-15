@@ -231,7 +231,10 @@
           body = field.source === 'requesters' ? buildPersonLookup(field, id, control) : buildLookupSelect(field, id, control);
           break;
         case 'department':
-          body = buildDepartment(field, id, control);
+          body = buildListed(field, id, control, '/api/departments', 'No departments have been set up yet', 'departments');
+          break;
+        case 'location':
+          body = buildListed(field, id, control, '/api/locations', 'No locations have been set up yet', 'locations');
           break;
         case 'approval_chain':
           labelFor = null;
@@ -314,7 +317,8 @@
       return select;
     }
 
-    function buildDepartment(field, id, control) {
+    /** A dropdown over a list the admins maintain (departments, locations). Value: { id, name }. */
+    function buildListed(field, id, control, url, emptyText, noun) {
       const select = h('select', { id, disabled: true }, h('option', { value: '' }, 'Loading…'));
       const hint = h('p', { class: 'sf-help', hidden: true });
       let items = [];
@@ -325,8 +329,8 @@
         select.value = item ? String(item.id) : '';
         const before = values[field.key];
         values[field.key] = item ? { id: item.id, name: item.name } : null;
-        hint.hidden = !item;
-        if (item) {
+        hint.hidden = !item || !item.finalApprovers;
+        if (item && item.finalApprovers) {
           hint.textContent = item.finalApprovers.length
             ? 'Final approval: ' + item.finalApprovers.join(item.rule === 'all' ? ' and ' : ' or ')
             : 'This department has no final approver set yet — ask an admin before submitting.';
@@ -339,17 +343,17 @@
         values[field.key] = { id: v.id, name: v.name };
         if (loaded) choose(v.id); else wanted = v.id;
       };
-      api('GET', '/api/departments').then((data) => {
+      api('GET', url).then((data) => {
         items = data.items || [];
         select.textContent = '';
-        select.appendChild(h('option', { value: '' }, items.length ? 'Choose…' : 'No departments have been set up yet'));
+        select.appendChild(h('option', { value: '' }, items.length ? 'Choose…' : emptyText));
         items.forEach((i) => select.appendChild(h('option', { value: String(i.id) }, i.name)));
         select.disabled = false;
         loaded = true;
         if (wanted !== null) { choose(wanted); wanted = null; }
       }).catch((e) => {
         select.textContent = '';
-        select.appendChild(h('option', { value: '' }, 'Could not load departments'));
+        select.appendChild(h('option', { value: '' }, 'Could not load ' + noun));
         control.error.textContent = e.message;
         control.error.hidden = false;
       });

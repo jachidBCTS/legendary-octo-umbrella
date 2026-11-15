@@ -129,6 +129,7 @@
       document.getElementById('sidebar')?.classList.toggle('open');
       return;
     }
+    // (Tapping the dimmed backdrop also lands in the branch above, which closes the menu.)
     const sidebar = document.getElementById('sidebar');
     if (sidebar && sidebar.classList.contains('open') && !target.closest('#sidebar')) sidebar.classList.remove('open');
   });

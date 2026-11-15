@@ -459,7 +459,41 @@ async function login(page, email) {
   await page.click('button:has-text("Send me a test email")');
   check((await page.locator('.panel .flash').first().textContent()).includes('not switched on'), 'test email reports that email is off');
 
-  note('10. admin + help + mobile');
+  note('10. locations');
+  await login(page, 'admin@example.org');
+  await page.goto(base + '/Admin/Locations');
+  check(await page.locator('.table tbody tr').count() === 3, 'sample locations present');
+  await page.click('button:has-text("Sync from Freshservice")');
+  await page.waitForSelector('.flash.ok');
+  check((await page.locator('.flash.ok').textContent()).includes('3 added'), 'sync from Freshservice adds locations: ' + (await page.locator('.flash.ok').textContent()).trim());
+  await page.click('button:has-text("Sync from Freshservice")');
+  await page.waitForSelector('.flash.ok');
+  check((await page.locator('.flash.ok').textContent()).includes('Already up to date'), 'second sync changes nothing');
+  await page.fill('input[name=name][placeholder]', 'Annex › Room 12');
+  await page.click('button:has-text("Add location")');
+  await page.waitForSelector('.flash.ok');
+  await page.locator('tr:has(input[value="Gymnasium"]) button:has-text("Switch off")').first().click();
+  await page.waitForSelector('.flash.ok');
+  await page.locator('tr:has(input[value="Gymnasium"]) button:has-text("Switch off")').first().click();
+  await page.waitForSelector('.flash.ok');
+  await page.screenshot({ path: S + '/shots/23-locations.png', fullPage: true });
+  await login(page, 'teacher@example.org');
+  const locs = await getJson('/api/locations');
+  const locNames = locs[1].items.map((i) => i.name);
+  check(locNames.includes('Annex › Room 12') && !locNames.includes('Gymnasium'), 'forms offer active locations only');
+  await page.goto(base + '/Start/2');
+  await page.waitForSelector('.sf-form');
+  await page.waitForFunction(() => [...document.querySelectorAll('.sf-field')].some((f) => f.textContent.includes('Where can we pick it up') && f.querySelectorAll('option').length > 3));
+  check(true, 'repair form lists locations from the table');
+  const spoof = await page.evaluate(async () => {
+    const r = await fetch('/api/forms/evaluate', { method: 'POST', headers: { 'Content-Type': 'application/json', RequestVerificationToken: document.querySelector('meta[name=csrf-token]').content },
+      body: JSON.stringify({ workflowId: 2, values: { location: { id: 99999, name: 'Nowhere' } } }) });
+    return (await r.json()).fields.location.errors.join(' ');
+  });
+  check(spoof.includes('no longer available'), 'a made-up location is refused');
+
+  note('11. admin + help + mobile');
+  await login(page, 'admin@example.org');
   await page.goto(base + '/Admin/Settings');
   await page.click('button:has-text("Test connection")');
   check((await page.locator('.panel .flash').first().textContent()).includes('Simulation mode'), 'test connection reports simulation');

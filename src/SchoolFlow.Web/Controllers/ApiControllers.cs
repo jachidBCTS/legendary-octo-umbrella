@@ -85,7 +85,7 @@ public sealed class FormsController : ControllerBase
             form = Json.ParseDefinition(workflow.PublishedJson!).Form;
         }
         var result = FormEvaluator.Evaluate(form, Json.ToValues(request.Values), Ambient(), applyDefaults: request.Init,
-            departments: await _runs.ActiveDepartmentsAsync(ct));
+            departments: await _runs.ActiveDepartmentsAsync(ct), locations: await _runs.ActiveLocationsAsync(ct));
         return new JsonResult(Shape(result), Json.Options);
     }
 

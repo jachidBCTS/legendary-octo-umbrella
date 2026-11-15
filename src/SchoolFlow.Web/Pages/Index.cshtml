@@ -59,7 +59,7 @@
 else
 {
     <div class="panel table-wrap">
-        <table class="table">
+        <table class="table stack">
             <thead><tr><th>Request</th><th>Status</th><th>Ticket</th><th>Updated</th></tr></thead>
             <tbody>
             @foreach (var r in Model.Recent)
@@ -67,9 +67,9 @@ else
                 var (label, css) = Ui.Status(r.Status);
                 <tr>
                     <td><a href="/Requests/Detail/@r.Id"><strong>@r.WorkflowName</strong></a> <span class="muted">#@r.Id</span></td>
-                    <td><span class="pill @css">@label</span></td>
-                    <td>@(r.TicketId is long t ? "#" + t : "—")</td>
-                    <td class="muted">@Ui.When(r.UpdatedAt)</td>
+                    <td data-label="Status"><span class="pill @css">@label</span></td>
+                    <td data-label="Ticket">@(r.TicketId is long t ? "#" + t : "—")</td>
+                    <td class="muted" data-label="Updated">@Ui.When(r.UpdatedAt)</td>
                 </tr>
             }
             </tbody>

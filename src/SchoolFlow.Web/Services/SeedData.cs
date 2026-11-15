@@ -17,6 +17,11 @@ public static class SeedData
                 new Department { Name = "Mathematics", FinalApprovers = ApprovalTask.Pack(new[] { "principal@example.org", "admin@example.org" }), FinalRule = "all" },
                 new Department { Name = "Athletics", FinalApprovers = ApprovalTask.Pack(new[] { "admin@example.org" }) });
         }
+        if (sampleDepartments && !db.Locations.Any())
+        {
+            foreach (var name in new[] { "Main Building", "Main Building › Library", "Gymnasium" })
+                db.Locations.Add(new Location { Name = name, UpdatedAt = DateTime.UtcNow });
+        }
         Add(db, "Technology Purchase Request", "Request hardware or software. Totals are calculated, and larger purchases need approval.", "Purchasing", "indigo", Purchase, publish: true);
         Add(db, "Device Repair Request", "Report a damaged or faulty school device and get a help desk ticket.", "Help Desk", "teal", Repair, publish: true);
         Add(db, "Escalate urgent tickets (example)", "Ticket-triggered example: adds a private note when an urgent ticket arrives. Unpublished — open it in the builder to see how it works.", "Help Desk", "rose", Escalate, publish: false);
@@ -130,7 +135,7 @@ public static class SeedData
             "options": ["Cracked screen", "Will not turn on", "Keyboard or trackpad", "Battery or charging", "Liquid damage", "Lost or stolen", "Something else"] },
           { "key": "happened_on", "label": "When did it happen?", "type": "date", "width": "half", "default": "TODAY()",
             "rules": [ { "check": "happened_on <= TODAY()", "message": "This date cannot be in the future." } ] },
-          { "key": "location", "label": "Where can we pick it up?", "type": "lookup", "source": "locations", "width": "half", "visibleWhen": "problem != 'Lost or stolen'" },
+          { "key": "location", "label": "Where can we pick it up?", "type": "location", "width": "half", "visibleWhen": "problem != 'Lost or stolen'" },
           { "key": "police_report", "label": "A police report has been filed", "type": "checkbox", "visibleWhen": "problem == 'Lost or stolen'" },
           { "key": "details", "label": "Details", "type": "textarea", "requiredWhen": "IN(problem, 'Something else', 'Liquid damage', 'Lost or stolen')",
             "placeholder": "Anything that helps us fix it faster" },

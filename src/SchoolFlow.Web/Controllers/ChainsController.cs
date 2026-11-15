@@ -40,6 +40,14 @@ public sealed class ChainsController : ControllerBase
         });
     }
 
+    [HttpGet("locations")]
+    public async Task<IActionResult> Locations(CancellationToken ct)
+    {
+        var rows = await _db.Locations.AsNoTracking().Where(l => l.IsActive).OrderBy(l => l.Name)
+            .Select(l => new { id = l.Id, name = l.Name }).ToListAsync(ct);
+        return Ok(new { items = rows });
+    }
+
     private static object Shape(ApprovalChainTemplate c, bool canEdit) => new
     {
         id = c.Id,

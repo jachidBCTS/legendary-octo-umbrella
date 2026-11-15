@@ -44,6 +44,11 @@ public sealed class RunService
         return record;
     }
 
+    /// <summary>Active locations (id → name), the list a Location field accepts.</summary>
+    public async Task<Dictionary<long, string>> ActiveLocationsAsync(CancellationToken ct) =>
+        (await _db.Locations.AsNoTracking().Where(l => l.IsActive).Select(l => new { l.Id, l.Name }).ToListAsync(ct))
+        .ToDictionary(l => (long)l.Id, l => l.Name);
+
     // ---- starting --------------------------------------------------------------------
 
     /// <summary>Validates the submitted form against the published definition and, if valid, starts a run.</summary>
@@ -53,7 +58,8 @@ public sealed class RunService
         var def = Json.ParseDefinition(workflow.PublishedJson ?? "{}");
         var ambient = Values.NewDict();
         ambient["submitter"] = SubmitterRecord(email, name);
-        var form = FormEvaluator.Evaluate(def.Form, input, ambient, departments: await ActiveDepartmentsAsync(ct));
+        var form = FormEvaluator.Evaluate(def.Form, input, ambient, departments: await ActiveDepartmentsAsync(ct),
+            locations: await ActiveLocationsAsync(ct));
         if (!form.IsValid) return (form, null);
 
         var context = Values.NewDict();

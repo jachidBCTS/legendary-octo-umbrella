@@ -11,21 +11,7 @@ var builder = WebApplication.CreateBuilder(args);
 var config = builder.Configuration;
 
 // ---- Database ---------------------------------------------------------------------------
-var provider = config["Database:Provider"] ?? "Sqlite";
-var connectionString = config["Database:ConnectionString"];
-builder.Services.AddDbContext<AppDbContext>(options =>
-{
-    if (provider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
-    {
-        if (string.IsNullOrWhiteSpace(connectionString))
-            throw new InvalidOperationException("Database:ConnectionString is required when Database:Provider is SqlServer.");
-        options.UseSqlServer(connectionString);
-    }
-    else
-    {
-        options.UseSqlite(string.IsNullOrWhiteSpace(connectionString) ? "Data Source=schoolflow.db" : connectionString);
-    }
-});
+builder.Services.AddSchoolFlowDatabase(config);
 
 // ---- Sign-in ----------------------------------------------------------------------------
 var authMode = config["Auth:Mode"] ?? "EntraId";
@@ -120,7 +106,7 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.EnsureCreated();
+    DatabaseSetup.Migrate(db, scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("SchoolFlow.Database"));
     SeedData.EnsureStarterWorkflows(db, sampleDepartments: app.Environment.IsDevelopment());
 }
 

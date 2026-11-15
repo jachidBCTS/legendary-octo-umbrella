@@ -52,12 +52,12 @@ public static class FieldTypes
     public const string Text = "text", TextArea = "textarea", Email = "email", Number = "number", Currency = "currency",
         Date = "date", Select = "select", Radio = "radio", MultiSelect = "multiselect", Checkbox = "checkbox",
         Lookup = "lookup", Calculated = "calculated", Table = "table", Section = "section",
-        Department = "department", ApprovalChain = "approval_chain";
+        Department = "department", ApprovalChain = "approval_chain", Location = "location";
 
     public static readonly string[] All =
     {
         Text, TextArea, Email, Number, Currency, Date, Select, Radio, MultiSelect, Checkbox, Lookup, Calculated, Table, Section,
-        Department, ApprovalChain,
+        Department, ApprovalChain, Location,
     };
 
     public static readonly string[] Column = { Text, Number, Currency, Date, Select, Checkbox, Calculated };

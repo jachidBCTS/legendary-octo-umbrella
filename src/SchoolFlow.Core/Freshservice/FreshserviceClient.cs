@@ -128,7 +128,12 @@ public sealed class FreshserviceClient : IFreshserviceClient
             case LookupSources.Groups:
                 return Filter(await ListAllAsync("api/v2/groups", "groups", e => Item(e, "name"), ct), query);
             case LookupSources.Locations:
-                return Filter(await ListAllAsync("api/v2/locations", "locations", e => Item(e, "name"), ct), query);
+            {
+                // Locations nest (campus › building › room); show the whole path so "Room 101" is unambiguous.
+                var raw = await ListAllAsync("api/v2/locations", "locations",
+                    e => new LookupItem(Id(e), Str(e, "name") ?? "(unnamed)", null, Str(e, "parent_location_id")), ct);
+                return Filter(WithFullPaths(raw), query);
+            }
             case LookupSources.Agents:
                 return Filter(await ListAllAsync("api/v2/agents?active=true", "agents",
                     e => new LookupItem(Id(e), PersonName(e), Str(e, "email")), ct), query);
@@ -181,6 +186,28 @@ public sealed class FreshserviceClient : IFreshserviceClient
             if (items.Count < 100) break;
         }
         return all.OrderBy(i => i.Name, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    /// <summary>Turns items whose Detail holds a parent ID into items named "Parent › Child".</summary>
+    public static List<LookupItem> WithFullPaths(IReadOnlyList<LookupItem> items)
+    {
+        var byId = new Dictionary<string, LookupItem>();
+        foreach (var item in items) byId.TryAdd(item.Id, item);
+        var result = new List<LookupItem>();
+        foreach (var item in items)
+        {
+            var parts = new List<string> { item.Name };
+            var seen = new HashSet<string> { item.Id };
+            var parentId = item.Detail;
+            // Bounded and cycle-safe, in case the data is odd.
+            while (!string.IsNullOrEmpty(parentId) && parts.Count < 6 && seen.Add(parentId) && byId.TryGetValue(parentId, out var parent))
+            {
+                parts.Insert(0, parent.Name);
+                parentId = parent.Detail;
+            }
+            result.Add(new LookupItem(item.Id, string.Join(" › ", parts)));
+        }
+        return result.OrderBy(i => i.Name, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     private static List<LookupItem> Items(JsonDocument doc, string property, Func<JsonElement, LookupItem> map) =>

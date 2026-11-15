@@ -1,0 +1,54 @@
+@page
+@model SchoolFlow.Web.Pages.Admin.LocationsModel
+@{
+    ViewData["Title"] = "Locations";
+}
+<div class="page-head">
+    <div><h1>Locations</h1><p class="sub">Buildings and rooms people can choose on forms with a Location field.</p></div>
+    <form method="post" asp-page-handler="Sync"><button class="btn primary">Sync from Freshservice</button></form>
+</div>
+<p class="muted">Sync adds locations that are new in Freshservice, renames ones that changed, and switches off ones that were removed there.
+    It never touches locations you added by hand and never switches one back on.
+    @if (!Model.IsLive) { <strong>Freshservice is in simulation mode, so a sync brings in sample locations.</strong> }</p>
+
+<section class="panel">
+    <h2>Add a location by hand</h2>
+    <form method="post" asp-page-handler="Add" class="row wrap">
+        <input name="name" required maxlength="200" placeholder="e.g. Annex › Room 12" aria-label="Location name" />
+        <button class="btn">Add location</button>
+    </form>
+</section>
+
+@if (Model.Locations.Count == 0)
+{
+    <div class="empty small"><p>No locations yet. Sync from Freshservice or add one above.</p></div>
+}
+else
+{
+    <div class="panel table-wrap">
+        <table class="table stack">
+            <thead><tr><th>Location</th><th>Source</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+            @foreach (var l in Model.Locations)
+            {
+                <tr class="@(l.IsActive ? "" : "row-off")">
+                    <td>
+                        <form method="post" asp-page-handler="Rename" class="row">
+                            <input type="hidden" name="id" value="@l.Id" />
+                            <input name="name" value="@l.Name" required maxlength="200" aria-label="Name" readonly="@(l.FreshserviceId != null)" />
+                            @if (l.FreshserviceId == null) { <button class="btn small">Rename</button> }
+                        </form>
+                    </td>
+                    <td class="muted" data-label="Source">@(l.FreshserviceId is long fs ? $"Freshservice #{fs}" : "Added by hand")</td>
+                    <td data-label="Status"><span class="pill @(l.IsActive ? "ok" : "muted")">@(l.IsActive ? "Active" : "Off")</span></td>
+                    <td>
+                        <form method="post" asp-page-handler="Toggle"><input type="hidden" name="id" value="@l.Id" />
+                            <button class="btn small">@(l.IsActive ? "Switch off" : "Switch on")</button></form>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}
+<p class="muted small">Locations from Freshservice are renamed there, not here. A switched-off location is no longer offered on forms; requests that already used it keep it.</p>

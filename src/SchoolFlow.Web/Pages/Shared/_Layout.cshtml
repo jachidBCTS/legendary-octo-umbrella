@@ -34,10 +34,11 @@
     <link rel="stylesheet" href="~/css/app.css" asp-append-version="true" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Cpath d='M9 10h8a4 4 0 0 1 0 8h-2a4 4 0 0 0 0 8h8' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' transform='translate(0 -2)'/%3E%3C/svg%3E" />
 </head>
-<body class="@(wide ? "wide" : "")">
+<body class="@(wide ? "wide" : "") @(signedIn ? "has-sidebar" : "")">
 @if (signedIn)
 {
     <aside class="sidebar" id="sidebar">
+      <div class="sidebar-inner">
         <a class="brand" href="/">
             <span class="brand-mark"><svg viewBox="0 0 32 32"><path d="M9 8h8a4 4 0 0 1 0 8h-2a4 4 0 0 0 0 8h8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></span>
             <span>SchoolFlow</span>
@@ -62,6 +63,7 @@
             {
                 <div class="nav-label">Admin</div>
                 <a class="@Active("/Admin/Departments")" href="/Admin/Departments"><partial name="_Icons" model='"building"' /> Departments</a>
+                <a class="@Active("/Admin/Locations")" href="/Admin/Locations"><partial name="_Icons" model='"pin"' /> Locations</a>
                 <a class="@Active("/Admin/Settings")" href="/Admin/Settings"><partial name="_Icons" model='"gear"' /> Settings</a>
             }
         </nav>
@@ -70,7 +72,9 @@
             <span class="who"><strong>@name</strong><small>@email</small></span>
             <a href="/Account/SignOut" title="Sign out" aria-label="Sign out"><partial name="_Icons" model='"signout"' /></a>
         </div>
+      </div>
     </aside>
+    <div class="sidebar-backdrop" data-toggle-sidebar></div>
 }
 <div class="shell @(signedIn ? "" : "no-sidebar")">
     @if (signedIn)

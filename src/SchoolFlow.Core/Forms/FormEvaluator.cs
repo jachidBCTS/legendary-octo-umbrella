@@ -38,9 +38,10 @@ public static class FormEvaluator
     /// Active departments (id → name). When given, department fields only accept these; when null
     /// (builder preview, unit tests) any well-formed department value is accepted.
     /// </param>
+    /// <param name="locations">Active locations (id → name), checked the same way for location fields.</param>
     public static FormResult Evaluate(FormDefinition form, IDictionary<string, object?> input,
         IDictionary<string, object?>? ambient = null, bool applyDefaults = false, Func<DateTime>? now = null,
-        IReadOnlyDictionary<long, string>? departments = null)
+        IReadOnlyDictionary<long, string>? departments = null, IReadOnlyDictionary<long, string>? locations = null)
     {
         var result = new FormResult();
         var submitterEmail = ambient is not null && ambient.TryGetValue("submitter", out var who) && who is Dictionary<string, object?> person
@@ -88,7 +89,8 @@ public static class FormEvaluator
                     value = field.Type switch
                     {
                         FieldTypes.Table => NormalizeTable(field, raw, scope, state),
-                        FieldTypes.Department => NormalizeDepartment(raw, departments, state.Errors),
+                        FieldTypes.Department => NormalizeListed(raw, departments, "department", state.Errors),
+                        FieldTypes.Location => NormalizeListed(raw, locations, "location", state.Errors),
                         FieldTypes.ApprovalChain => Workflows.ChainValue.Normalize(raw, submitterEmail.Length > 0 ? submitterEmail : null, state.Errors),
                         _ => NormalizeScalar(field.Type, field.Options, raw, state.Errors),
                     };
@@ -281,14 +283,15 @@ public static class FormEvaluator
         }
     }
 
-    private static object? NormalizeDepartment(object? raw, IReadOnlyDictionary<long, string>? departments, List<string> errors)
+    /// <summary>A choice from a list the admins maintain (departments, locations): stored as { id, name }.</summary>
+    private static object? NormalizeListed(object? raw, IReadOnlyDictionary<long, string>? departments, string noun, List<string> errors)
     {
         if (raw is not Dictionary<string, object?> record) return null;
         var rawId = Member(record, "id");
         if (Values.IsBlank(rawId)) return null;
         if (rawId is bool || !Values.TryToNumber(rawId, out var number) || number != Math.Floor(number) || number <= 0 || number > int.MaxValue)
         {
-            errors.Add("Choose a department from the list.");
+            errors.Add($"Choose a {noun} from the list.");
             return null;
         }
         var id = (long)number;
@@ -298,7 +301,7 @@ public static class FormEvaluator
             // The server's list is the authority: ignore whatever name the browser sent.
             if (!departments.TryGetValue(id, out var known))
             {
-                errors.Add("That department is no longer available. Choose another.");
+                errors.Add($"That {noun} is no longer available. Choose another.");
                 return null;
             }
             name = known;

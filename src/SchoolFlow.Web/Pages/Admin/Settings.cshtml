@@ -90,7 +90,7 @@
     <h2>People and roles</h2>
     <p class="muted">Everyone who signs in can submit forms and approve requests sent to them. <strong>Builders</strong> can also create workflows and see all requests.
         <strong>Admins</strong> can also change these settings. People appear here after their first sign-in.</p>
-    <div class="table-wrap"><table class="table">
+    <div class="table-wrap"><table class="table stack">
         <thead><tr><th>Person</th><th>Last seen</th><th>Role</th></tr></thead>
         <tbody>
         @foreach (var u in Model.Users)
@@ -98,8 +98,8 @@
             var locked = Model.ConfigAdmins.Contains(u.Email);
             <tr>
                 <td><strong>@u.Name</strong><div class="muted small">@u.Email</div></td>
-                <td class="muted">@Ui.When(u.LastSeenAt)</td>
-                <td>
+                <td class="muted" data-label="Last seen">@Ui.When(u.LastSeenAt)</td>
+                <td data-label="Role">
                     @if (locked)
                     {
                         <span class="pill info">Admin</span> <span class="muted small">set in server configuration</span>

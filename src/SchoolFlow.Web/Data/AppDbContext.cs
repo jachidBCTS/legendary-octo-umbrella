@@ -123,6 +123,20 @@ public class Department
     public List<string> FinalApproverList => FinalApprovers.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList();
 }
 
+/// <summary>
+/// A school location (building, room, campus). Usually pulled from Freshservice with the Sync button
+/// on Admin → Locations, but admins can also add their own.
+/// </summary>
+public class Location
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+    /// <summary>The location's ID in Freshservice; null for one added by hand.</summary>
+    public long? FreshserviceId { get; set; }
+    public bool IsActive { get; set; } = true;
+    public DateTime UpdatedAt { get; set; }
+}
+
 /// <summary>A saved approval chain. OwnerEmail "" means a shared template; otherwise it is that person's own.</summary>
 public class ApprovalChainTemplate
 {
@@ -176,6 +190,11 @@ public class WebhookLog
 public class AppDbContext : DbContext
 {
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+
+    /// <summary>For the provider-specific contexts below, which carry the migrations.</summary>
+    protected AppDbContext(DbContextOptions options) : base(options) { }
+
+    public DbSet<Location> Locations => Set<Location>();
 
     public DbSet<Workflow> Workflows => Set<Workflow>();
     public DbSet<WorkflowRun> Runs => Set<WorkflowRun>();
@@ -241,6 +260,11 @@ public class AppDbContext : DbContext
             e.Property(x => x.Name).HasMaxLength(200);
             e.Property(x => x.FinalRule).HasMaxLength(10);
         });
+        b.Entity<Location>(e =>
+        {
+            e.Property(x => x.Name).HasMaxLength(200);
+            e.HasIndex(x => x.FreshserviceId);
+        });
         b.Entity<ApprovalChainTemplate>(e =>
         {
             e.Property(x => x.Name).HasMaxLength(200);
@@ -264,4 +288,17 @@ public class AppDbContext : DbContext
             e.Property(x => x.Outcome).HasMaxLength(1000);
         });
     }
+}
+
+// Migrations are specific to a database engine, so each engine has its own context type and its own
+// Migrations folder. The rest of the app only ever sees AppDbContext.
+
+public sealed class SqliteAppDbContext : AppDbContext
+{
+    public SqliteAppDbContext(DbContextOptions<SqliteAppDbContext> options) : base(options) { }
+}
+
+public sealed class SqlServerAppDbContext : AppDbContext
+{
+    public SqlServerAppDbContext(DbContextOptions<SqlServerAppDbContext> options) : base(options) { }
 }

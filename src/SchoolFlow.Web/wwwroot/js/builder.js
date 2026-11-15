@@ -23,12 +23,13 @@
     { type: 'lookup', label: 'Freshservice lookup', hint: 'Device, location…' },
     { type: 'department', label: 'Department', hint: 'Sets the final approver' },
     { type: 'approval_chain', label: 'Approval chain', hint: 'Requester picks approvers' },
+    { type: 'location', label: 'Location', hint: 'Building or room' },
     { type: 'calculated', label: 'Calculated', hint: 'Formula result' },
     { type: 'table', label: 'Table', hint: 'Repeating rows' },
     { type: 'section', label: 'Section heading', hint: 'Group fields' },
   ];
   const COLUMN_TYPES = [['text', 'Text'], ['number', 'Number'], ['currency', 'Currency'], ['date', 'Date'], ['select', 'Dropdown'], ['checkbox', 'Yes / no'], ['calculated', 'Calculated']];
-  const LOOKUP_SOURCES = [['departments', 'Departments'], ['locations', 'Locations'], ['my_assets', "The person's own devices"], ['requesters', 'People (search by name)'], ['groups', 'Agent groups']];
+  const LOOKUP_SOURCES = [['departments', 'Freshservice departments'], ['locations', 'Freshservice locations (live)'], ['my_assets', "The person's own devices"], ['requesters', 'People (search by name)'], ['groups', 'Agent groups']];
   const NODE_TYPES = [
     { type: 'condition', label: 'Decision', hint: 'Yes / No branch from a formula', tone: 'amber' },
     { type: 'approval', label: 'Approval', hint: 'Wait for someone to approve', tone: 'violet' },
@@ -306,7 +307,7 @@
         } else if (f.type === 'lookup') {
           items.push([f.key + '.name', (f.label || f.key) + ' (name)']);
           items.push([f.key + '.id', (f.label || f.key) + ' (Freshservice ID)']);
-        } else if (f.type === 'department') {
+        } else if (f.type === 'department' || f.type === 'location') {
           items.push([f.key + '.name', (f.label || f.key) + ' (name)']);
         } else if (f.type === 'approval_chain') {
           // A chain is not a simple value; it is used by the "Approval chain" flow step.
@@ -624,6 +625,8 @@
 
     if (field.type === 'department')
       panel.append(h('p', { class: 'b-help' }, 'People choose from the departments admins have set up (Admin → Departments). The request is filed under it, and an “Approval chain” flow step can add that department\'s final approver.'));
+    if (field.type === 'location')
+      panel.append(h('p', { class: 'b-help' }, 'People choose from the school\'s locations (Admin → Locations, which can be synced from Freshservice). In formulas use ' + (field.key || 'field') + '.name.'));
     if (field.type === 'approval_chain')
       panel.append(h('p', { class: 'b-help' }, 'People pick a saved chain or list their own approvers in order. Add an “Approval chain” step to the flow and point it at this field to run it.'));
 
@@ -654,7 +657,7 @@
 
     if (field.type === 'table') renderColumnsEditor(panel, field);
 
-    if (!isSection && !isCalc && !['table', 'lookup', 'department', 'approval_chain'].includes(field.type))
+    if (!isSection && !isCalc && !['table', 'lookup', 'department', 'approval_chain', 'location'].includes(field.type))
       panel.append(row('Default value (formula)', formulaInput(field.default, (v) => { field.default = clean(v); }, { placeholder: field.type === 'date' ? 'TODAY()' : 'e.g. submitter.email' }),
         'Worked out once when the form opens. Put plain text in quotes.'));
 
@@ -856,6 +859,15 @@
     if (old) { scroll.left = old.scrollLeft; scroll.top = old.scrollTop; }
     body.append(palette, canvas, inspector);
     renderNodes();
+    if (!lastScroll.set) {
+      // First visit: on a narrow screen, bring the Start step into view instead of an empty corner.
+      const start = state.def.flow.nodes.find((n) => n.type === 'start') || state.def.flow.nodes[0];
+      if (start) {
+        lastScroll.left = Math.max(0, start.x - Math.max(12, (canvas.clientWidth - NODE_W) / 2));
+        lastScroll.top = Math.max(0, start.y - 30);
+      }
+      lastScroll.set = true;
+    }
     canvas.scrollLeft = lastScroll.left;
     canvas.scrollTop = lastScroll.top;
     canvas.addEventListener('scroll', () => { lastScroll.left = canvas.scrollLeft; lastScroll.top = canvas.scrollTop; });
@@ -877,7 +889,7 @@
           h('li', null, 'A branch with no line simply ends the request.')));
     }
   }
-  const lastScroll = { left: 0, top: 0 };
+  const lastScroll = { left: 0, top: 0, set: false };
 
   function renderNodes() {
     nodeEls.clear();

@@ -28,16 +28,16 @@
 {
     <h2 class="section-title">Your recent decisions</h2>
     <div class="panel table-wrap">
-        <table class="table">
+        <table class="table stack">
             <thead><tr><th>Approval</th><th>Decision</th><th>Comment</th><th>When</th></tr></thead>
             <tbody>
             @foreach (var t in Model.Decided)
             {
                 <tr>
                     <td><a href="/Requests/Detail/@t.RunId">@t.Title</a> <span class="muted">#@t.RunId</span></td>
-                    <td><span class="pill @(t.Status == ApprovalStatus.Approved ? "ok" : "bad")">@t.Status</span></td>
-                    <td>@(string.IsNullOrEmpty(t.Comment) ? "—" : t.Comment)</td>
-                    <td class="muted">@(t.DecidedAt is DateTime d ? Ui.When(d) : "")</td>
+                    <td data-label="Decision"><span class="pill @(t.Status == ApprovalStatus.Approved ? "ok" : "bad")">@t.Status</span></td>
+                    <td data-label="Comment">@(string.IsNullOrEmpty(t.Comment) ? "—" : t.Comment)</td>
+                    <td class="muted" data-label="When">@(t.DecidedAt is DateTime d ? Ui.When(d) : "")</td>
                 </tr>
             }
             </tbody>
