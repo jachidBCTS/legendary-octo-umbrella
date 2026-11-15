@@ -15,6 +15,10 @@ public static class SeedData
         db.SaveChanges();
     }
 
+    /// <summary>The starter definitions, exposed so tests can check they stay valid.</summary>
+    public static IReadOnlyList<(string Name, string Json)> Templates =>
+        new[] { ("Purchase", Purchase), ("Repair", Repair), ("Escalate", Escalate) };
+
     private static void Add(AppDbContext db, string name, string description, string category, string color, string json, bool publish)
     {
         // Round-trip through the model so stored JSON is canonical.
@@ -71,22 +75,22 @@ public static class SeedData
       },
       "flow": {
         "nodes": [
-          { "id": "start", "type": "start", "label": "Form submitted", "x": 400, "y": 40 },
-          { "id": "needs_approval", "type": "condition", "label": "$500 or more?", "x": 400, "y": 150, "config": { "expression": "total >= 500" } },
-          { "id": "approval", "type": "approval", "label": "Supervisor approval", "x": 100, "y": 290,
+          { "id": "start", "type": "start", "label": "Form submitted", "x": 290, "y": 40 },
+          { "id": "needs_approval", "type": "condition", "label": "$500 or more?", "x": 290, "y": 150, "config": { "expression": "total >= 500" } },
+          { "id": "approval", "type": "approval", "label": "Supervisor approval", "x": 30, "y": 290,
             "config": { "approvers": "{{approver_email}}", "instructions": "{{submitter.name}} is requesting “{{title}}” for {{department.name}}.\nOrder total: {{TEXT(total, 'C2')}}\n\n{{justification}}" } },
-          { "id": "create", "type": "fs_create_ticket", "label": "Open purchasing ticket", "x": 400, "y": 440,
+          { "id": "create", "type": "fs_create_ticket", "label": "Open purchasing ticket", "x": 290, "y": 440,
             "config": {
               "subject": "Purchase request: {{title}} ({{TEXT(total, 'C2')}})",
               "description": "Requested by: {{submitter.name}} ({{submitter.email}})\nDepartment: {{department.name}}\nNeeded by: {{TEXT(needed_by, 'MMM d, yyyy')}}\nType: {{kind}}\n\nItems:\n{{JOIN(items.item, ', ')}}\n\nSubtotal: {{TEXT(subtotal, 'C2')}}\nShipping: {{TEXT(shipping, 'C2')}}\nTotal: {{TEXT(total, 'C2')}}\n\nJustification: {{justification}}\nStudent data: {{IF(student_data, 'Yes — ' & privacy_notes, 'No')}}",
               "priority": "2", "priorityFormula": "IF(DATEDIFF(TODAY(), needed_by, 'weekdays') <= 7, 3, 2)", "status": "2",
               "departmentId": "{{department}}", "tags": "purchase-request, {{LOWER(kind)}}" } },
-          { "id": "note", "type": "fs_add_note", "label": "Record approval", "x": 100, "y": 600,
+          { "id": "note", "type": "fs_add_note", "label": "Record approval", "x": 30, "y": 750,
             "config": { "body": "Approved by {{approval.by}}.\n{{approval.comment}}", "visibility": "private" } },
-          { "id": "was_approved", "type": "condition", "label": "Was approval needed?", "x": 400, "y": 600, "config": { "expression": "NOT(ISBLANK(approval.by))" } },
-          { "id": "wait", "type": "wait_ticket", "label": "Wait until resolved", "x": 400, "y": 760, "config": { "until": "ticket.status >= 4" } },
-          { "id": "done", "type": "end", "label": "Purchase complete", "x": 400, "y": 890 },
-          { "id": "declined", "type": "end", "label": "Not approved", "x": 100, "y": 450, "config": { "outcome": "rejected" } }
+          { "id": "was_approved", "type": "condition", "label": "Was approval needed?", "x": 290, "y": 600, "config": { "expression": "NOT(ISBLANK(approval.by))" } },
+          { "id": "wait", "type": "wait_ticket", "label": "Wait until resolved", "x": 290, "y": 890, "config": { "until": "ticket.status >= 4" } },
+          { "id": "done", "type": "end", "label": "Purchase complete", "x": 290, "y": 1020 },
+          { "id": "declined", "type": "end", "label": "Not approved", "x": 30, "y": 450, "config": { "outcome": "rejected" } }
         ],
         "edges": [
           { "from": "start", "port": "next", "to": "needs_approval" },
@@ -128,18 +132,18 @@ public static class SeedData
       },
       "flow": {
         "nodes": [
-          { "id": "start", "type": "start", "label": "Form submitted", "x": 300, "y": 40 },
-          { "id": "urgency", "type": "set_variable", "label": "Work out priority", "x": 300, "y": 150,
+          { "id": "start", "type": "start", "label": "Form submitted", "x": 290, "y": 40 },
+          { "id": "urgency", "type": "set_variable", "label": "Work out priority", "x": 290, "y": 150,
             "config": { "name": "priority_level", "expression": "IFS(problem == 'Lost or stolen', 4, problem == 'Liquid damage' || needs_loaner, 3, 2)" } },
-          { "id": "create", "type": "fs_create_ticket", "label": "Open help desk ticket", "x": 300, "y": 290,
+          { "id": "create", "type": "fs_create_ticket", "label": "Open help desk ticket", "x": 290, "y": 290,
             "config": {
               "subject": "{{problem}}: {{COALESCE(device.name, device_other)}}",
               "description": "Reported by: {{submitter.name}} ({{submitter.email}})\nDevice: {{COALESCE(device.name, device_other)}}\nProblem: {{problem}}\nHappened on: {{TEXT(happened_on, 'MMM d, yyyy')}}\nPick-up location: {{location.name}}\nLoaner needed: {{IF(needs_loaner, 'Yes', 'No')}}\n\n{{details}}",
               "priority": "2", "priorityFormula": "priority_level", "status": "2", "tags": "device-repair" } },
-          { "id": "is_lost", "type": "condition", "label": "Lost or stolen?", "x": 300, "y": 440, "config": { "expression": "problem == 'Lost or stolen'" } },
-          { "id": "lost_note", "type": "fs_add_note", "label": "Flag for security", "x": 60, "y": 580,
+          { "id": "is_lost", "type": "condition", "label": "Lost or stolen?", "x": 290, "y": 440, "config": { "expression": "problem == 'Lost or stolen'" } },
+          { "id": "lost_note", "type": "fs_add_note", "label": "Flag for security", "x": 30, "y": 580,
             "config": { "body": "Device reported lost or stolen. Police report filed: {{IF(police_report, 'Yes', 'No')}}. Lock the device in the management console.", "visibility": "private" } },
-          { "id": "done", "type": "end", "label": "Ticket opened", "x": 300, "y": 720 }
+          { "id": "done", "type": "end", "label": "Ticket opened", "x": 290, "y": 720 }
         ],
         "edges": [
           { "from": "start", "port": "next", "to": "urgency" },
@@ -159,11 +163,11 @@ public static class SeedData
       "form": { "fields": [] },
       "flow": {
         "nodes": [
-          { "id": "start", "type": "start", "label": "Ticket event received", "x": 300, "y": 40 },
-          { "id": "note", "type": "fs_add_note", "label": "Add escalation note", "x": 300, "y": 170,
+          { "id": "start", "type": "start", "label": "Ticket event received", "x": 150, "y": 40 },
+          { "id": "note", "type": "fs_add_note", "label": "Add escalation note", "x": 150, "y": 170,
             "config": { "body": "Urgent ticket received {{TEXT(NOW(), 'MMM d, h:mm tt')}}. Escalation workflow started.", "visibility": "private" } },
-          { "id": "wait", "type": "wait_ticket", "label": "Wait until resolved", "x": 300, "y": 310, "config": { "until": "ticket.status >= 4" } },
-          { "id": "done", "type": "end", "label": "Resolved", "x": 300, "y": 440 }
+          { "id": "wait", "type": "wait_ticket", "label": "Wait until resolved", "x": 150, "y": 310, "config": { "until": "ticket.status >= 4" } },
+          { "id": "done", "type": "end", "label": "Resolved", "x": 150, "y": 440 }
         ],
         "edges": [
           { "from": "start", "port": "next", "to": "note" },

@@ -52,6 +52,25 @@ else
         o => o.AccessDeniedPath = "/Account/Denied");
 }
 
+// API calls must get a status code, not a redirect to a sign-in or "no access" page.
+builder.Services.PostConfigure<CookieAuthenticationOptions>(CookieAuthenticationDefaults.AuthenticationScheme, o =>
+{
+    var toLogin = o.Events.OnRedirectToLogin;
+    var toDenied = o.Events.OnRedirectToAccessDenied;
+    o.Events.OnRedirectToLogin = context =>
+    {
+        if (!context.Request.Path.StartsWithSegments("/api")) return toLogin(context);
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        return Task.CompletedTask;
+    };
+    o.Events.OnRedirectToAccessDenied = context =>
+    {
+        if (!context.Request.Path.StartsWithSegments("/api")) return toDenied(context);
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        return Task.CompletedTask;
+    };
+});
+
 builder.Services.AddAuthorization(options =>
 {
     options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build();
@@ -118,6 +137,18 @@ app.Use(async (context, next) =>
 app.UseStaticFiles();
 app.UseRouting();
 app.UseAuthentication();
+// Signed-out API calls get a plain 401 whatever the sign-in scheme, never a redirect to a login page.
+// (The Freshservice webhook is the one anonymous API; it checks its own shared secret.)
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/api") && !context.Request.Path.StartsWithSegments("/api/webhooks")
+        && context.User.Identity?.IsAuthenticated != true)
+    {
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        return;
+    }
+    await next();
+});
 app.UseAuthorization();
 app.MapRazorPages();
 app.MapControllers();

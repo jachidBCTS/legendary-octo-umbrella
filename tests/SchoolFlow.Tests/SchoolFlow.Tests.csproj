@@ -14,5 +14,6 @@
   <ItemGroup>
     <Using Include="Xunit" />
     <ProjectReference Include="..\..\src\SchoolFlow.Core\SchoolFlow.Core.csproj" />
+    <ProjectReference Include="..\..\src\SchoolFlow.Web\SchoolFlow.Web.csproj" />
   </ItemGroup>
 </Project>

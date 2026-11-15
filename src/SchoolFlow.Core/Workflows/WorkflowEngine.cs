@@ -216,7 +216,7 @@ public sealed class WorkflowEngine
                 var source = node.Get("expression");
                 if (string.IsNullOrWhiteSpace(source)) throw new ExpressionException("This decision has no condition.");
                 var outcome = Values.ToBool(Formula.Evaluate(source, scope));
-                Log(state, node.Id, "info", $"{Name(node)}: {(outcome ? "Yes" : "No")}");
+                Log(state, node.Id, "info", $"{Name(node)}{(Name(node).TrimEnd().EndsWith('?') ? "" : ":")} {(outcome ? "Yes" : "No")}");
                 Follow(flow, state, node, outcome ? "true" : "false");
                 break;
             }

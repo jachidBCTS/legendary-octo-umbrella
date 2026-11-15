@@ -39,8 +39,8 @@ public class IndexModel : PageModel
             {
                 Nodes =
                 {
-                    new NodeDef { Id = "start", Type = NodeTypes.Start, Label = isTicket ? "Ticket event received" : "Form submitted", X = 320, Y = 40 },
-                    new NodeDef { Id = "end", Type = NodeTypes.End, Label = "Done", X = 320, Y = 320 },
+                    new NodeDef { Id = "start", Type = NodeTypes.Start, Label = isTicket ? "Ticket event received" : "Form submitted", X = 150, Y = 40 },
+                    new NodeDef { Id = "end", Type = NodeTypes.End, Label = "Done", X = 150, Y = 320 },
                 },
             },
         };
