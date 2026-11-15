@@ -482,3 +482,11 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# SchoolFlow: local data (SQLite file, sign-in keys) and real server settings
+App_Data/
+appsettings.Production.json
+*.db
+*.db-shm
+*.db-wal
+publish/

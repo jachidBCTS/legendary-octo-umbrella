@@ -54,6 +54,12 @@ Browser test: start the app in Development with `Freshservice__WebhookSecret=tes
 and a **new** SQLite file, then `node tests/e2e/smoke.js <output-dir>`. It assumes the seeded
 workflow IDs (1 Purchase, 2 Repair, 3 Escalate, 4 Field Trip) — keep `SeedData` order stable.
 
+CI (`.github/workflows/build.yml`) runs the tests on Windows, publishes the win-x64 package,
+starts it under real IIS on the runner and checks it responds. The owner deploys to **Windows IIS
+as its own site, SQL Server with Windows sign-in, internet-reachable** — see `docs/DEPLOY-IIS.md`.
+Keep that guide and the CI IIS job in step with any change to start-up, configuration or files
+written at run time (`App_Data` holds the SQLite file and the data-protection keys).
+
 ## How the pieces fit
 
 - **Definition JSON** (`WorkflowDefinition`): `trigger`, `form.fields[]`, `flow.nodes[]/edges[]`.
@@ -128,7 +134,9 @@ Waiting on the owner:
 
 Known gaps (not requested yet, worth raising):
 
-- No rate limiting on the webhook or APIs.
+- The webhook is rate-limited (300/min per address); the signed-in APIs are not.
+- The app is written for the root of a host name (absolute `/...` links in pages and scripts). It
+  does not support running as a sub-folder application; the owner chose its own site.
 - Any signed-in person can use lookups, including the Freshservice people search; if students
   will sign in, restrict sign-in to staff in Entra or add a role check.
 - No reminders/escalation for approvals that sit unanswered; no delegation when an approver is away.

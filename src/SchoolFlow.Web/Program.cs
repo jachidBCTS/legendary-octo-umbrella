@@ -1,4 +1,6 @@
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
@@ -11,7 +13,19 @@ var builder = WebApplication.CreateBuilder(args);
 var config = builder.Configuration;
 
 // ---- Database ---------------------------------------------------------------------------
-builder.Services.AddSchoolFlowDatabase(config);
+builder.Services.AddSchoolFlowDatabase(config, builder.Environment.ContentRootPath);
+
+// ---- Sign-in cookie and form-token keys --------------------------------------------------
+// Kept on disk so that an IIS app-pool recycle or a server restart does not sign everyone out or
+// invalidate the forms they have open. (By default IIS app pools have nowhere to keep them.)
+var keysPath = config["DataProtection:KeysPath"];
+if (string.IsNullOrWhiteSpace(keysPath)) keysPath = Path.Combine(builder.Environment.ContentRootPath, "App_Data", "keys");
+Directory.CreateDirectory(keysPath);
+var dataProtection = builder.Services.AddDataProtection()
+    .SetApplicationName("SchoolFlow")
+    .PersistKeysToFileSystem(new DirectoryInfo(keysPath));
+// On Windows, encrypt the key files so they are only usable on this server.
+if (OperatingSystem.IsWindows()) dataProtection.ProtectKeysWithDpapi(protectToLocalMachine: true);
 
 // ---- Sign-in ----------------------------------------------------------------------------
 var authMode = config["Auth:Mode"] ?? "EntraId";
@@ -87,6 +101,16 @@ builder.Services.AddSingleton<IEmailSender>(_ => new GraphEmailSender(new HttpCl
 builder.Services.AddScoped<NotificationService>();
 builder.Services.AddHostedService<EmailOutboxWorker>();
 
+// The Freshservice webhook is the one address anyone on the internet can call without signing in;
+// cap how fast a single caller can hit it (this also slows guessing of the shared secret).
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("webhook", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 300, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+});
+
 builder.Services.AddScoped<RunService>();
 builder.Services.AddRazorPages(options =>
 {
@@ -129,6 +153,7 @@ app.Use(async (context, next) =>
 });
 app.UseStaticFiles();
 app.UseRouting();
+app.UseRateLimiter();
 app.UseAuthentication();
 // Signed-out API calls get a plain 401 whatever the sign-in scheme, never a redirect to a login page.
 // (The Freshservice webhook is the one anonymous API; it checks its own shared secret.)

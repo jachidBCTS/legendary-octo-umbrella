@@ -17,4 +17,10 @@
   <ItemGroup>
     <ProjectReference Include="..\SchoolFlow.Core\SchoolFlow.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Development-only settings (the pick-an-identity sign-in) must never reach a server. -->
+    <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
+    <!-- A real server's settings are created on the server, not shipped from a developer's machine. -->
+    <Content Update="appsettings.Production.json" CopyToPublishDirectory="Never" />
+  </ItemGroup>
 </Project>

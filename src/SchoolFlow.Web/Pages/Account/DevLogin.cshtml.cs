@@ -28,7 +28,14 @@ public class DevLoginModel : PageModel
 
     public string ReturnUrl { get; private set; } = "/";
 
-    private bool Enabled => _env.IsDevelopment() && string.Equals(_config["Auth:Mode"], "Dev", StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// Development mode only, and only for a browser on the same machine. The second check means that
+    /// even a server wrongly switched to Development never offers this page to the network.
+    /// </summary>
+    private bool Enabled =>
+        _env.IsDevelopment() && string.Equals(_config["Auth:Mode"], "Dev", StringComparison.OrdinalIgnoreCase)
+        && HttpContext.Connection.RemoteIpAddress is { } remote
+        && (System.Net.IPAddress.IsLoopback(remote) || remote.Equals(HttpContext.Connection.LocalIpAddress));
 
     public IActionResult OnGet(string? returnUrl)
     {

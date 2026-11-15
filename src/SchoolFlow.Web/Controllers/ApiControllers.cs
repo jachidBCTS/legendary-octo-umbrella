@@ -363,6 +363,7 @@ public sealed class WebhookController : ControllerBase
 
     [HttpPost("freshservice")]
     [RequestSizeLimit(256_000)]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("webhook")]
     public async Task<IActionResult> Freshservice([FromBody] JsonElement body, CancellationToken ct)
     {
         var secret = _config["Freshservice:WebhookSecret"];

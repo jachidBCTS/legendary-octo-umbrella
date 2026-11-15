@@ -8,7 +8,8 @@ namespace SchoolFlow.Web.Data;
 /// <summary>Registers the right context for the configured engine and brings the schema up to date at startup.</summary>
 public static class DatabaseSetup
 {
-    public static void AddSchoolFlowDatabase(this IServiceCollection services, IConfiguration config)
+    /// <param name="contentRoot">The site's folder; the default SQLite file lives in its App_Data sub-folder.</param>
+    public static void AddSchoolFlowDatabase(this IServiceCollection services, IConfiguration config, string contentRoot)
     {
         var provider = config["Database:Provider"] ?? "Sqlite";
         var connectionString = config["Database:ConnectionString"];
@@ -16,12 +17,20 @@ public static class DatabaseSetup
         {
             if (string.IsNullOrWhiteSpace(connectionString))
                 throw new InvalidOperationException("Database:ConnectionString is required when Database:Provider is SqlServer.");
-            services.AddDbContext<AppDbContext, SqlServerAppDbContext>(o => o.UseSqlServer(connectionString));
+            // Retry brief outages (a failover, a dropped connection) instead of failing the request.
+            services.AddDbContext<AppDbContext, SqlServerAppDbContext>(o =>
+                o.UseSqlServer(connectionString, sql => sql.EnableRetryOnFailure(maxRetryCount: 3)));
         }
         else if (provider.Equals("Sqlite", StringComparison.OrdinalIgnoreCase))
         {
-            services.AddDbContext<AppDbContext, SqliteAppDbContext>(o =>
-                o.UseSqlite(string.IsNullOrWhiteSpace(connectionString) ? "Data Source=schoolflow.db" : connectionString));
+            if (string.IsNullOrWhiteSpace(connectionString))
+            {
+                // An absolute path: under IIS the process's working folder is not the site's folder.
+                var folder = Path.Combine(contentRoot, "App_Data");
+                Directory.CreateDirectory(folder);
+                connectionString = "Data Source=" + Path.Combine(folder, "schoolflow.db");
+            }
+            services.AddDbContext<AppDbContext, SqliteAppDbContext>(o => o.UseSqlite(connectionString));
         }
         else
         {

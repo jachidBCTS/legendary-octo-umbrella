@@ -1,0 +1,162 @@
+name: Build, test and package
+
+# Builds and tests on Windows (the deployment target), checks that the packaged site really starts
+# under IIS, and attaches the package to the run so it can be downloaded and copied to the server.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Test and package (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Test
+        run: dotnet test -c Release --nologo
+
+      - name: Publish for Windows / IIS
+        run: dotnet publish src/SchoolFlow.Web -c Release -r win-x64 --self-contained false -o publish --nologo
+
+      - name: Check the package contents
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($f in 'web.config', 'SchoolFlow.Web.exe', 'SchoolFlow.Web.dll', 'appsettings.json',
+                         'appsettings.Production.example.json', 'wwwroot/css/app.css', 'wwwroot/js/builder.js') {
+            if (-not (Test-Path "publish/$f")) { throw "Missing from the package: $f" }
+          }
+          foreach ($f in 'appsettings.Development.json', 'appsettings.Production.json') {
+            if (Test-Path "publish/$f") { throw "Must not be in the package: $f" }
+          }
+          if ((Get-Content publish/web.config -Raw) -notmatch 'hostingModel="inprocess"') { throw 'web.config is not set up for in-process IIS hosting' }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SchoolFlow-windows
+          path: publish
+          if-no-files-found: error
+          retention-days: 30
+
+  iis:
+    name: Start the package under IIS
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 25
+    # Windows PowerShell (5.1) is used here because the IIS administration module is built for it.
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: SchoolFlow-windows
+          path: C:\inetpub\SchoolFlow
+
+      - name: Install IIS and the .NET 8 Hosting Bundle
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Enable-WindowsOptionalFeature -Online -All -NoRestart -FeatureName IIS-WebServerRole, IIS-WebServer, IIS-ApplicationInit, IIS-ManagementScriptingTools | Out-Null
+          Invoke-WebRequest https://aka.ms/dotnet/8.0/dotnet-hosting-win.exe -OutFile "$env:RUNNER_TEMP\hosting.exe"
+          $p = Start-Process "$env:RUNNER_TEMP\hosting.exe" -ArgumentList '/install', '/quiet', '/norestart' -Wait -PassThru
+          if ($p.ExitCode -notin 0, 3010) { throw "Hosting Bundle install failed with exit code $($p.ExitCode)" }
+          net stop was /y | Out-Null
+          net start w3svc | Out-Null
+
+      - name: Create the site the way the deployment guide says
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $site = 'C:\inetpub\SchoolFlow'
+          New-Item -ItemType Directory -Force "$site\App_Data" | Out-Null
+          # Placeholder sign-in settings and the default SQLite file: enough to start, with no real services.
+          @{
+            Auth = @{ Mode = 'EntraId'; Admins = @('admin@example.org') }
+            AzureAd = @{ Instance = 'https://login.microsoftonline.com/'; TenantId = '11111111-1111-1111-1111-111111111111'
+                         ClientId = '22222222-2222-2222-2222-222222222222'; ClientSecret = 'placeholder'; CallbackPath = '/signin-oidc' }
+            Freshservice = @{ WebhookSecret = 'ci-webhook-secret-1234567890' }
+          } | ConvertTo-Json -Depth 5 | Set-Content "$site\appsettings.Production.json" -Encoding utf8
+
+          Import-Module WebAdministration
+          New-WebAppPool -Name SchoolFlow | Out-Null
+          Set-ItemProperty IIS:\AppPools\SchoolFlow -Name managedRuntimeVersion -Value ''
+          New-Website -Name SchoolFlow -Port 8085 -PhysicalPath $site -ApplicationPool SchoolFlow | Out-Null
+          icacls $site /grant 'IIS AppPool\SchoolFlow:(OI)(CI)RX' | Out-Null
+          icacls "$site\App_Data" /grant 'IIS AppPool\SchoolFlow:(OI)(CI)M' | Out-Null
+          Start-Website -Name SchoolFlow
+
+      - name: Check the site answers
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = 'http://localhost:8085'
+          $ok = $false
+          foreach ($i in 1..30) {
+            try {
+              $r = Invoke-WebRequest "$base/healthz" -UseBasicParsing -TimeoutSec 10
+              if ($r.StatusCode -eq 200 -and $r.Content -eq 'ok') { $ok = $true; break }
+            } catch { Start-Sleep -Seconds 2 }
+          }
+          if (-not $ok) { throw 'The site did not answer /healthz under IIS' }
+          Write-Host 'healthz: ok'
+
+          function Status($url, $method = 'GET', $headers = @{}, $body = $null) {
+            try {
+              $request = @{ Uri = $url; Method = $method; Headers = $headers; UseBasicParsing = $true; TimeoutSec = 20; ErrorAction = 'Stop' }
+              if ($body) { $request.Body = $body; $request.ContentType = 'application/json' }
+              return [int](Invoke-WebRequest @request).StatusCode
+            } catch {
+              if ($_.Exception.Response) { return [int]$_.Exception.Response.StatusCode }
+              throw
+            }
+          }
+          $checks = @(
+            @{ Name = 'static files are served';                 Got = (Status "$base/css/app.css");                         Want = 200 },
+            @{ Name = 'signed-out API call is refused';          Got = (Status "$base/api/lookup?source=groups");            Want = 401 },
+            @{ Name = 'development sign-in page does not exist';  Got = (Status "$base/Account/DevLogin");                    Want = 404 },
+            @{ Name = 'webhook refuses a wrong secret';           Got = (Status "$base/api/webhooks/freshservice" 'POST' @{ 'X-SchoolFlow-Secret' = 'wrong' } '{}'); Want = 401 },
+            @{ Name = 'webhook accepts the right secret (database works)'; Got = (Status "$base/api/webhooks/freshservice" 'POST' @{ 'X-SchoolFlow-Secret' = 'ci-webhook-secret-1234567890' } '{"ticket":{"id":5}}'); Want = 200 }
+          )
+          $failed = $false
+          foreach ($c in $checks) {
+            $pass = $c.Got -eq $c.Want
+            Write-Host ("{0}  {1} (got {2}, want {3})" -f ($(if ($pass) { 'ok  ' } else { 'FAIL' }), $c.Name, $c.Got, $c.Want))
+            if (-not $pass) { $failed = $true }
+          }
+
+          $site = 'C:\inetpub\SchoolFlow'
+          if (-not (Test-Path "$site\App_Data\schoolflow.db")) { Write-Host 'FAIL  database file was not created in App_Data'; $failed = $true } else { Write-Host 'ok    database created by migrations in App_Data' }
+          if (-not (Get-ChildItem "$site\App_Data\keys" -Filter *.xml -ErrorAction SilentlyContinue)) { Write-Host 'FAIL  sign-in keys were not saved to App_Data\keys'; $failed = $true } else { Write-Host 'ok    sign-in keys saved to App_Data\keys' }
+
+          # Keys must survive an app-pool recycle (otherwise everyone is signed out on every restart).
+          $before = (Get-ChildItem "$site\App_Data\keys" -Filter *.xml).Name -join ','
+          Restart-WebAppPool SchoolFlow
+          Start-Sleep -Seconds 3
+          if ((Status "$base/healthz") -ne 200) { Write-Host 'FAIL  site did not come back after an app-pool recycle'; $failed = $true }
+          $after = (Get-ChildItem "$site\App_Data\keys" -Filter *.xml).Name -join ','
+          if ($before -ne $after) { Write-Host "FAIL  keys changed across a recycle ($before -> $after)"; $failed = $true } else { Write-Host 'ok    same keys after an app-pool recycle' }
+
+          if ($failed) { throw 'One or more IIS checks failed' }
+
+      - name: Show diagnostics if anything failed
+        if: failure()
+        shell: powershell
+        run: |
+          Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = (Get-Date).AddMinutes(-20) } -ErrorAction SilentlyContinue |
+            Where-Object { $_.ProviderName -match 'IIS|ASP|\.NET' } | Select-Object -First 15 |
+            ForEach-Object { Write-Host "[$($_.ProviderName)] $($_.Message)"; Write-Host '---' }
+          Get-ChildItem C:\inetpub\SchoolFlow -ErrorAction SilentlyContinue | Select-Object -First 40 Name

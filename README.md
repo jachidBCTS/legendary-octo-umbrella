@@ -53,7 +53,7 @@ dotnet run --project src/SchoolFlow.Web
 ```
 
 Open http://localhost:5080. In Development mode you get a sign-in screen with sample people
-(an admin, a teacher, a principal), a local SQLite database (`schoolflow.db`), three example
+(an admin, a teacher, a principal), a local SQLite database (`App_Data/schoolflow.db`), four example
 workflows, and a **simulated** Freshservice — tickets get pretend numbers and nothing is sent.
 
 ```
@@ -177,8 +177,15 @@ The database schema is managed with Entity Framework migrations, one set per eng
   caught before it ships.
 - A database created by a development build from before migrations existed is refused at start-up
   with instructions (delete it or point at a new one); nothing is changed in it.
+- With no connection string, SQLite uses `App_Data/schoolflow.db` inside the site folder. The same
+  `App_Data` folder holds the sign-in keys (`App_Data/keys`); keep it across upgrades and never
+  publish it.
 
 ### Deploying to IIS
+
+**Follow [docs/DEPLOY-IIS.md](docs/DEPLOY-IIS.md)** — the full step-by-step for the first deployment
+(IIS site, SQL Server with Windows sign-in, Entra app registration, settings file, first-start
+checks), upgrades and troubleshooting. In short:
 
 1. Install the [.NET 8 Hosting Bundle](https://dotnet.microsoft.com/download/dotnet/8.0) on the server.
 2. `dotnet publish src/SchoolFlow.Web -c Release -o publish` and copy `publish` to the server.
@@ -187,6 +194,12 @@ The database schema is managed with Entity Framework migrations, one set per eng
 5. For SQLite, give the app pool identity write access to the database folder and set an absolute
    path in `Database:ConnectionString` (e.g. `Data Source=D:\Data\schoolflow.db`). For more than a
    handful of simultaneous users, use SQL Server.
+
+### Automated checks
+
+`.github/workflows/build.yml` runs on every pull request and on `main`: it runs the tests on Windows,
+builds the IIS package, installs IIS on the build machine, starts the package there as a real site
+and checks it answers, then attaches the package (**SchoolFlow-windows**) to the run for download.
 
 ## Project layout
 

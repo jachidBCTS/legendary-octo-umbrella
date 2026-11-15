@@ -1,0 +1,206 @@
+# Deploying SchoolFlow to Windows IIS
+
+This is the step-by-step for a first deployment and for later upgrades. It assumes what was agreed:
+
+- SchoolFlow is **its own IIS site with its own host name** (for example `https://schoolflow.yourschool.org`).
+  It does not work as a sub-folder of another site.
+- The database is **your SQL Server, using Windows sign-in** (no database password stored anywhere).
+- The server is **reachable from the internet**, so Freshservice can send ticket events to it.
+
+Replace `schoolflow.yourschool.org`, `YOUR-SQL-SERVER` and `YOURDOMAIN` with your own values throughout.
+
+> **What has and has not been tested.** The Windows package is built and its tests run on Windows by
+> the automated check in this repository (see *Getting the package*), including starting the site under
+> IIS and loading a page. Sign-in against your Microsoft tenant, your SQL Server, your Freshservice
+> account and email can only be tested on your server — the *First start* section walks through each.
+> Do the first deployment at a quiet time and work through that section before telling staff.
+
+## 1. What you need before you start
+
+| Item | Notes |
+| --- | --- |
+| Windows Server 2016 or later with IIS | The Web Server (IIS) role installed |
+| **.NET 8 Hosting Bundle** | Download "Hosting Bundle" from <https://dotnet.microsoft.com/download/dotnet/8.0> and install it **after** IIS. Then run `iisreset` (or restart the server). This is what lets IIS run the site |
+| A host name and DNS record | `schoolflow.yourschool.org` pointing at the server |
+| A TLS certificate for that host name | **Required.** Microsoft sign-in will not work over plain http |
+| An empty SQL Server database | Created by your DBA (section 3) |
+| A Microsoft Entra app registration | Section 5 |
+| A Freshservice API key | From a dedicated Freshservice agent account |
+| Outbound internet from the server (port 443) | To `login.microsoftonline.com`, `graph.microsoft.com` and `yourschool.freshservice.com` |
+| Inbound 443 from the internet | For staff off-site and for the Freshservice webhook |
+
+## 2. Getting the package
+
+The simplest way, with nothing to install: open the repository on GitHub → **Actions** → the latest
+successful **Build, test and package** run → download the **SchoolFlow-windows** artifact. It is a zip
+of exactly the files to put on the server.
+
+Or build it yourself on any machine with the .NET 8 SDK:
+
+```
+dotnet publish src/SchoolFlow.Web -c Release -r win-x64 --self-contained false -o publish
+```
+
+## 3. Database (for your DBA)
+
+Create an empty database and give the site's Windows account rights to it. SchoolFlow creates and
+upgrades its own tables on start-up, so the account needs `db_owner` **on this one database only**.
+
+```sql
+CREATE DATABASE SchoolFlow;
+GO
+CREATE LOGIN [YOURDOMAIN\svc-schoolflow] FROM WINDOWS;   -- see "Which account?" below
+GO
+USE SchoolFlow;
+CREATE USER [YOURDOMAIN\svc-schoolflow] FOR LOGIN [YOURDOMAIN\svc-schoolflow];
+ALTER ROLE db_owner ADD MEMBER [YOURDOMAIN\svc-schoolflow];
+GO
+```
+
+**Which account?** It is whatever identity the IIS app pool runs as (section 4):
+
+| App pool identity | SQL login to create |
+| --- | --- |
+| A domain service account, e.g. `YOURDOMAIN\svc-schoolflow` (**recommended**) | That account |
+| The default `ApplicationPoolIdentity`, SQL Server on a **different** machine | The web server's computer account: `YOURDOMAIN\WEBSERVERNAME$` |
+| The default `ApplicationPoolIdentity`, SQL Server on the **same** machine | `IIS APPPOOL\SchoolFlow` |
+
+If your DBA would rather not give the site `db_owner`: they can apply the schema themselves from a
+script (see *Database and upgrades* in the README) and grant only `db_datareader` and `db_datawriter`.
+They must then re-run the script for every upgrade **before** the new version is started.
+
+Add this database to your normal SQL Server backups.
+
+## 4. IIS site
+
+1. **Folder.** Create `C:\inetpub\SchoolFlow` and unzip the package into it. You should see
+   `SchoolFlow.Web.exe`, `web.config` and a `wwwroot` folder directly inside.
+2. **Data folder.** Create `C:\inetpub\SchoolFlow\App_Data`. SchoolFlow keeps its sign-in keys here.
+3. **App pool.** IIS Manager → Application Pools → Add: name `SchoolFlow`, .NET CLR version
+   **No Managed Code**. Then in its **Advanced Settings**:
+   - *Identity*: your service account (recommended), or leave as `ApplicationPoolIdentity`.
+   - *Start Mode*: `AlwaysRunning`
+   - *Idle Time-out (minutes)*: `0`
+
+   The last two keep the site awake. If the pool is allowed to go idle, queued notification emails
+   wait until the next person opens the site.
+4. **Site.** Sites → Add Website: name `SchoolFlow`, application pool `SchoolFlow`, physical path
+   `C:\inetpub\SchoolFlow`, binding **https**, port 443, host name `schoolflow.yourschool.org`, your
+   certificate, *Require Server Name Indication* ticked if the server hosts other sites.
+   Optionally add an http (port 80) binding for the same host name; SchoolFlow redirects it to https.
+5. **Permissions.** The app pool's account needs **Read** on `C:\inetpub\SchoolFlow` and **Modify** on
+   `C:\inetpub\SchoolFlow\App_Data`. From an administrator PowerShell (use your service account's
+   name instead if you set one):
+
+   ```powershell
+   icacls C:\inetpub\SchoolFlow /grant "IIS AppPool\SchoolFlow:(OI)(CI)RX"
+   icacls C:\inetpub\SchoolFlow\App_Data /grant "IIS AppPool\SchoolFlow:(OI)(CI)M"
+   ```
+
+## 5. Microsoft Entra app registration (sign-in)
+
+In the Entra admin center → App registrations → New registration:
+
+1. Name `SchoolFlow`; *Accounts in this organizational directory only*.
+2. Redirect URI, platform **Web**: `https://schoolflow.yourschool.org/signin-oidc`
+3. After creating it: **Authentication** → Front-channel logout URL:
+   `https://schoolflow.yourschool.org/signout-callback-oidc`
+4. **Certificates & secrets** → New client secret. Copy the secret **Value** now (it is shown once).
+   Put a reminder in your calendar before it expires — sign-in stops working when it does.
+5. From **Overview**, note the *Application (client) ID* and *Directory (tenant) ID*.
+6. To limit who can sign in (for example staff only): Enterprise applications → SchoolFlow →
+   Properties → *Assignment required* = Yes, then assign the right groups. Without this, every
+   account in your tenant can sign in, submit forms and use the people lookup.
+
+## 6. Settings file
+
+On the server, copy `appsettings.Production.example.json` (in the package) to
+**`appsettings.Production.json`** in the same folder and fill it in:
+
+- `Auth:Admins` — your own email, so you are an admin the first time you sign in.
+- `AzureAd` — the tenant ID, client ID and client secret from section 5.
+- `Database:ConnectionString` — replace `YOUR-SQL-SERVER`. Leave `Integrated Security=True`.
+  `TrustServerCertificate=True` is needed when the SQL Server uses its default self-issued
+  certificate; your DBA can tell you if it has a proper one, in which case remove that part.
+- `Freshservice` — your domain, the API key, and a webhook secret you make up (16+ characters).
+  Leaving `Domain` or `ApiKey` empty runs the site in simulation mode, which is a safe way to do
+  the very first start.
+- `Email` — leave `Mode` as `Off` until sign-in works; see the README to turn it on.
+
+This file contains secrets. Restrict it to administrators and the app pool account:
+
+```powershell
+icacls C:\inetpub\SchoolFlow\appsettings.Production.json /inheritance:r /grant "Administrators:F" "SYSTEM:F" "IIS AppPool\SchoolFlow:R"
+```
+
+## 7. First start — check each of these in order
+
+1. **Start the site** (IIS Manager → SchoolFlow → Start). Browse to
+   `https://schoolflow.yourschool.org/healthz` — it should show `ok`. If you get an error page
+   instead, go to *Troubleshooting*.
+2. **Database.** Ask your DBA to confirm the `SchoolFlow` database now has tables (`Workflows`,
+   `Runs`, …). They are created on that first start.
+3. **Sign in.** Browse to the site; you should be sent to Microsoft and back, and see the home page
+   with the starter workflows. You should see *Build* and *Admin* in the menu (you are in `Auth:Admins`).
+4. **Restart survives.** Recycle the app pool, refresh the page: you should still be signed in.
+5. **Freshservice.** Admin → Settings → *Test connection*. Then Admin → Locations → *Sync from
+   Freshservice*.
+6. **A real request.** Submit the Device Repair form as yourself and check that a ticket appears in
+   Freshservice. Close or delete that ticket afterwards.
+7. **Departments.** Admin → Departments: add your departments and their final approvers before staff
+   use any form with a Department field.
+8. **Webhook.** Admin → Settings shows the exact URL, header and body to enter in Freshservice's
+   Workflow Automator. Trigger it once and check it appears under *Recent events* on that page.
+9. **Email**, when you are ready: follow *Email through Microsoft 365* in the README, then
+   Admin → Settings → *Send me a test email*.
+10. Review the starter workflows (Builder → Workflows). Switch off or delete the ones you do not want
+    staff to see.
+
+## 8. Upgrading to a new version
+
+1. **Back up the database** (and keep a copy of the current site folder).
+2. Put a file named `app_offline.htm` in the site folder. IIS stops the site and shows that file's
+   contents to visitors, which releases the locked files.
+3. Copy the new package over the old files. **Do not delete or overwrite** `App_Data` or
+   `appsettings.Production.json` — neither is in the package, so a normal copy leaves them alone.
+4. Delete `app_offline.htm`. The site starts, upgrades the database if needed, and is back.
+5. Check `/healthz` and sign in.
+
+To go back: stop the site, restore the database backup and the old folder, start it.
+
+## 9. Troubleshooting
+
+Errors and warnings are written to the Windows **Event Viewer → Windows Logs → Application**
+(sources *IIS AspNetCore Module V2* and *.NET Runtime*). For a start-up failure you can also turn on
+a log file: in `web.config` set `stdoutLogEnabled="true"`, create a `logs` folder in the site folder
+and give the app pool account Modify on it, restart the site, read the file, then turn it off again.
+
+| What you see | Likely cause |
+| --- | --- |
+| **HTTP 500.19** | The Hosting Bundle is not installed, or was installed before IIS. Install/repair it and run `iisreset` |
+| **HTTP 500.31 / 500.32** | The .NET 8 runtime is missing or the wrong bitness. Install the Hosting Bundle |
+| **HTTP 500.30** (app failed to start) | Read the Event Viewer entry — it names the cause. The usual ones are the next three rows |
+| "Microsoft Entra ID sign-in is not configured" | `appsettings.Production.json` is missing, misnamed (check for `.json.txt`) or has no tenant/client ID |
+| "Login failed for user …" | The app pool account has no SQL login/user. The name in the message is the account to grant (section 3) |
+| "certificate chain was issued by an authority that is not trusted" | Add `TrustServerCertificate=True` to the connection string |
+| "Access to the path … App_Data … is denied" | The app pool account lacks Modify on `App_Data` (section 4, step 5) |
+| "This database was created by an early development build…" | The database already has SchoolFlow tables from a pre-release build. Point at a new empty database |
+| Microsoft shows **AADSTS50011** (redirect URI mismatch) | The redirect URI in the app registration must match the site's address exactly, including `https` |
+| Microsoft shows **AADSTS7000215 / 7000222** | The client secret is wrong or has expired. Create a new one and update the settings file |
+| Sign-in loops, or "Correlation failed" | The site is being reached over http, or through a proxy that strips https. Use the https address |
+| Everyone is signed out whenever the site restarts | `App_Data\keys` is not writable, so keys cannot be saved |
+| Pages load but have no styling | The `wwwroot` folder was not copied |
+| Webhook from Freshservice gets **401** | The `X-SchoolFlow-Secret` header does not match `Freshservice:WebhookSecret` |
+| Webhook gets **503** | `Freshservice:WebhookSecret` is empty or shorter than 16 characters |
+| Webhook gets **429** | More than 300 calls a minute from one address; Freshservice retries on its own |
+
+## 10. Because this server faces the internet
+
+- Keep Windows, IIS and the .NET Hosting Bundle patched. .NET security updates arrive monthly.
+- Only ports 443 (and 80 for the redirect) need to be open inbound.
+- Sign-in is entirely through Microsoft, so your tenant's MFA and conditional access apply.
+  SchoolFlow stores no passwords.
+- The only address that works without signing in is the Freshservice webhook
+  (`/api/webhooks/freshservice`), which requires the shared secret and is rate-limited, plus
+  `/healthz`, which reveals nothing.
+- Never set `ASPNETCORE_ENVIRONMENT` to `Development` on this server.
