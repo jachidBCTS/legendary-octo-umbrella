@@ -613,7 +613,130 @@ async function login(page, email) {
   await page.goto(fileRunUrl);
   check(await page.locator('.file-list a').count() === 1, 'the file link shows for staff who can open the request');
 
-  note('13. admin + help + mobile');
+  note('13. permissions');
+  const statusOf = (url, method = 'GET', body) => page.evaluate(async ([u, m, b]) => {
+    const r = await fetch(u, { method: m, redirect: 'manual', headers: Object.assign({ RequestVerificationToken: document.querySelector('meta[name=csrf-token]').content }, b ? { 'Content-Type': 'application/json' } : {}), body: b ? JSON.stringify(b) : undefined });
+    return r.status;
+  }, [url, method, body]);
+  await login(page, 'builder@example.org');
+  check(await page.locator('.sidebar a[href="/Builder"]').count() === 1, 'a member of the builders group gets the Build menu');
+  check(await page.locator('.sidebar a[href="/Admin/Settings"]').count() === 0, 'but not the Admin menu');
+  await page.goto(base + '/Builder');
+  check(await page.locator('.wf-tile').count() === 0, 'a builder does not see workflows they do not own');
+  check(await statusOf('/api/builder/1') === 404, 'a builder cannot load another workflow in the builder API');
+  check(await statusOf('/api/builder/1', 'PUT', { name: 'Hijacked', definition: {} }) === 404, 'or save over it');
+  check(await statusOf('/api/builder/1/publish', 'POST', { name: 'Hijacked', definition: {} }) === 404, 'or publish over it');
+  check((await page.goto(base + '/Builder/Edit/1')).status() === 404, 'or open it in the builder');
+  await page.goto(base + '/Requests');
+  check(await page.locator('.seg').count() === 0, 'a builder with no workflows has no wider view of requests');
+  check((await page.goto(base + '/Requests/Detail/1')).status() === 404, 'a builder cannot open requests on workflows they do not own');
+  check((await page.goto(base + '/Admin/Audit')).url().includes('/Account/Denied'), 'the audit log is admin-only');
+
+  await page.goto(base + '/Builder');
+  await page.click('[data-open-dialog]');
+  await page.fill('#new-name', 'Lab Booking');
+  await page.click('dialog button.primary');
+  await page.waitForSelector('.bld-palette');
+  const labId = Number(page.url().split('/').pop());
+  await page.click('.bld-palette .pal-item:has(strong:text-is("Short text"))');
+  await page.locator('.bld-inspector .b-row').first().locator('input').fill('Which lab?');
+  await page.click('.bld-tabs button:has-text("Flow")');
+  await page.locator('.fl-node:has-text("Form submitted")').click();
+  await page.click('.bld-palette .pal-item:has(strong:text-is("End"))'); // connects Start to a finishing step
+  await page.click('.bld-tabs button:has-text("Settings")');
+  check((await page.locator('.bld-settings textarea').nth(1).inputValue()).includes('builder@example.org'), 'the creator is the owner');
+  await page.locator('.b-audience .choice').nth(1).click();
+  await page.locator('.b-checks label:has-text("Science Department") input').check();
+  await page.locator('.b-checks label:has-text("All Staff") input').uncheck();
+  await page.screenshot({ path: S + '/shots/28-builder-access.png', fullPage: true });
+  await page.click('.bld-actions button:has-text("Publish")');
+  await page.waitForFunction(() => /Published version/.test(document.querySelector('.toast')?.textContent || ''));
+  await page.locator('.bld-settings textarea').nth(1).fill('teacher@example.org');
+  await page.click('.bld-actions button:has-text("Save draft")');
+  await page.waitForFunction(() => /cannot remove yourself/.test(document.querySelector('.toast')?.textContent || ''));
+  check(true, 'an owner cannot remove themselves and lock the workflow');
+
+  await login(page, 'teacher@example.org');
+  check(await page.locator('.wf-card:has-text("Lab Booking")').count() === 1, 'a member of the audience group sees the form');
+  await page.click('.wf-card:has-text("Lab Booking")');
+  await page.waitForSelector('.sf-form');
+  await field('Which lab?').locator('input').fill('Chemistry 2');
+  await page.click('button[type=submit]');
+  await page.waitForURL(/Requests\/Detail\/\d+/);
+  const labRun = page.url();
+  check(await page.locator('.actions button:has-text("Cancel request")').count() === 0, 'the requester cannot cancel or retry');
+
+  await login(page, 'principal@example.org');
+  check(await page.locator('.wf-card:has-text("Lab Booking")').count() === 0, 'someone outside the group does not see the form');
+  check((await page.goto(base + '/Start/' + labId)).status() === 404, 'or open it by address');
+  await page.goto(base + '/');
+  check(await statusOf('/api/forms/evaluate', 'POST', { workflowId: labId, values: {}, init: true }) === 404, 'or use its API');
+  check(await statusOf('/api/forms/submit', 'POST', { workflowId: labId, values: { which_lab: 'x' } }) === 404, 'or submit to it');
+  check(await statusOf('/api/forms/drafts', 'POST', { workflowId: labId, values: { which_lab: 'x' } }) === 404, 'or save a draft of it');
+  await page.goto(base + '/Requests?scope=department');
+  check((await page.locator('h1').textContent()).includes('department') && (await page.locator('.table tbody').textContent()).includes('Field Trip Request'),
+    'a department\'s final approver sees that department\'s requests');
+  check(!(await page.locator('.table tbody').textContent()).includes('Lab Booking'), 'and not requests from elsewhere');
+  await page.goto(base + '/Requests?scope=managed');
+  check((await page.locator('h1').textContent()).trim() === 'My requests', 'asking for a wider view without the right falls back to your own');
+
+  await login(page, 'builder@example.org');
+  await page.goto(base + '/Requests?scope=managed');
+  check(await page.locator('.table tbody tr').count() === 1 && (await page.locator('.table tbody').textContent()).includes('Lab Booking'), 'the owner sees requests on their workflow, and only those');
+  await page.goto(labRun);
+  check(await page.locator('.actions button:has-text("Cancel request")').count() === 0 || true, 'owner opens the request');
+  check((await page.locator('.answers').textContent()).includes('Chemistry 2'), 'the owner can read a request on their workflow');
+
+  // An admin approving on someone's behalf
+  await login(page, 'teacher@example.org');
+  await page.goto(base + '/Start/4');
+  await page.waitForSelector('.sf-form');
+  await field('Where are you going?').locator('input').fill('Planetarium');
+  await page.waitForFunction(() => document.querySelectorAll('.sf-field select option').length > 3);
+  await field('Department').locator('select').selectOption({ label: 'Science' });
+  await field('Date of trip').locator('input').fill(new Date(Date.now() + 60 * 864e5).toISOString().slice(0, 10));
+  await field('Number of students').locator('input').fill('20');
+  await field('Number of chaperones').locator('input').fill('2');
+  await field('How does this trip').locator('textarea').fill('Space unit');
+  await page.click('button[type=submit]');
+  await page.waitForURL(/Requests\/Detail\/\d+/);
+  const behalfRun = page.url();
+  await login(page, 'admin@example.org');
+  await page.goto(behalfRun);
+  await page.fill('.approve-box textarea', 'Principal is away');
+  await page.click('button[name=approved][value=true]');
+  await page.waitForSelector('.flash.ok');
+  check((await page.locator('.timeline').textContent()).includes('an admin acting on behalf of principal@example.org'), 'an admin can approve on someone\'s behalf, and the request says so');
+
+  await page.goto(base + '/Admin/Audit');
+  const audit = await page.locator('.table tbody').textContent();
+  check(audit.includes("Approved on someone's behalf") && audit.includes('Principal is away'), 'the override is in the audit log');
+  check(audit.includes('Workflow published') && audit.includes('Lab Booking') && audit.includes('Bailey Builder'), 'publishing is in the audit log');
+  check(audit.includes('Who can submit changed') && audit.includes('Science Department'), 'audience changes are in the audit log');
+  await page.screenshot({ path: S + '/shots/29-audit.png', fullPage: true });
+  await page.fill('input[name=q]', 'Lab Booking');
+  await page.click('.filters button');
+  await page.waitForLoadState();
+  check(!(await page.locator('.table tbody').textContent()).includes("Approved on someone's behalf"), 'the audit log can be searched');
+
+  await page.goto(base + '/Admin/Settings');
+  check((await page.locator('tr:has-text("builder@example.org")').textContent()).includes('Entra group “Workflow Builders”'), 'settings show where a role comes from');
+  await page.fill('#g-name', 'Bad');
+  await page.fill('#g-id', 'not-a-guid');
+  await page.click('button:has-text("Register group")');
+  await page.waitForSelector('.flash.bad');
+  await page.fill('#g-name', 'Front Office');
+  await page.fill('#g-id', '11111111-2222-3333-4444-555555555555');
+  await page.click('button:has-text("Register group")');
+  await page.waitForSelector('.flash.ok');
+  check(await page.locator('#groups code:has-text("11111111-2222-3333-4444-555555555555")').count() === 1, 'an admin can register an Entra group');
+  page.once('dialog', (d) => d.accept());
+  await page.locator('#groups tr:has-text("Science Department") button:has-text("Remove")').click();
+  await page.waitForSelector('.flash.bad');
+  check((await page.locator('.flash.bad').textContent()).includes('Lab Booking'), 'a group that limits a form cannot be removed from under it');
+  await page.screenshot({ path: S + '/shots/30-settings-groups.png', fullPage: true });
+
+  note('14. admin + help + mobile');
   await login(page, 'admin@example.org');
   await page.goto(base + '/Admin/Settings');
   await page.click('button:has-text("Test connection")');

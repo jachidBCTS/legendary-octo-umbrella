@@ -25,6 +25,7 @@ front-end dependencies.
 | Locations | A locations table filled from Freshservice with one click (Admin → Locations → Sync), plus any you add by hand. Forms use it through a *Location* field |
 | Save and finish later | Every form has a *Save for later* button. The draft appears under *Your drafts* on the home page; once saved, further changes are saved automatically. Drafts are private to their owner and are removed when submitted |
 | Attachments | An *Attachments* field lets people upload files (PDF, images, Word, Excel, PowerPoint, text). Files are kept in a folder on the web server, shown on the request to the people allowed to see it, and can be attached to the Freshservice ticket a workflow creates |
+| Permissions | Roles from Microsoft Entra groups; each workflow has owners (who can edit it and see its requests) and an optional audience (which groups may submit it); department final approvers see their department's requests; an audit log records changes and admin overrides |
 | Running requests | Timeline of every step, approvals inbox, retry of failed steps, cancel |
 | Safety | Draft vs. published versions; a request always finishes on the version it started with; publishing is blocked while the checker finds problems |
 
@@ -97,8 +98,50 @@ Everyone in the tenant can sign in, submit forms and approve requests sent to th
 can sign in at all (for example staff only), turn on *Assignment required* for the enterprise
 application in Entra and assign the right groups.
 
-Roles are managed in **Admin → Settings**: *Staff* (default), *Builder* (create workflows, see all
-requests, retry/cancel) and *Admin* (settings and roles).
+Roles and permissions are described under [Permissions](#permissions) below.
+
+### Permissions
+
+**Roles**
+
+| Role | Can do |
+| --- | --- |
+| Staff (everyone who signs in) | Submit the forms open to them; see their own requests and drafts; approve what is sent to them; keep their own approval chains |
+| Builder | Also create workflows, and manage shared approval chain templates. A builder only sees and edits the workflows they **own** |
+| Admin | Everything, everywhere: all workflows and requests, departments, locations, groups, roles, settings, the audit log. Can approve or reject on behalf of the assigned approvers |
+
+A person's role is the **highest** of: the role set by hand under Admin → Settings; any registered
+Entra group they belong to; an Entra app role named `Admin` or `Builder`; and the `Auth:Admins`
+list in the server settings (a safety net so the first admin can always get in).
+
+**Entra groups.** Under **Admin → Settings → Microsoft Entra groups**, register each security group
+SchoolFlow should know about (a name, and the group's Object ID from Entra). A registered group can
+grant Builder or Admin to its members, and can be used to limit who may submit a form. For groups
+to reach SchoolFlow, switch on the groups claim once in the app registration: **Token configuration →
+Add groups claim → Security groups**, with *Group ID* for the ID token. Membership changes take
+effect the next time the person signs in. Someone in more than about 200 groups gets no group list
+from Entra at all; give those people an Entra app role instead.
+
+**Per workflow** (builder → Settings tab):
+
+- **Owners** — the people who can edit the workflow and see, retry and cancel all of its requests.
+  Whoever creates a workflow owns it. Existing workflows with no owners are managed by admins only.
+- **Who can submit it** — everyone, or only members of chosen registered groups. People outside
+  the audience do not see the form and cannot reach it by address. This applies as soon as it is
+  saved; it does not wait for Publish.
+
+**Who can see a request:** the person who submitted it; anyone asked to approve it; the owners of
+its workflow; the final approvers of the department it is filed under (they get a *My department*
+view on the Requests page); and admins. Attachments follow the same rule.
+
+**Audit log** (Admin → Audit log) records role changes, group registrations, workflow creation,
+publishing, deletion, owner and audience changes, final-approver changes, cancelled and retried
+requests, and every time an admin approves or rejects on someone's behalf (which is also written on
+the request's own timeline). Entries are never edited or removed by the app.
+
+**Staff only.** SchoolFlow lets in anyone your Entra app registration lets in. To keep students and
+others out, set *Assignment required* on the enterprise application and assign your staff group —
+see the deployment guide.
 
 ### Email through Microsoft 365
 

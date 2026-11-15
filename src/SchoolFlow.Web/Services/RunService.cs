@@ -159,6 +159,18 @@ public sealed class RunService
         comment = string.IsNullOrWhiteSpace(comment) ? null : comment.Trim();
         if (comment?.Length > 2000) comment = comment[..2000];
         var who = string.IsNullOrWhiteSpace(name) ? email : $"{name} ({email})";
+        // An admin deciding a step they were not asked to approve is allowed, but never invisible:
+        // the request's timeline says so and it goes in the audit log.
+        if (!task.IsAssignedTo(email))
+        {
+            who += ", an admin acting on behalf of " + string.Join(", ", task.AssigneeList);
+            _db.AuditEntries.Add(new AuditEntry
+            {
+                At = DateTime.UtcNow, ActorEmail = email, ActorName = name, Action = approved ? "approval.override-approved" : "approval.override-rejected",
+                Target = $"{run.WorkflowName} #{run.Id}",
+                Detail = $"Step “{task.Title}”, on behalf of {string.Join(", ", task.AssigneeList)}." + (comment is null ? "" : $" Comment: {comment}"),
+            });
+        }
 
         // "All must approve": collect approvals until everyone has; a rejection still ends it at once.
         // An admin who is not one of the approvers acts as an override and completes the step.

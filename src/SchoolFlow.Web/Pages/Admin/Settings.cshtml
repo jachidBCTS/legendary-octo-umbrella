@@ -86,20 +86,71 @@
     }
 </section>
 
+<section class="panel" id="groups">
+    <h2>Microsoft Entra groups</h2>
+    <p class="muted">Register the Entra security groups SchoolFlow should know about. A group can <strong>grant a role</strong> to its members,
+        and any registered group can be used to <strong>limit who may submit a form</strong> (set per workflow in the builder).
+        Membership is managed in Entra and picked up the next time each person signs in.</p>
+    @if (Model.Groups.Count > 0)
+    {
+        <div class="table-wrap"><table class="table stack">
+            <thead><tr><th>Group</th><th>Object ID</th><th>Grants role</th><th></th></tr></thead>
+            <tbody>
+            @foreach (var g in Model.Groups)
+            {
+                <tr>
+                    <td><strong>@g.Name</strong></td>
+                    <td data-label="Object ID"><code>@g.ObjectId</code></td>
+                    <td data-label="Grants role">
+                        <form method="post" asp-page-handler="Group" class="inline-form">
+                            <input type="hidden" name="id" value="@g.Id" /><input type="hidden" name="name" value="@g.Name" /><input type="hidden" name="objectId" value="@g.ObjectId" />
+                            <select name="role" data-autosubmit aria-label="Role granted by @g.Name">
+                                <option value="" selected="@(g.Role == "")">No role (audience only)</option>
+                                <option value="Builder" selected="@(g.Role == "Builder")">Builder</option>
+                                <option value="Admin" selected="@(g.Role == "Admin")">Admin</option>
+                            </select>
+                        </form>
+                    </td>
+                    <td><form method="post" asp-page-handler="RemoveGroup" data-confirm="Remove “@g.Name”? Its members lose any role it grants the next time they open a page.">
+                        <input type="hidden" name="id" value="@g.Id" /><button class="btn small ghost-danger">Remove</button></form></td>
+                </tr>
+            }
+            </tbody>
+        </table></div>
+    }
+    <h3>Register a group</h3>
+    <form method="post" asp-page-handler="Group" class="dept-form">
+        <div><label class="lbl" for="g-name">Name</label><input id="g-name" name="name" required maxlength="200" placeholder="e.g. All Staff" /></div>
+        <div><label class="lbl" for="g-id">Object ID (from Entra)</label><input id="g-id" name="objectId" required placeholder="1a2b3c4d-1111-2222-3333-1a2b3c4d5e6f" spellcheck="false" /></div>
+        <div><label class="lbl" for="g-role">Grants role</label>
+            <select id="g-role" name="role"><option value="">No role (audience only)</option><option value="Builder">Builder</option><option value="Admin">Admin</option></select></div>
+        <div class="dept-save"><button class="btn primary">Register group</button></div>
+    </form>
+    <p class="muted small">Find the Object ID in the Entra admin center: Groups → the group → Overview. Groups only reach SchoolFlow if the app registration's
+        <em>Token configuration</em> has the <em>groups</em> claim switched on (Security groups, Group ID) — see the deployment guide.</p>
+</section>
+
 <section class="panel">
     <h2>People and roles</h2>
-    <p class="muted">Everyone who signs in can submit forms and approve requests sent to them. <strong>Builders</strong> can also create workflows and see all requests.
-        <strong>Admins</strong> can also change these settings. People appear here after their first sign-in.</p>
+    <p class="muted">Everyone who signs in can submit the forms open to them and approve requests sent to them. <strong>Builders</strong> can also create workflows,
+        and see the requests on workflows they own. <strong>Admins</strong> see and manage everything. A person's role is the highest of: the one set here by hand,
+        any registered group they belong to, an Entra app role, and the server's admin list. People appear here after their first sign-in.
+        <a href="/Admin/Audit">See the audit log</a> for who changed what.</p>
     <div class="table-wrap"><table class="table stack">
-        <thead><tr><th>Person</th><th>Last seen</th><th>Role</th></tr></thead>
+        <thead><tr><th>Person</th><th>Last seen</th><th>Role now</th><th>Set by hand</th></tr></thead>
         <tbody>
-        @foreach (var u in Model.Users)
+        @foreach (var person in Model.People)
         {
+            var u = person.User;
             var locked = Model.ConfigAdmins.Contains(u.Email);
             <tr>
                 <td><strong>@u.Name</strong><div class="muted small">@u.Email</div></td>
                 <td class="muted" data-label="Last seen">@Ui.When(u.LastSeenAt)</td>
-                <td data-label="Role">
+                <td data-label="Role now">
+                    <span class="pill @(person.EffectiveRole == "Admin" ? "info" : person.EffectiveRole == "Builder" ? "ok" : "muted")">@person.EffectiveRole</span>
+                    @if (person.Locked) { <div class="muted small">from @person.Source</div> }
+                </td>
+                <td data-label="Set by hand">
                     @if (locked)
                     {
                         <span class="pill info">Admin</span> <span class="muted small">set in server configuration</span>

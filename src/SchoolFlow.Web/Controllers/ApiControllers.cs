@@ -59,6 +59,17 @@ public sealed class FormsController : ControllerBase
         _freshservice = freshservice;
     }
 
+    /// <summary>
+    /// The published form with this ID, if it exists, is switched on and this person is allowed to
+    /// submit it. A form limited to other groups looks the same as one that does not exist.
+    /// </summary>
+    private async Task<Workflow?> LiveFormAsync(int workflowId, CancellationToken ct)
+    {
+        var workflow = await _db.Workflows.AsNoTracking().FirstOrDefaultAsync(w => w.Id == workflowId, ct);
+        return workflow is not null && workflow.IsLive && workflow.TriggerType == TriggerTypes.Form && AccessService.CanSubmit(User, workflow)
+            ? workflow : null;
+    }
+
     private Dictionary<string, object?> Ambient()
     {
         var ambient = Values.NewDict();
@@ -92,8 +103,8 @@ public sealed class FormsController : ControllerBase
         }
         else
         {
-            var workflow = await _db.Workflows.AsNoTracking().FirstOrDefaultAsync(w => w.Id == request.WorkflowId, ct);
-            if (workflow is null || !workflow.IsLive || workflow.TriggerType != TriggerTypes.Form) return NotFound();
+            var workflow = await LiveFormAsync(request.WorkflowId, ct);
+            if (workflow is null) return NotFound();
             form = Json.ParseDefinition(workflow.PublishedJson!).Form;
         }
         var result = FormEvaluator.Evaluate(form, Json.ToValues(request.Values), Ambient(), applyDefaults: request.Init,
@@ -108,9 +119,8 @@ public sealed class FormsController : ControllerBase
     {
         var email = User.Email();
         if (email.Length == 0) return BadRequest(new { error = "Your account has no email address, so the request cannot be submitted." });
-        var workflow = await _db.Workflows.AsNoTracking().FirstOrDefaultAsync(w => w.Id == request.WorkflowId, ct);
-        if (workflow is null || !workflow.IsLive || workflow.TriggerType != TriggerTypes.Form)
-            return NotFound(new { error = "This form is no longer available." });
+        var workflow = await LiveFormAsync(request.WorkflowId, ct);
+        if (workflow is null) return NotFound(new { error = "This form is no longer available." });
 
         var (form, runId) = await _runs.SubmitFormAsync(workflow, Json.ToValues(request.Values), email, User.DisplayName(), ct);
         if (runId is not null && request.DraftId is int draftId)
@@ -136,9 +146,8 @@ public sealed class FormsController : ControllerBase
     {
         var email = User.Email();
         if (email.Length == 0) return BadRequest(new { error = "Your account has no email address, so files cannot be uploaded." });
-        var workflow = await _db.Workflows.AsNoTracking().FirstOrDefaultAsync(w => w.Id == workflowId, ct);
-        if (workflow is null || !workflow.IsLive || workflow.TriggerType != TriggerTypes.Form)
-            return NotFound(new { error = "This form is no longer available." });
+        var workflow = await LiveFormAsync(workflowId, ct);
+        if (workflow is null) return NotFound(new { error = "This form is no longer available." });
         // Uploads are only accepted for a form that actually asks for files.
         var form = Json.ParseDefinition(workflow.PublishedJson!).Form;
         if (!form.Fields.Any(f => f.Type == FieldTypes.Attachments && string.Equals(f.Key, field, StringComparison.OrdinalIgnoreCase)))
@@ -163,9 +172,8 @@ public sealed class FormsController : ControllerBase
     {
         var email = User.Email();
         if (email.Length == 0) return BadRequest(new { error = "Your account has no email address, so a draft cannot be saved." });
-        var workflow = await _db.Workflows.AsNoTracking().FirstOrDefaultAsync(w => w.Id == request.WorkflowId, ct);
-        if (workflow is null || !workflow.IsLive || workflow.TriggerType != TriggerTypes.Form)
-            return NotFound(new { error = "This form is no longer available." });
+        var workflow = await LiveFormAsync(request.WorkflowId, ct);
+        if (workflow is null) return NotFound(new { error = "This form is no longer available." });
         if (request.Values.ValueKind != JsonValueKind.Object) return BadRequest(new { error = "There is nothing to save." });
         var raw = request.Values.GetRawText();
         if (raw.Length > MaxDraftBytes) return BadRequest(new { error = "This form holds too much to save as a draft." });
@@ -228,8 +236,8 @@ public sealed class FormsController : ControllerBase
     /// </summary>
     private async Task<(FormDefinition Form, IQueryable<WorkflowRun> Runs)?> CopySourceAsync(int workflowId, CancellationToken ct)
     {
-        var workflow = await _db.Workflows.AsNoTracking().FirstOrDefaultAsync(w => w.Id == workflowId, ct);
-        if (workflow is null || !workflow.IsLive || workflow.TriggerType != TriggerTypes.Form) return null;
+        var workflow = await LiveFormAsync(workflowId, ct);
+        if (workflow is null) return null;
         var form = Json.ParseDefinition(workflow.PublishedJson!).Form;
         if (!CopyModes.IsOn(form.AllowCopy)) return null;
 
@@ -317,6 +325,10 @@ public sealed class SaveWorkflowRequest
     public string? Category { get; set; }
     public string? Color { get; set; }
     public JsonElement Definition { get; set; }
+    /// <summary>Emails of the people who may edit this workflow and see its requests. Null leaves them unchanged.</summary>
+    public List<string>? Owners { get; set; }
+    /// <summary>Entra group IDs allowed to submit the form; empty for everyone. Null leaves them unchanged.</summary>
+    public List<string>? AudienceGroups { get; set; }
 }
 
 public sealed class CheckFormulaRequest
@@ -335,8 +347,23 @@ public sealed class BuilderController : ControllerBase
     public static readonly string[] Colors = { "indigo", "blue", "teal", "green", "amber", "rose", "violet", "slate" };
 
     private readonly AppDbContext _db;
+    private readonly GroupDirectory _groups;
+    private readonly AuditService _audit;
 
-    public BuilderController(AppDbContext db) => _db = db;
+    public BuilderController(AppDbContext db, GroupDirectory groups, AuditService audit)
+    {
+        _db = db;
+        _groups = groups;
+        _audit = audit;
+    }
+
+    /// <summary>The workflow, if this person may manage it. One they may not manage looks the same as a missing one.</summary>
+    private async Task<Workflow?> ManagedAsync(int id, bool tracked, CancellationToken ct)
+    {
+        var query = tracked ? _db.Workflows : _db.Workflows.AsNoTracking();
+        var workflow = await query.FirstOrDefaultAsync(x => x.Id == id, ct);
+        return workflow is not null && AccessService.CanManage(User, workflow) ? workflow : null;
+    }
 
     private static object IssueShape(IEnumerable<Issue> issues) =>
         issues.Select(i => new { severity = i.Severity, area = i.Area, target = i.Target, message = i.Message });
@@ -344,15 +371,53 @@ public sealed class BuilderController : ControllerBase
     [HttpGet("{id:int}")]
     public async Task<IActionResult> Get(int id, CancellationToken ct)
     {
-        var w = await _db.Workflows.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        var w = await ManagedAsync(id, tracked: false, ct);
         if (w is null) return NotFound();
         return new JsonResult(new
         {
+            owners = w.OwnerList,
+            audienceGroups = w.AudienceList,
+            groups = (await _groups.AllAsync()).Select(g => new { id = g.ObjectId, name = g.Name }),
             id = w.Id, name = w.Name, description = w.Description, category = w.Category, color = w.Color,
             definition = Json.ParseDefinition(w.DraftJson),
             publishedVersion = w.PublishedVersion, isPublished = w.PublishedJson is not null,
             hasUnpublishedChanges = w.HasUnpublishedChanges, isEnabled = w.IsEnabled,
         }, Json.Options);
+    }
+
+    /// <summary>Applies the "who can edit" and "who can submit" settings; returns an error message or null.</summary>
+    private async Task<string?> ApplyAccessAsync(Workflow w, SaveWorkflowRequest request)
+    {
+        if (request.Owners is not null)
+        {
+            var owners = request.Owners.Select(o => (o ?? "").Trim().ToLowerInvariant()).Where(o => o.Length > 0).Distinct().ToList();
+            var bad = owners.FirstOrDefault(o => o.Length > 320 || !System.Text.RegularExpressions.Regex.IsMatch(o, @"^[^@\s]+@[^@\s]+\.[^@\s]+$"));
+            if (bad is not null) return $"“{(bad.Length > 60 ? bad[..60] : bad)}” is not an email address.";
+            if (owners.Count > 20) return "A workflow can have at most 20 owners.";
+            // Someone who is not an admin must not be able to lock everyone (including themselves) out.
+            if (owners.Count == 0 && !User.IsAdmin()) return "Keep at least one owner, or ask an admin to take the workflow over.";
+            if (!User.IsAdmin() && !owners.Contains(User.Email())) return "You cannot remove yourself as an owner. Ask another owner or an admin to do it.";
+            var packed = owners.Count == 0 ? "" : ApprovalTask.Pack(owners);
+            if (packed != w.Owners)
+            {
+                _audit.Record(User, "workflow.owners", w.Name, $"Owners changed from [{string.Join(", ", w.OwnerList)}] to [{string.Join(", ", owners)}].");
+                w.Owners = packed;
+            }
+        }
+        if (request.AudienceGroups is not null)
+        {
+            var known = (await _groups.AllAsync()).ToDictionary(g => g.ObjectId, g => g.Name);
+            var chosen = request.AudienceGroups.Select(g => (g ?? "").Trim().ToLowerInvariant()).Where(g => g.Length > 0).Distinct().ToList();
+            if (chosen.Any(g => !known.ContainsKey(g))) return "One of the chosen groups is no longer registered. Reload the page and choose again.";
+            var packed = chosen.Count == 0 ? "" : ApprovalTask.Pack(chosen);
+            if (packed != w.AudienceGroups)
+            {
+                string Names(IEnumerable<string> ids) { var n = ids.Select(i => known.GetValueOrDefault(i, i)).ToList(); return n.Count == 0 ? "everyone" : string.Join(", ", n); }
+                _audit.Record(User, "workflow.audience", w.Name, $"Who can submit changed from {Names(w.AudienceList)} to {Names(chosen)}.");
+                w.AudienceGroups = packed;
+            }
+        }
+        return null;
     }
 
     private static string? Apply(Workflow w, SaveWorkflowRequest request, string by, out WorkflowDefinition? def)
@@ -392,9 +457,9 @@ public sealed class BuilderController : ControllerBase
     [HttpPut("{id:int}")]
     public async Task<IActionResult> Save(int id, [FromBody] SaveWorkflowRequest request, CancellationToken ct)
     {
-        var w = await _db.Workflows.FirstOrDefaultAsync(x => x.Id == id, ct);
+        var w = await ManagedAsync(id, tracked: true, ct);
         if (w is null) return NotFound();
-        var error = Apply(w, request, User.Email(), out var def);
+        var error = Apply(w, request, User.Email(), out var def) ?? await ApplyAccessAsync(w, request);
         if (error is not null) return BadRequest(new { error });
         await _db.SaveChangesAsync(ct);
         return Ok(new { ok = true, hasUnpublishedChanges = w.HasUnpublishedChanges, issues = IssueShape(DefinitionValidator.Validate(def!)) });
@@ -403,9 +468,9 @@ public sealed class BuilderController : ControllerBase
     [HttpPost("{id:int}/publish")]
     public async Task<IActionResult> Publish(int id, [FromBody] SaveWorkflowRequest request, CancellationToken ct)
     {
-        var w = await _db.Workflows.FirstOrDefaultAsync(x => x.Id == id, ct);
+        var w = await ManagedAsync(id, tracked: true, ct);
         if (w is null) return NotFound();
-        var error = Apply(w, request, User.Email(), out var def);
+        var error = Apply(w, request, User.Email(), out var def) ?? await ApplyAccessAsync(w, request);
         if (error is not null) return BadRequest(new { error });
 
         var issues = DefinitionValidator.Validate(def!);
@@ -421,6 +486,7 @@ public sealed class BuilderController : ControllerBase
             w.PublishedJson = w.DraftJson;
             w.PublishedVersion++;
             w.PublishedAt = DateTime.UtcNow;
+            _audit.Record(User, "workflow.published", w.Name, $"Published version {w.PublishedVersion}.");
         }
         w.TriggerType = def!.Trigger.Type;
         await _db.SaveChangesAsync(ct);

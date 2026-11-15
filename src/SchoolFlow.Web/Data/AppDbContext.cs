@@ -19,12 +19,25 @@ public class Workflow
     public string TriggerType { get; set; } = "form";
     /// <summary>Published workflows can be switched off without deleting them.</summary>
     public bool IsEnabled { get; set; } = true;
+    /// <summary>
+    /// Who may edit this workflow and see all of its requests, as lower-case emails packed like
+    /// ";a@x.org;b@x.org;". Admins always can. Empty means admins only.
+    /// </summary>
+    public string Owners { get; set; } = "";
+    /// <summary>
+    /// Entra group IDs whose members may submit this form, packed the same way. Empty means everyone
+    /// who can sign in. Takes effect as soon as it is saved (it is not part of the published version).
+    /// </summary>
+    public string AudienceGroups { get; set; } = "";
     public string CreatedBy { get; set; } = "";
     public DateTime CreatedAt { get; set; }
     public string UpdatedBy { get; set; } = "";
     public DateTime UpdatedAt { get; set; }
 
     public bool IsLive => PublishedJson is not null && IsEnabled;
+    public IEnumerable<string> OwnerList => Owners.Split(';', StringSplitOptions.RemoveEmptyEntries);
+    public IEnumerable<string> AudienceList => AudienceGroups.Split(';', StringSplitOptions.RemoveEmptyEntries);
+    public bool IsOwnedBy(string email) => email.Length > 0 && Owners.Contains(";" + email.ToLowerInvariant() + ";", StringComparison.Ordinal);
     public bool HasUnpublishedChanges => PublishedJson is not null && PublishedJson != DraftJson;
 }
 
@@ -108,6 +121,38 @@ public class AppUser
     public DateTime LastSeenAt { get; set; }
     /// <summary>Whether this person also wants notifications by email (they always get them in the app).</summary>
     public bool EmailNotifications { get; set; } = true;
+    /// <summary>The Entra group IDs seen at this person's last sign-in (packed), so admins can see where a role comes from.</summary>
+    public string Groups { get; set; } = "";
+    /// <summary>The role Entra itself assigned through an app role ("Admin"/"Builder"), if any, at last sign-in.</summary>
+    public string EntraRole { get; set; } = "";
+}
+
+/// <summary>
+/// A Microsoft Entra security group that SchoolFlow knows about. Admins register a group here (its
+/// name and its Object ID from Entra) to grant its members a role and/or to limit forms to them.
+/// </summary>
+public class DirectoryGroup
+{
+    public int Id { get; set; }
+    /// <summary>The group's Object ID in Entra (a GUID), lower-case.</summary>
+    public string ObjectId { get; set; } = "";
+    public string Name { get; set; } = "";
+    /// <summary>"" (no role, just usable as a form audience), "Builder" or "Admin".</summary>
+    public string Role { get; set; } = "";
+}
+
+/// <summary>A record of something an admin or builder did that changes who can do what, or overrides the normal flow.</summary>
+public class AuditEntry
+{
+    public int Id { get; set; }
+    public DateTime At { get; set; }
+    public string ActorEmail { get; set; } = "";
+    public string ActorName { get; set; } = "";
+    /// <summary>Short machine-friendly kind, e.g. "role.changed", "workflow.published".</summary>
+    public string Action { get; set; } = "";
+    /// <summary>What it was done to, in words: a person, a workflow, a request.</summary>
+    public string Target { get; set; } = "";
+    public string Detail { get; set; } = "";
 }
 
 /// <summary>A school department. Admins set who gives final approval for requests categorised under it.</summary>
@@ -232,6 +277,8 @@ public class AppDbContext : DbContext
     public DbSet<Location> Locations => Set<Location>();
     public DbSet<FormDraft> FormDrafts => Set<FormDraft>();
     public DbSet<Attachment> Attachments => Set<Attachment>();
+    public DbSet<DirectoryGroup> DirectoryGroups => Set<DirectoryGroup>();
+    public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 
     public DbSet<Workflow> Workflows => Set<Workflow>();
     public DbSet<WorkflowRun> Runs => Set<WorkflowRun>();
@@ -291,6 +338,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.Email).HasMaxLength(320);
             e.Property(x => x.Name).HasMaxLength(300);
             e.Property(x => x.Role).HasMaxLength(20);
+            e.Property(x => x.EntraRole).HasMaxLength(20);
         });
         b.Entity<Department>(e =>
         {
@@ -302,6 +350,21 @@ public class AppDbContext : DbContext
             e.Property(x => x.OwnerEmail).HasMaxLength(320);
             e.Property(x => x.Summary).HasMaxLength(300);
             e.HasIndex(x => new { x.OwnerEmail, x.WorkflowId });
+        });
+        b.Entity<DirectoryGroup>(e =>
+        {
+            e.Property(x => x.ObjectId).HasMaxLength(64);
+            e.Property(x => x.Name).HasMaxLength(200);
+            e.Property(x => x.Role).HasMaxLength(20);
+            e.HasIndex(x => x.ObjectId).IsUnique();
+        });
+        b.Entity<AuditEntry>(e =>
+        {
+            e.Property(x => x.ActorEmail).HasMaxLength(320);
+            e.Property(x => x.ActorName).HasMaxLength(300);
+            e.Property(x => x.Action).HasMaxLength(60);
+            e.Property(x => x.Target).HasMaxLength(300);
+            e.HasIndex(x => x.At);
         });
         b.Entity<Attachment>(e =>
         {

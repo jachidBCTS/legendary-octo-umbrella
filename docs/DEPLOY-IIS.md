@@ -112,9 +112,13 @@ In the Entra admin center → App registrations → New registration:
 4. **Certificates & secrets** → New client secret. Copy the secret **Value** now (it is shown once).
    Put a reminder in your calendar before it expires — sign-in stops working when it does.
 5. From **Overview**, note the *Application (client) ID* and *Directory (tenant) ID*.
-6. To limit who can sign in (for example staff only): Enterprise applications → SchoolFlow →
-   Properties → *Assignment required* = Yes, then assign the right groups. Without this, every
-   account in your tenant can sign in, submit forms and use the people lookup.
+6. **Staff only.** Enterprise applications → SchoolFlow → Properties → *Assignment required* = **Yes**,
+   then Users and groups → add your staff group. This is what keeps students and anyone else in your
+   tenant out; without it, every account in the tenant can sign in, submit forms and use the people
+   lookup. Do this before going live.
+7. **Groups.** App registrations → SchoolFlow → **Token configuration → Add groups claim** → tick
+   *Security groups*, and under *ID* choose *Group ID*. This lets SchoolFlow see which groups a
+   person is in, which it uses for roles and for limiting forms to particular groups.
 
 ## 6. Settings file
 
@@ -153,14 +157,21 @@ icacls C:\inetpub\SchoolFlow\appsettings.Production.json /inheritance:r /grant "
    Check that a ticket appears in Freshservice **and that the photo is on it** (this upload could
    only be tested against a simulator). If the photo is missing, the request's timeline in
    SchoolFlow says why; send me that message. Close or delete the ticket afterwards.
-7. **Departments.** Admin → Departments: add your departments and their final approvers before staff
+7. **Groups and roles.** Admin → Settings → *Microsoft Entra groups*: register your groups (name and
+   Object ID, from Entra → Groups → the group → Overview). Give your IT/admin group the Admin role and
+   your workflow-builders group the Builder role. Sign out and in again, then check *People and
+   roles* on the same page shows your role "from Entra group …". Once that works you can remove
+   yourself from `Auth:Admins` if you prefer to rely on the group, though keeping one named admin
+   there is a sensible safety net.
+8. **Departments.** Admin → Departments: add your departments and their final approvers before staff
    use any form with a Department field.
-8. **Webhook.** Admin → Settings shows the exact URL, header and body to enter in Freshservice's
+9. **Webhook.** Admin → Settings shows the exact URL, header and body to enter in Freshservice's
    Workflow Automator. Trigger it once and check it appears under *Recent events* on that page.
-9. **Email**, when you are ready: follow *Email through Microsoft 365* in the README, then
+10. **Email**, when you are ready: follow *Email through Microsoft 365* in the README, then
    Admin → Settings → *Send me a test email*.
-10. Review the starter workflows (Builder → Workflows). Switch off or delete the ones you do not want
-    staff to see.
+11. Review the starter workflows (Builder → Workflows). Switch off or delete the ones you do not want
+    staff to see, and add owners to the ones you keep (they start with none, so only admins can
+    manage them).
 
 ## 8. Upgrading to a new version
 
@@ -199,6 +210,7 @@ and give the app pool account Modify on it, restart the site, read the file, the
 | Uploading a file says it "could not be saved on the server" | The app pool account lacks Modify on `App_Data\uploads` (or the folder in `Attachments:Path`), or the disk is full |
 | A file on a request says it is "no longer available" | The file was deleted from the uploads folder, restored without it, or quarantined by antivirus |
 | Large uploads fail with **413** | The file is over IIS's 30 MB request limit. SchoolFlow's own limit is 10 MB per file (`Attachments:MaxFileMb`, at most 25) |
+| A person in an Entra group does not get its role, or cannot see a form limited to their group | The groups claim is not switched on (section 5, step 7), the group's Object ID was mistyped when registering it, or the person has not signed out and in since being added. People in more than ~200 groups get no group list from Entra: give them an Entra app role named `Admin` or `Builder` instead |
 | Pages load but have no styling | The `wwwroot` folder was not copied |
 | Webhook from Freshservice gets **401** | The `X-SchoolFlow-Secret` header does not match `Freshservice:WebhookSecret` |
 | Webhook gets **503** | `Freshservice:WebhookSecret` is empty or shorter than 16 characters |

@@ -12,11 +12,13 @@ public sealed class FilesController : Controller
 {
     private readonly AppDbContext _db;
     private readonly AttachmentService _attachments;
+    private readonly AccessService _access;
 
-    public FilesController(AppDbContext db, AttachmentService attachments)
+    public FilesController(AppDbContext db, AttachmentService attachments, AccessService access)
     {
         _db = db;
         _attachments = attachments;
+        _access = access;
     }
 
     [HttpGet("/files/{id}")]
@@ -37,16 +39,14 @@ public sealed class FilesController : Controller
 
     /// <summary>
     /// The uploader can always get their own file back. Once it is part of a request, so can anyone who
-    /// can open that request: the requester, anyone asked to approve it, builders and admins.
+    /// can open that request (see <see cref="AccessService"/>).
     /// </summary>
     private async Task<bool> CanSeeAsync(Attachment attachment, CancellationToken ct)
     {
         var email = User.Email();
         if (email.Length > 0 && attachment.OwnerEmail == email) return true;
         if (attachment.RunId is not int runId) return false;
-        if (User.IsBuilder()) return true;
-        if (email.Length == 0) return false;
-        var tasks = await _db.ApprovalTasks.AsNoTracking().Where(t => t.RunId == runId).ToListAsync(ct);
-        return tasks.Any(t => t.IsAssignedTo(email));
+        var run = await _db.Runs.AsNoTracking().FirstOrDefaultAsync(r => r.Id == runId, ct);
+        return run is not null && await _access.CanViewRunAsync(User, run, ct);
     }
 }

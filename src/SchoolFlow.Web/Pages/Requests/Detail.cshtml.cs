@@ -16,9 +16,13 @@ public class DetailModel : PageModel
     private readonly RunService _runs;
     private readonly IFreshserviceClient _freshservice;
     private readonly IConfiguration _config;
+    private readonly AccessService _access;
+    private readonly AuditService _audit;
 
-    public DetailModel(AppDbContext db, RunService runs, IFreshserviceClient freshservice, IConfiguration config)
+    public DetailModel(AppDbContext db, RunService runs, IFreshserviceClient freshservice, IConfiguration config, AccessService access, AuditService audit)
     {
+        _access = access;
+        _audit = audit;
         _db = db;
         _runs = runs;
         _freshservice = freshservice;
@@ -37,7 +41,8 @@ public class DetailModel : PageModel
     public List<ApprovalTask> MyTasks { get; private set; } = new();
     public List<string> PendingAssignees { get; private set; } = new();
     public List<Answer> Fields { get; private set; } = new();
-    public bool CanManage => User.IsBuilder();
+    /// <summary>Retry and cancel are for the workflow's owners and admins.</summary>
+    public bool CanManage { get; private set; }
     public string? TicketUrl { get; private set; }
     /// <summary>Link to start a new request prefilled from this one, when the form allows it for this person.</summary>
     public string? CopyUrl { get; private set; }
@@ -49,8 +54,8 @@ public class DetailModel : PageModel
         if (run is null) return false;
         var email = User.Email();
         var tasks = await _db.ApprovalTasks.AsNoTracking().Where(t => t.RunId == id).ToListAsync();
-        var allowed = User.IsBuilder() || (email.Length > 0 && (run.SubmitterEmail == email || tasks.Any(t => t.IsAssignedTo(email))));
-        if (!allowed) return false;
+        if (!await _access.CanViewRunAsync(User, run)) return false;
+        CanManage = await _access.CanManageRunAsync(User, run);
 
         Run = run;
         var pending = tasks.Where(t => t.Status == ApprovalStatus.Pending).ToList();
@@ -118,7 +123,8 @@ public class DetailModel : PageModel
     {
         // The task must belong to this request; RunService checks the assignee.
         var belongs = await _db.ApprovalTasks.AsNoTracking().AnyAsync(t => t.Id == taskId && t.RunId == id, ct);
-        if (!belongs) return NotFound();
+        var run = await _db.Runs.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (!belongs || run is null || !await _access.CanViewRunAsync(User, run, ct)) return NotFound();
         var result = await _runs.DecideAsync(taskId, User.Email(), User.DisplayName(), User.IsAdmin(), approved, comment, ct);
         Flash(result, approved ? "Approved. The request has moved on." : "Rejected. The requester will see your decision.");
         return RedirectToPage(new { id });
@@ -126,15 +132,25 @@ public class DetailModel : PageModel
 
     public async Task<IActionResult> OnPostRetryAsync(int id, CancellationToken ct)
     {
-        if (!User.IsBuilder()) return Forbid();
+        var run = await _db.Runs.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (run is null || !await _access.CanManageRunAsync(User, run, ct)) return NotFound();
+        _audit.Record(User, "request.retried", $"{run.WorkflowName} #{run.Id}", run.Error ?? "");
+        await _db.SaveChangesAsync(ct);
         Flash(await _runs.RetryAsync(id, ct), "Retried.");
         return RedirectToPage(new { id });
     }
 
     public async Task<IActionResult> OnPostCancelAsync(int id, CancellationToken ct)
     {
-        if (!User.IsBuilder()) return Forbid();
-        Flash(await _runs.CancelAsync(id, User.DisplayName(), ct), "Request cancelled.");
+        var run = await _db.Runs.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (run is null || !await _access.CanManageRunAsync(User, run, ct)) return NotFound();
+        var result = await _runs.CancelAsync(id, User.DisplayName(), ct);
+        if (result.Ok)
+        {
+            _audit.Record(User, "request.cancelled", $"{run.WorkflowName} #{run.Id}", $"Submitted by {run.SubmitterName}.");
+            await _db.SaveChangesAsync(ct);
+        }
+        Flash(result, "Request cancelled.");
         return RedirectToPage(new { id });
     }
 

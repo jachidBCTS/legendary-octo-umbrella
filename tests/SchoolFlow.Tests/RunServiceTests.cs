@@ -461,6 +461,32 @@ public sealed class RunServiceTests : IDisposable
         Assert.All(rows, r => Assert.Equal(EmailStatus.Pending, r.EmailStatus));
     }
 
+    [Fact]
+    public async Task AdminDecidingOnSomeonesBehalf_IsAllowed_Labelled_AndAudited()
+    {
+        var runId = await SubmitTripAsync("Science"); // waits on principal@example.org
+        await DecideAsync(runId, "nosy@school.org", admin: false, expectOk: false);   // an ordinary person cannot
+        await DecideAsync(runId, "admin@school.org", admin: true);                    // an admin can
+        await using var db = Db();
+        Assert.Equal(RunStatus.Completed, (await db.Runs.SingleAsync(r => r.Id == runId)).Status);
+        Assert.Contains(await db.RunEvents.Where(e => e.RunId == runId).ToListAsync(),
+            e => e.Message.Contains("an admin acting on behalf of principal@example.org"));
+        var entry = await db.AuditEntries.SingleAsync();
+        Assert.Equal("approval.override-approved", entry.Action);
+        Assert.Equal("admin@school.org", entry.ActorEmail);
+        Assert.Contains("on behalf of principal@example.org", entry.Detail);
+    }
+
+    [Fact]
+    public async Task OrdinaryApprovals_AreNotInTheAuditLog()
+    {
+        var runId = await SubmitTripAsync("Science");
+        await DecideAsync(runId, "principal@example.org");
+        await using var db = Db();
+        Assert.Equal(0, await db.AuditEntries.CountAsync());
+        Assert.DoesNotContain(await db.RunEvents.ToListAsync(), e => e.Message.Contains("on behalf"));
+    }
+
     // ---- attachments ----------------------------------------------------------------------
 
     private static readonly byte[] Pdf = "%PDF-1.7 pretend quote"u8.ToArray();

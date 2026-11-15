@@ -94,8 +94,16 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   (`/files/{publicId}`), always as attachments.
 - **Freshservice**: `IFreshserviceClient` has a live client and `SimulatedFreshserviceClient`
   (used when no domain/API key is configured; timeline entries are prefixed `[Simulated]`).
-- **Roles**: Staff / Builder / Admin in the `Users` table; `Auth:Admins` config emails are always
-  Admin. Added to the principal by `RoleClaimsTransformation` (30-second cache).
+- **Permissions** (owner: staff only sign in; admins keep the ability to approve on someone's
+  behalf). Role = highest of hand-set (`Users.Role`), a registered Entra group (`DirectoryGroups`,
+  matched against the token's `groups` claim), an Entra app role (`roles` claim) and `Auth:Admins`
+  — see `RoleResolver`, applied by `RoleClaimsTransformation`. **All workflow/request access goes
+  through `AccessService`** (`CanSubmit`, `CanManage`, `CanViewRunAsync`, `CanManageRunAsync`); do
+  not add `User.IsBuilder()` checks for data access — Builder alone grants nothing over a workflow
+  the person does not own. `Workflow.Owners` and `Workflow.AudienceGroups` live on the row, not in
+  the definition JSON, so they apply immediately and are not versioned. Things a person may not
+  touch return 404, not 403. Anything that changes who can do what, or overrides the normal flow,
+  is recorded with `AuditService`.
 
 ## Conventions that matter
 
@@ -151,8 +159,11 @@ Known gaps (not requested yet, worth raising):
 - The webhook is rate-limited (300/min per address); the signed-in APIs are not.
 - The app is written for the root of a host name (absolute `/...` links in pages and scripts). It
   does not support running as a sub-folder application; the owner chose its own site.
-- Any signed-in person can use lookups, including the Freshservice people search; if students
-  will sign in, restrict sign-in to staff in Entra or add a role check.
+- Staff-only sign-in is enforced in Entra ("Assignment required"), not in the app. Any signed-in
+  person can use lookups, including the Freshservice people search.
+- Group membership is read from the sign-in token, so it is as fresh as the person's last sign-in,
+  and people in more than ~200 groups get none (no Graph fallback is implemented).
+- The owner has Entra groups but did not have their IDs to hand; none are registered yet.
 - No reminders/escalation for approvals that sit unanswered; no delegation when an approver is away.
 - No reporting/export of requests.
 - Departments cannot be deleted (only switched off); chain templates in use by a workflow cannot

@@ -4,7 +4,7 @@
     ViewData["Title"] = "Workflows";
 }
 <div class="page-head">
-    <div><h1>Workflows</h1><p class="sub">Design forms, field logic and the steps that follow.</p></div>
+    <div><h1>Workflows</h1><p class="sub">Design forms, field logic and the steps that follow. @(User.IsAdmin() ? "As an admin you see every workflow." : "You see the workflows you own.")</p></div>
     <button type="button" class="btn primary" data-open-dialog="new-dialog"><partial name="_Icons" model='"plus"' /> New workflow</button>
 </div>
 
@@ -43,7 +43,7 @@
 </div>
 @if (Model.Workflows.Count == 0)
 {
-    <div class="empty"><p>No workflows yet. Create your first one.</p></div>
+    <div class="empty"><p>@(User.IsAdmin() ? "No workflows yet. Create your first one." : "You do not own any workflows yet. Create one, or ask the owner of an existing workflow to add you.")</p></div>
 }
 
 <dialog id="new-dialog" class="dialog">

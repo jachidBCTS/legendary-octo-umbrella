@@ -8,13 +8,19 @@ namespace SchoolFlow.Web.Pages.Account;
 
 public class DevLoginModel : PageModel
 {
-    public sealed record Persona(string Name, string Email, string Note);
+    public sealed record Persona(string Name, string Email, string Note, params string[] Groups);
+
+    // Stand-ins for Entra group Object IDs; the matching groups are registered by the development seed data.
+    public const string StaffGroup = "00000000-0000-0000-0000-000000000001";
+    public const string ScienceGroup = "00000000-0000-0000-0000-000000000002";
+    public const string BuildersGroup = "00000000-0000-0000-0000-000000000003";
 
     public static readonly Persona[] Personas =
     {
-        new("Avery Admin", "admin@example.org", "admin (listed under Auth:Admins)"),
-        new("Taylor Teacher", "teacher@example.org", "staff"),
-        new("Pat Principal", "principal@example.org", "staff, use as an approver"),
+        new("Avery Admin", "admin@example.org", "admin (listed under Auth:Admins)", StaffGroup),
+        new("Taylor Teacher", "teacher@example.org", "staff, in the Science group", StaffGroup, ScienceGroup),
+        new("Pat Principal", "principal@example.org", "staff, use as an approver", StaffGroup),
+        new("Bailey Builder", "builder@example.org", "builder through the “Workflow Builders” group", StaffGroup, BuildersGroup),
     };
 
     private readonly IConfiguration _config;
@@ -51,8 +57,10 @@ public class DevLoginModel : PageModel
         if (!chosen.Contains('@') || chosen.Length > 320) return RedirectToPage();
         var name = Personas.FirstOrDefault(p => p.Email == chosen)?.Name
                    ?? string.Join(' ', chosen.Split('@')[0].Split('.', '_').Where(p => p.Length > 0).Select(p => char.ToUpperInvariant(p[0]) + p[1..]));
-        var identity = new ClaimsIdentity(new[] { new Claim("preferred_username", chosen), new Claim("name", name) },
-            CookieAuthenticationDefaults.AuthenticationScheme, "name", ClaimTypes.Role);
+        var claims = new List<Claim> { new("preferred_username", chosen), new("name", name) };
+        // Like Entra's "groups" claim. Anyone signing in by typing an email is treated as ordinary staff.
+        claims.AddRange((Personas.FirstOrDefault(p => p.Email == chosen)?.Groups ?? new[] { StaffGroup }).Select(g => new Claim("groups", g)));
+        var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme, "name", ClaimTypes.Role);
         await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity));
         return LocalRedirect(Url.IsLocalUrl(returnUrl) ? returnUrl! : "/");
     }

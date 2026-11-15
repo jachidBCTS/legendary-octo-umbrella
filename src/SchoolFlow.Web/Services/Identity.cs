@@ -32,13 +32,36 @@ public static class UserExtensions
         return email.Length > 0 ? email.Split('@')[0] : "Unknown";
     }
 
+    /// <summary>
+    /// The Entra group IDs in the person's sign-in token (lower-case). Needs the "groups" claim to be
+    /// switched on for the app registration; without it this is simply empty.
+    /// </summary>
+    public static HashSet<string> Groups(this ClaimsPrincipal user) =>
+        user.FindAll("groups").Select(c => c.Value.Trim().ToLowerInvariant()).Where(v => v.Length > 0).ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>An app role assigned in Entra itself ("Admin" or "Builder"), if the token carries one.</summary>
+    public static string EntraRole(this ClaimsPrincipal user)
+    {
+        var roles = user.FindAll("roles").Select(c => c.Value).ToList();
+        return roles.Contains(Roles.Admin, StringComparer.OrdinalIgnoreCase) ? Roles.Admin
+            : roles.Contains(Roles.Builder, StringComparer.OrdinalIgnoreCase) ? Roles.Builder : "";
+    }
+
+    /// <summary>
+    /// True when Entra left the group list out because the person is in too many groups (over about 200).
+    /// Group-based roles and form audiences cannot work for them; Entra app roles still do.
+    /// </summary>
+    public static bool HasGroupOverage(this ClaimsPrincipal user) =>
+        user.HasClaim(c => c.Type == "hasgroups") || (user.FindFirst("_claim_names")?.Value.Contains("groups") ?? false);
+
     public static bool IsBuilder(this ClaimsPrincipal user) => user.IsInRole(Roles.Builder) || user.IsInRole(Roles.Admin);
     public static bool IsAdmin(this ClaimsPrincipal user) => user.IsInRole(Roles.Admin);
 }
 
 /// <summary>
-/// Adds the app role (Staff / Builder / Admin) to the signed-in user. Roles live in the Users table;
-/// emails listed under Auth:Admins in configuration are always Admin so nobody can lock themselves out.
+/// Adds the app role (Staff / Builder / Admin) to the signed-in user. A role can come from the Users
+/// table (set by hand), a registered Entra group, an Entra app role, or the Auth:Admins setting (so
+/// nobody can lock themselves out); the highest one wins.
 /// </summary>
 public sealed class RoleClaimsTransformation : IClaimsTransformation
 {
@@ -46,12 +69,16 @@ public sealed class RoleClaimsTransformation : IClaimsTransformation
     private readonly AppDbContext _db;
     private readonly IMemoryCache _cache;
     private readonly IConfiguration _config;
+    private readonly GroupDirectory _groups;
+    private readonly ILogger<RoleClaimsTransformation> _log;
 
-    public RoleClaimsTransformation(AppDbContext db, IMemoryCache cache, IConfiguration config)
+    public RoleClaimsTransformation(AppDbContext db, IMemoryCache cache, IConfiguration config, GroupDirectory groups, ILogger<RoleClaimsTransformation> log)
     {
         _db = db;
         _cache = cache;
         _config = config;
+        _groups = groups;
+        _log = log;
     }
 
     public static string CacheKey(string email) => "role:" + email;
@@ -62,11 +89,17 @@ public sealed class RoleClaimsTransformation : IClaimsTransformation
         var email = principal.Email();
         if (email.Length == 0) return principal;
 
-        var role = await _cache.GetOrCreateAsync(CacheKey(email), async entry =>
+        var groups = principal.Groups();
+        var entraRole = principal.EntraRole();
+        var manualRole = await _cache.GetOrCreateAsync(CacheKey(email), async entry =>
         {
             entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(30);
-            return await LoadRoleAsync(email, principal.DisplayName());
+            if (principal.HasGroupOverage())
+                _log.LogWarning("{Email} is in too many Entra groups for them to be listed at sign-in; group-based roles and form audiences will not apply to them. Use Entra app roles for this person.", email);
+            return await TouchUserAsync(email, principal.DisplayName(), groups, entraRole);
         }) ?? Roles.Staff;
+
+        var role = RoleResolver.Resolve(manualRole, IsConfiguredAdmin(email), entraRole, groups, await _groups.RoleGrantsAsync()).Role;
 
         var identity = new ClaimsIdentity();
         identity.AddClaim(new Claim(Marker, "1"));
@@ -77,19 +110,23 @@ public sealed class RoleClaimsTransformation : IClaimsTransformation
         return principal;
     }
 
-    private async Task<string> LoadRoleAsync(string email, string name)
-    {
-        var configuredAdmins = _config.GetSection("Auth:Admins").Get<string[]>() ?? Array.Empty<string>();
-        var isConfiguredAdmin = configuredAdmins.Any(a => string.Equals(a?.Trim(), email, StringComparison.OrdinalIgnoreCase));
+    private bool IsConfiguredAdmin(string email) =>
+        (_config.GetSection("Auth:Admins").Get<string[]>() ?? Array.Empty<string>())
+        .Any(a => string.Equals(a?.Trim(), email, StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>Records that the person was seen (name, groups, Entra role) and returns the role set for them by hand.</summary>
+    private async Task<string> TouchUserAsync(string email, string name, HashSet<string> groups, string entraRole)
+    {
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == email);
         if (user is null)
         {
-            user = new AppUser { Email = email, Name = name, Role = isConfiguredAdmin ? Roles.Admin : Roles.Staff };
+            user = new AppUser { Email = email, Name = name, Role = Roles.Staff };
             _db.Users.Add(user);
         }
         user.LastSeenAt = DateTime.UtcNow;
         if (!string.IsNullOrWhiteSpace(name)) user.Name = name.Length > 300 ? name[..300] : name;
+        user.Groups = groups.Count == 0 ? "" : ApprovalTask.Pack(groups.OrderBy(g => g).Take(400));
+        user.EntraRole = entraRole;
         try
         {
             await _db.SaveChangesAsync();
@@ -100,6 +137,6 @@ public sealed class RoleClaimsTransformation : IClaimsTransformation
             _db.ChangeTracker.Clear();
             user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Email == email) ?? user;
         }
-        return isConfiguredAdmin ? Roles.Admin : (Array.IndexOf(Roles.All, user.Role) >= 0 ? user.Role : Roles.Staff);
+        return Array.IndexOf(Roles.All, user.Role) >= 0 ? user.Role : Roles.Staff;
     }
 }

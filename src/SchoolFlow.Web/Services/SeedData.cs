@@ -17,6 +17,14 @@ public static class SeedData
                 new Department { Name = "Mathematics", FinalApprovers = ApprovalTask.Pack(new[] { "principal@example.org", "admin@example.org" }), FinalRule = "all" },
                 new Department { Name = "Athletics", FinalApprovers = ApprovalTask.Pack(new[] { "admin@example.org" }) });
         }
+        if (sampleDepartments && !db.DirectoryGroups.Any())
+        {
+            // Match the made-up group IDs the development sign-in gives its sample people.
+            db.DirectoryGroups.AddRange(
+                new DirectoryGroup { Name = "All Staff", ObjectId = "00000000-0000-0000-0000-000000000001" },
+                new DirectoryGroup { Name = "Science Department", ObjectId = "00000000-0000-0000-0000-000000000002" },
+                new DirectoryGroup { Name = "Workflow Builders", ObjectId = "00000000-0000-0000-0000-000000000003", Role = Roles.Builder });
+        }
         if (sampleDepartments && !db.Locations.Any())
         {
             foreach (var name in new[] { "Main Building", "Main Building › Library", "Gymnasium" })

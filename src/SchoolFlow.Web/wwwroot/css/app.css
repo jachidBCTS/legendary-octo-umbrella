@@ -314,6 +314,10 @@ pre.code { background: #171b3a; color: #e4e7ff; padding: 14px 16px; border-radiu
 .dept-save .b-toggle { margin: 0; }
 .panel.inactive { opacity: .65; }
 
+.b-checks { display: grid; gap: 2px; margin: 4px 0 8px 4px; }
+.b-checks .b-toggle { margin-bottom: 4px; font-weight: 500; }
+.filters input[type=search] { width: auto; flex: 1 1 220px; max-width: 420px; }
+
 /* attachments */
 .sf-attach { border: 1px dashed var(--line-2); border-radius: 10px; padding: 12px; background: #fbfbfe; }
 .sf-attach-top { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }

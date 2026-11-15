@@ -79,6 +79,9 @@ builder.Services.AddAuthorization(options =>
 });
 builder.Services.AddScoped<Microsoft.AspNetCore.Authentication.IClaimsTransformation, RoleClaimsTransformation>();
 builder.Services.AddMemoryCache();
+builder.Services.AddScoped<GroupDirectory>();
+builder.Services.AddScoped<AccessService>();
+builder.Services.AddScoped<AuditService>();
 
 // ---- Freshservice -----------------------------------------------------------------------
 var fsDomain = config["Freshservice:Domain"];

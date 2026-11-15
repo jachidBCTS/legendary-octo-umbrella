@@ -25,7 +25,8 @@ public class EditModel : PageModel
 
     public async Task<IActionResult> OnGetAsync(int id)
     {
-        if (!await _db.Workflows.AnyAsync(w => w.Id == id)) return NotFound();
+        var workflow = await _db.Workflows.AsNoTracking().FirstOrDefaultAsync(w => w.Id == id);
+        if (workflow is null || !SchoolFlow.Web.Services.AccessService.CanManage(User, workflow)) return NotFound();
         Id = id;
         CatalogJson = Json.Serialize(Functions.Catalog).Replace("<", "\\u003c");
         return Page();

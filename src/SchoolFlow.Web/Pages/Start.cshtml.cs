@@ -17,7 +17,8 @@ public class StartModel : PageModel
     public async Task<IActionResult> OnGetAsync(int id)
     {
         var workflow = await _db.Workflows.AsNoTracking().FirstOrDefaultAsync(w => w.Id == id);
-        if (workflow is null || !workflow.IsLive || workflow.TriggerType != TriggerTypes.Form) return NotFound();
+        if (workflow is null || !workflow.IsLive || workflow.TriggerType != TriggerTypes.Form
+            || !SchoolFlow.Web.Services.AccessService.CanSubmit(User, workflow)) return NotFound();
         Workflow = workflow;
         // Only the form part goes to the browser; the flow (approver rules, ticket templates) stays on the server.
         // "<" is escaped so field text can never close the surrounding <script> element.

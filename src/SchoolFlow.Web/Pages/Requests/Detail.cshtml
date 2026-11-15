@@ -42,7 +42,7 @@
 @if (Model.Run.Status == RunStatus.Failed)
 {
     <div class="flash bad"><strong>This request hit a problem.</strong> @Model.Run.Error
-        @if (!Model.CanManage) { <span>The help desk has been shown this error and can retry it.</span> }
+        @if (!Model.CanManage) { <span>The admins have been notified and can retry it.</span> }
     </div>
 }
 

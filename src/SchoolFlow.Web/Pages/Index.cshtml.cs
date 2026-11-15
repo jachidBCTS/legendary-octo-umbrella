@@ -20,9 +20,10 @@ public class IndexModel : PageModel
     public async Task OnGetAsync()
     {
         var email = User.Email();
-        var live = await _db.Workflows.AsNoTracking()
+        // Forms limited to particular groups only appear for their members (and the people who run them).
+        var live = (await _db.Workflows.AsNoTracking()
             .Where(w => w.PublishedJson != null && w.IsEnabled && w.TriggerType == TriggerTypes.Form)
-            .OrderBy(w => w.Name).ToListAsync();
+            .OrderBy(w => w.Name).ToListAsync()).Where(w => AccessService.CanSubmit(User, w)).ToList();
         Groups = live.GroupBy(w => w.Category).OrderBy(g => g.Key.Length == 0).ThenBy(g => g.Key).ToList();
         Recent = await _db.Runs.AsNoTracking().Where(r => r.SubmitterEmail == email && email != "")
             .OrderByDescending(r => r.UpdatedAt).Take(6).ToListAsync();

@@ -99,7 +99,9 @@
   async function load() {
     try {
       const data = await api('GET', '/api/builder/' + workflowId);
-      state.meta = { name: data.name, description: data.description || '', category: data.category || '', color: data.color || 'indigo' };
+      state.meta = { name: data.name, description: data.description || '', category: data.category || '', color: data.color || 'indigo',
+        owners: data.owners || [], audienceGroups: data.audienceGroups || [] };
+      state.groups = data.groups || [];
       state.def = normalise(data.definition);
       state.publishedVersion = data.publishedVersion;
       state.isPublished = data.isPublished;
@@ -1283,6 +1285,47 @@
     });
   }
 
+  /** "Everyone" or a set of registered Entra groups. Applies as soon as the workflow is saved, without publishing. */
+  function audienceEditor() {
+    const box = h('div', { class: 'b-audience' });
+    const groups = state.groups || [];
+    const limited = state.meta.audienceGroups.length > 0;
+    const choice = (value, title, text) => {
+      const radio = h('input', { type: 'radio', name: 'audience', checked: limited === value });
+      radio.addEventListener('change', () => {
+        state.meta.audienceGroups = value && groups.length ? [groups[0].id] : [];
+        markDirty();
+        renderAll();
+      });
+      radio.disabled = value && groups.length === 0;
+      return h('label', { class: 'choice' }, radio, h('span', null, h('strong', null, title), h('small', null, text)));
+    };
+    box.append(
+      choice(false, 'Everyone who can sign in', 'The form appears on the home page for all staff.'),
+      choice(true, 'Only members of these groups', groups.length
+        ? 'People outside the chosen groups do not see the form at all.'
+        : 'No Entra groups have been registered yet. An admin adds them under Admin → Settings.'));
+    if (limited) {
+      const list = h('div', { class: 'b-checks' });
+      for (const group of groups) {
+        const check = h('input', { type: 'checkbox', checked: state.meta.audienceGroups.includes(group.id) });
+        check.addEventListener('change', () => {
+          const chosen = new Set(state.meta.audienceGroups);
+          if (check.checked) chosen.add(group.id); else chosen.delete(group.id);
+          // Unticking the last group would silently mean "everyone"; keep at least one ticked.
+          if (chosen.size === 0) { check.checked = true; toast('Choose at least one group, or pick “Everyone who can sign in”.', 'bad'); return; }
+          state.meta.audienceGroups = Array.from(chosen);
+          markDirty();
+        });
+        list.appendChild(h('label', { class: 'b-toggle' }, check, h('span', null, group.name)));
+      }
+      const stale = state.meta.audienceGroups.filter((id) => !groups.some((g) => g.id === id));
+      if (stale.length) list.appendChild(h('p', { class: 'b-fx-status bad' }, 'This workflow refers to a group that is no longer registered. Tick the groups you want and save.'));
+      box.append(list, h('p', { class: 'b-help' }, 'This takes effect as soon as you save — it does not wait for Publish. Owners and admins can always open the form to test it.'));
+    }
+    return box;
+  }
+
   function renderSettingsTab() {
     const trigger = state.def.trigger;
     const swatches = h('div', { class: 'swatches' }, COLORS.map((color) =>
@@ -1305,6 +1348,11 @@
       row('Description', textArea(state.meta.description, (v) => { state.meta.description = v; }, 2), 'Shown on the home page card.'),
       row('Category', textInput(state.meta.category, (v) => { state.meta.category = v; }, { maxlength: 100, placeholder: 'e.g. Help Desk, Purchasing' }), 'Forms are grouped by category on the home page.'),
       row('Colour', swatches),
+      h('h3', null, 'Who looks after it'),
+      row('Owners', textArea(state.meta.owners.join('\n'), (v) => { state.meta.owners = v.split(/[\s,;]+/).map((o) => o.trim()).filter(Boolean); }, 3),
+        'One email per line. Owners (and admins) can edit this workflow, and see, retry and cancel its requests. Other builders cannot.'),
+      trigger.type === 'ticket' ? null : h('h3', null, 'Who can submit it'),
+      trigger.type === 'ticket' ? null : audienceEditor(),
       h('h3', null, 'How it starts'),
       triggerChoice('form', 'Someone fills in a form', 'Appears on the home page for everyone who signs in.'),
       triggerChoice('ticket', 'A Freshservice ticket event', 'Starts when Freshservice sends a ticket to the SchoolFlow webhook. Runs once per ticket.'));

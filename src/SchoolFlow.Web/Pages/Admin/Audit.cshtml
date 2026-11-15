@@ -1,0 +1,41 @@
+@page
+@model SchoolFlow.Web.Pages.Admin.AuditModel
+@{
+    ViewData["Title"] = "Audit log";
+}
+<div class="page-head">
+    <div><h1>Audit log</h1><p class="sub">Who changed roles, groups, workflows and departments, and when an admin acted on someone's behalf.</p></div>
+</div>
+<form method="get" class="filters">
+    <input type="search" name="q" value="@Model.Q" placeholder="Search by person, workflow or action…" aria-label="Search the audit log" />
+    <button class="btn">Search</button>
+</form>
+@if (Model.Entries.Count == 0)
+{
+    <div class="empty small"><p>@(string.IsNullOrEmpty(Model.Q) ? "Nothing has been recorded yet." : "Nothing matches that search.")</p></div>
+}
+else
+{
+    <div class="panel table-wrap">
+        <table class="table stack">
+            <thead><tr><th>What</th><th>When</th><th>Who</th><th>On</th><th>Details</th></tr></thead>
+            <tbody>
+            @foreach (var e in Model.Entries)
+            {
+                <tr>
+                    <td><strong>@SchoolFlow.Web.Pages.Admin.AuditModel.Describe(e.Action)</strong></td>
+                    <td class="muted" data-label="When">@Ui.When(e.At)</td>
+                    <td data-label="Who">@e.ActorName<div class="muted small">@e.ActorEmail</div></td>
+                    <td data-label="On">@e.Target</td>
+                    <td data-label="Details">@e.Detail</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+    <div class="pager">
+        @if (Model.PageNumber > 1) { <a class="btn" href="@Model.PageUrl(Model.PageNumber - 1)">Newer</a> }
+        @if (Model.HasMore) { <a class="btn" href="@Model.PageUrl(Model.PageNumber + 1)">Older</a> }
+    </div>
+}
+<p class="muted small">Entries are never edited or deleted by SchoolFlow. Decisions made by the people a step was assigned to are on each request's own timeline, not here.</p>

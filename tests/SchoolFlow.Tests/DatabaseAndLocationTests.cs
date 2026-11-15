@@ -87,14 +87,19 @@ public sealed class MigrationTests : IDisposable
     [Fact]
     public async Task UpgradingAnExistingDatabase_KeepsItsData()
     {
-        // A site deployed at the first release…
+        // A site deployed at the first release, holding data written the way that release stored it
+        // (plain SQL against the first schema, so this test does not depend on today's model)…
         using (var db = Sqlite())
         {
             db.GetService<IMigrator>().Migrate("Initial");
-            db.Users.Add(new AppUser { Email = "keep@school.org", Name = "Keep", Role = Roles.Admin });
-            db.Departments.Add(new Department { Name = "Science", FinalApprovers = ";head@school.org;" });
-            db.Runs.Add(new WorkflowRun { WorkflowName = "Trip", Status = "Completed", ContextJson = "{\"a\":1}", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
-            await db.SaveChangesAsync();
+            db.Database.ExecuteSqlRaw("""
+                INSERT INTO Users (Email, Name, Role, LastSeenAt, EmailNotifications) VALUES ('keep@school.org', 'Keep', 'Admin', '2026-01-01', 1);
+                INSERT INTO Departments (Name, FinalApprovers, FinalRule, IsActive) VALUES ('Science', ';head@school.org;', 'any', 1);
+                INSERT INTO Workflows (Name, Description, Category, Color, DraftJson, PublishedJson, PublishedVersion, TriggerType, IsEnabled, CreatedBy, CreatedAt, UpdatedBy, UpdatedAt)
+                    VALUES ('Trip', '', '', 'green', '{{}}', '{{}}', 3, 'form', 1, 'keep@school.org', '2026-01-01', 'keep@school.org', '2026-01-01');
+                INSERT INTO Runs (WorkflowId, WorkflowName, WorkflowVersion, DefinitionJson, Status, ContextJson, SubmitterEmail, SubmitterName, DepartmentName, CreatedAt, UpdatedAt, Version)
+                    VALUES (1, 'Trip', 3, '{{}}', 'Completed', '{{"a":1}}', 't@school.org', 'T', 'Science', '2026-01-01', '2026-01-02', 4);
+                """);
             Assert.NotEmpty(db.Database.GetPendingMigrations());
         }
         // …is upgraded in place by simply starting the new version.
@@ -102,11 +107,25 @@ public sealed class MigrationTests : IDisposable
         {
             DatabaseSetup.Migrate(db, NullLogger.Instance);
             Assert.Empty(db.Database.GetPendingMigrations());
-            Assert.Equal(Roles.Admin, (await db.Users.SingleAsync()).Role);
+
+            var user = await db.Users.SingleAsync();
+            Assert.Equal(Roles.Admin, user.Role);
+            Assert.Equal("", user.Groups);                               // columns added later get an empty default, not NULL
             Assert.Equal("Science", (await db.Departments.SingleAsync()).Name);
-            Assert.Equal("{\"a\":1}", (await db.Runs.SingleAsync()).ContextJson);
+            var run = await db.Runs.SingleAsync();
+            Assert.Equal("{\"a\":1}", run.ContextJson);
+            Assert.Equal(4, run.Version);
+            var workflow = await db.Workflows.SingleAsync();
+            Assert.Equal(3, workflow.PublishedVersion);
+            Assert.Equal("", workflow.Owners);                           // no owners: admins only, never "everyone"
+            Assert.Equal("", workflow.AudienceGroups);                   // still open to everyone, as it was before
+
+            // Tables added by later releases are there and usable.
             db.FormDrafts.Add(new FormDraft { WorkflowId = 1, OwnerEmail = "keep@school.org", ValuesJson = "{}", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
-            await db.SaveChangesAsync(); // the table added by the upgrade is usable
+            db.Attachments.Add(new Attachment { PublicId = "p", StoredName = "s.bin", FileName = "f.pdf", ContentType = "application/pdf", OwnerEmail = "keep@school.org", CreatedAt = DateTime.UtcNow });
+            db.DirectoryGroups.Add(new DirectoryGroup { ObjectId = "g", Name = "Staff" });
+            db.AuditEntries.Add(new AuditEntry { At = DateTime.UtcNow, Action = "x", Target = "y" });
+            await db.SaveChangesAsync();
         }
     }
 

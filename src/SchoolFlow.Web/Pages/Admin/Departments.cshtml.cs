@@ -9,7 +9,13 @@ namespace SchoolFlow.Web.Pages.Admin;
 public class DepartmentsModel : PageModel
 {
     private readonly AppDbContext _db;
-    public DepartmentsModel(AppDbContext db) => _db = db;
+    private readonly SchoolFlow.Web.Services.AuditService _audit;
+
+    public DepartmentsModel(AppDbContext db, SchoolFlow.Web.Services.AuditService audit)
+    {
+        _db = db;
+        _audit = audit;
+    }
 
     public List<Department> Departments { get; private set; } = new();
     public Dictionary<int, int> RunCounts { get; private set; } = new();
@@ -48,9 +54,17 @@ public class DepartmentsModel : PageModel
             department = new Department { IsActive = true };
             _db.Departments.Add(department);
         }
+        var newApprovers = entries.Count == 0 ? "" : ApprovalTask.Pack(entries);
+        var newRule = ApprovalRules.Normalize(rule);
+        // Final approvers decide requests and can see their department's requests, so changes are recorded.
+        if (id is null)
+            _audit.Record(User, "department.created", name, $"Final approvers: {(entries.Count == 0 ? "none" : string.Join(", ", entries))} ({newRule}).");
+        else if (department.FinalApprovers != newApprovers || department.FinalRule != newRule)
+            _audit.Record(User, "department.approvers", name,
+                $"Final approvers changed from [{string.Join(", ", department.FinalApproverList)}] ({department.FinalRule}) to [{string.Join(", ", entries)}] ({newRule}).");
         department.Name = name;
-        department.FinalApprovers = entries.Count == 0 ? "" : ApprovalTask.Pack(entries);
-        department.FinalRule = ApprovalRules.Normalize(rule);
+        department.FinalApprovers = newApprovers;
+        department.FinalRule = newRule;
         await _db.SaveChangesAsync();
         TempData["Flash"] = $"Saved {name}.";
         return RedirectToPage();
