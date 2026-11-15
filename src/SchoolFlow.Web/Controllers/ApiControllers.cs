@@ -49,9 +49,11 @@ public sealed class FormsController : ControllerBase
     private readonly AppDbContext _db;
     private readonly RunService _runs;
     private readonly IFreshserviceClient _freshservice;
+    private readonly AttachmentService _attachments;
 
-    public FormsController(AppDbContext db, RunService runs, IFreshserviceClient freshservice)
+    public FormsController(AppDbContext db, RunService runs, IFreshserviceClient freshservice, AttachmentService attachments)
     {
+        _attachments = attachments;
         _db = db;
         _runs = runs;
         _freshservice = freshservice;
@@ -95,7 +97,9 @@ public sealed class FormsController : ControllerBase
             form = Json.ParseDefinition(workflow.PublishedJson!).Form;
         }
         var result = FormEvaluator.Evaluate(form, Json.ToValues(request.Values), Ambient(), applyDefaults: request.Init,
-            departments: await _runs.ActiveDepartmentsAsync(ct), locations: await _runs.ActiveLocationsAsync(ct));
+            departments: await _runs.ActiveDepartmentsAsync(ct), locations: await _runs.ActiveLocationsAsync(ct),
+            // In the builder's preview there is no real form to upload to, so files are taken as given.
+            attachments: request.Definition is not null ? null : await _attachments.PendingForAsync(User.Email(), request.WorkflowId, ct));
         return new JsonResult(Shape(result), Json.Options);
     }
 
@@ -121,6 +125,33 @@ public sealed class FormsController : ControllerBase
         }
         return new JsonResult(new { ok = runId is not null, runId, state = Shape(form) }, Json.Options);
     }
+
+    // ---- uploaded files --------------------------------------------------------------------
+
+    /// <summary>Uploads one file for an Attachments field of a live form. The file stays private to the uploader until submitted.</summary>
+    [HttpPost("attachments")]
+    [RequestSizeLimit(27_000_000)] // above the largest configurable file size, so our own message is shown rather than a bare 413
+    [RequestFormLimits(MultipartBodyLengthLimit = 27_000_000)]
+    public async Task<IActionResult> Upload([FromForm] int workflowId, [FromForm] string? field, IFormFile? file, CancellationToken ct)
+    {
+        var email = User.Email();
+        if (email.Length == 0) return BadRequest(new { error = "Your account has no email address, so files cannot be uploaded." });
+        var workflow = await _db.Workflows.AsNoTracking().FirstOrDefaultAsync(w => w.Id == workflowId, ct);
+        if (workflow is null || !workflow.IsLive || workflow.TriggerType != TriggerTypes.Form)
+            return NotFound(new { error = "This form is no longer available." });
+        // Uploads are only accepted for a form that actually asks for files.
+        var form = Json.ParseDefinition(workflow.PublishedJson!).Form;
+        if (!form.Fields.Any(f => f.Type == FieldTypes.Attachments && string.Equals(f.Key, field, StringComparison.OrdinalIgnoreCase)))
+            return BadRequest(new { error = "This form does not accept files here." });
+
+        var result = await _attachments.SaveAsync(file, workflowId, email, ct);
+        if (result.Attachment is null) return BadRequest(new { error = result.Error });
+        return Ok(new { id = result.Attachment.PublicId, name = result.Attachment.FileName, size = result.Attachment.Size });
+    }
+
+    [HttpDelete("attachments/{id}")]
+    public async Task<IActionResult> DeleteUpload(string id, CancellationToken ct) =>
+        await _attachments.DeletePendingAsync(id, User.Email(), ct) ? Ok(new { ok = true }) : NotFound();
 
     // ---- save and finish later -------------------------------------------------------------
 

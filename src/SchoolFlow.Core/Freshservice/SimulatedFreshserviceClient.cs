@@ -70,6 +70,12 @@ public sealed class SimulatedFreshserviceClient : IFreshserviceClient
         return Task.CompletedTask;
     }
 
+    public Task AttachFilesAsync(long ticketId, IReadOnlyList<TicketFile> files, CancellationToken ct = default)
+    {
+        lock (_gate) Calls.Add(("attach_files", (ticketId, files)));
+        return Task.CompletedTask;
+    }
+
     public Task<Dictionary<string, object?>?> GetTicketAsync(long ticketId, CancellationToken ct = default)
     {
         lock (_gate)

@@ -83,6 +83,15 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   owner. Opening one feeds them to the form as `initialValues`, so they are re-normalised by
   `FormEvaluator` like any other input; submit deletes the draft. Autosave only starts after the
   person has pressed *Save for later* once (never create a draft they did not ask for).
+- **Attachments**: the `Attachments` table describes each upload; the bytes are a file in
+  `App_Data/uploads` (owner chose a folder on the web server over the database) named by a random
+  `StoredName`. A file is "pending" (`RunId` null, usable only by its uploader on that workflow) until
+  submit claims it for the run *before the first step executes*. `FormEvaluator` only accepts IDs in
+  the caller's pending set and takes name/size from the server. The run context gets a reserved
+  `attachments` list; a Create ticket step with `attachFiles=true` sends them with a second call
+  (`AttachFilesAsync`), and a failure there is a timeline **warning**, never a failed run — keep it
+  that way while that Freshservice call is unverified. Downloads go through `FilesController`
+  (`/files/{publicId}`), always as attachments.
 - **Freshservice**: `IFreshserviceClient` has a live client and `SimulatedFreshserviceClient`
   (used when no domain/API key is configured; timeline entries are prefixed `[Simulated]`).
 - **Roles**: Staff / Builder / Admin in the `Users` table; `Auth:Admins` config emails are always
@@ -116,7 +125,8 @@ Everything below works against simulators/fakes only. Treat first contact as a t
 
 1. **Freshservice live API** — least certain: requester name search filter syntax, the
    `user_id` asset filter for "my devices", `parent_location_id` on locations, the service
-   catalog `place_request` payload, and the webhook placeholder `{{ticket.id_numeric}}`.
+   catalog `place_request` payload, the webhook placeholder `{{ticket.id_numeric}}`, and adding
+   files to a ticket (multipart `PUT /api/v2/tickets/{id}` with `attachments[]` parts).
 2. **Entra ID sign-in** end to end (needs a real tenant).
 3. **Microsoft Graph email** (needs `Mail.Send` application permission; recommend an application
    access policy limiting it to the sender mailbox).

@@ -29,7 +29,8 @@ public class DetailModel : PageModel
     /// <summary>Steps of the approval chain this request is going (or went) through, if any.</summary>
     public List<ChainStepView> Chain { get; private set; } = new();
 
-    public sealed record Answer(string Label, string Value, List<string>? Columns = null, List<List<string>>? Rows = null);
+    public sealed record FileLink(string Name, string Size, string Url);
+    public sealed record Answer(string Label, string Value, List<string>? Columns = null, List<List<string>>? Rows = null, List<FileLink>? Files = null);
 
     public WorkflowRun Run { get; private set; } = null!;
     public List<RunEventRow> Events { get; private set; } = new();
@@ -88,8 +89,15 @@ public class DetailModel : PageModel
         foreach (var f in def.Form.Fields.Where(f => f.Type != FieldTypes.Section))
         {
             var value = context.GetValueOrDefault(f.Key);
-            if (Values.IsBlank(value) && f.Type != FieldTypes.Checkbox) continue; // hidden or unanswered
-            if (f.Type == FieldTypes.Table && value is List<object?> rows)
+            if (Values.IsBlank(value)) continue; // hidden or unanswered (an unticked box is "No", not blank)
+            if (f.Type == FieldTypes.Attachments && value is List<object?> uploaded)
+            {
+                Fields.Add(new Answer(f.Label, "", Files: uploaded.OfType<Dictionary<string, object?>>().Select(file => new FileLink(
+                    Values.ToText(file.GetValueOrDefault("name")),
+                    AttachmentService.DisplaySize(Values.TryToNumber(file.GetValueOrDefault("size"), out var bytes) ? (long)bytes : 0),
+                    "/files/" + Uri.EscapeDataString(Values.ToText(file.GetValueOrDefault("id"))))).ToList()));
+            }
+            else if (f.Type == FieldTypes.Table && value is List<object?> rows)
             {
                 var columns = f.Columns ?? new List<ColumnDef>();
                 Fields.Add(new Answer(f.Label, "", columns.Select(c => c.Label).ToList(),

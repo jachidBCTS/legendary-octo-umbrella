@@ -150,6 +150,7 @@ public sealed class LocationTests : IDisposable
         public Task<Dictionary<string, object?>> CreateTicketAsync(TicketCreate ticket, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<Dictionary<string, object?>> UpdateTicketAsync(long ticketId, TicketUpdate update, CancellationToken ct = default) => throw new NotSupportedException();
         public Task AddNoteAsync(long ticketId, string bodyHtml, bool isPrivate, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task AttachFilesAsync(long ticketId, IReadOnlyList<TicketFile> files, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<Dictionary<string, object?>?> GetTicketAsync(long ticketId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<Dictionary<string, object?>?> FindRequesterAsync(string email, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<Dictionary<string, object?>> PlaceServiceRequestAsync(long itemDisplayId, string requesterEmail, int quantity, Dictionary<string, object?> customFields, CancellationToken ct = default) => throw new NotSupportedException();

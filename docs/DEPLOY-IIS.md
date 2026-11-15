@@ -75,7 +75,11 @@ Add this database to your normal SQL Server backups.
 
 1. **Folder.** Create `C:\inetpub\SchoolFlow` and unzip the package into it. You should see
    `SchoolFlow.Web.exe`, `web.config` and a `wwwroot` folder directly inside.
-2. **Data folder.** Create `C:\inetpub\SchoolFlow\App_Data`. SchoolFlow keeps its sign-in keys here.
+2. **Data folder.** Create `C:\inetpub\SchoolFlow\App_Data`. SchoolFlow keeps its sign-in keys here
+   (`App_Data\keys`) and the files people upload (`App_Data\uploads`). **Add this folder to the
+   server's backups**: uploaded files are not in the database. If you would rather keep uploads on
+   another drive, set `Attachments:Path` in the settings file to that folder and give the app pool
+   account Modify on it.
 3. **App pool.** IIS Manager → Application Pools → Add: name `SchoolFlow`, .NET CLR version
    **No Managed Code**. Then in its **Advanced Settings**:
    - *Identity*: your service account (recommended), or leave as `ApplicationPoolIdentity`.
@@ -145,8 +149,10 @@ icacls C:\inetpub\SchoolFlow\appsettings.Production.json /inheritance:r /grant "
 4. **Restart survives.** Recycle the app pool, refresh the page: you should still be signed in.
 5. **Freshservice.** Admin → Settings → *Test connection*. Then Admin → Locations → *Sync from
    Freshservice*.
-6. **A real request.** Submit the Device Repair form as yourself and check that a ticket appears in
-   Freshservice. Close or delete that ticket afterwards.
+6. **A real request, with a file.** Submit the Device Repair form as yourself with a photo attached.
+   Check that a ticket appears in Freshservice **and that the photo is on it** (this upload could
+   only be tested against a simulator). If the photo is missing, the request's timeline in
+   SchoolFlow says why; send me that message. Close or delete the ticket afterwards.
 7. **Departments.** Admin → Departments: add your departments and their final approvers before staff
    use any form with a Department field.
 8. **Webhook.** Admin → Settings shows the exact URL, header and body to enter in Freshservice's
@@ -158,7 +164,7 @@ icacls C:\inetpub\SchoolFlow\appsettings.Production.json /inheritance:r /grant "
 
 ## 8. Upgrading to a new version
 
-1. **Back up the database** (and keep a copy of the current site folder).
+1. **Back up the database and the `App_Data` folder** (and keep a copy of the current site folder).
 2. Put a file named `app_offline.htm` in the site folder. IIS stops the site and shows that file's
    contents to visitors, which releases the locked files.
 3. Copy the new package over the old files. **Do not delete or overwrite** `App_Data` or
@@ -166,7 +172,8 @@ icacls C:\inetpub\SchoolFlow\appsettings.Production.json /inheritance:r /grant "
 4. Delete `app_offline.htm`. The site starts, upgrades the database if needed, and is back.
 5. Check `/healthz` and sign in.
 
-To go back: stop the site, restore the database backup and the old folder, start it.
+To go back: stop the site, restore the database backup and the old folder (including `App_Data`),
+start it.
 
 ## 9. Troubleshooting
 
@@ -189,6 +196,9 @@ and give the app pool account Modify on it, restart the site, read the file, the
 | Microsoft shows **AADSTS7000215 / 7000222** | The client secret is wrong or has expired. Create a new one and update the settings file |
 | Sign-in loops, or "Correlation failed" | The site is being reached over http, or through a proxy that strips https. Use the https address |
 | Everyone is signed out whenever the site restarts | `App_Data\keys` is not writable, so keys cannot be saved |
+| Uploading a file says it "could not be saved on the server" | The app pool account lacks Modify on `App_Data\uploads` (or the folder in `Attachments:Path`), or the disk is full |
+| A file on a request says it is "no longer available" | The file was deleted from the uploads folder, restored without it, or quarantined by antivirus |
+| Large uploads fail with **413** | The file is over IIS's 30 MB request limit. SchoolFlow's own limit is 10 MB per file (`Attachments:MaxFileMb`, at most 25) |
 | Pages load but have no styling | The `wwwroot` folder was not copied |
 | Webhook from Freshservice gets **401** | The `X-SchoolFlow-Secret` header does not match `Freshservice:WebhookSecret` |
 | Webhook gets **503** | `Freshservice:WebhookSecret` is empty or shorter than 16 characters |
@@ -203,4 +213,7 @@ and give the app pool account Modify on it, restart the site, read the file, the
 - The only address that works without signing in is the Freshservice webhook
   (`/api/webhooks/freshservice`), which requires the shared secret and is rate-limited, plus
   `/healthz`, which reveals nothing.
+- Signed-in people can upload files. Only listed document and image types are accepted, each file's
+  content is checked against its type, files are stored under random names outside the web root and
+  are only ever sent back as downloads. Keep antivirus scanning enabled on the uploads folder.
 - Never set `ASPNETCORE_ENVIRONMENT` to `Development` on this server.

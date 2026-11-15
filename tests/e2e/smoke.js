@@ -555,7 +555,65 @@ async function login(page, email) {
   await page.waitForSelector('.toast.show');
   check(!page.url().includes('draft='), 'a missing draft falls back to a blank form');
 
-  note('12. admin + help + mobile');
+  note('12. attachments');
+  const pdf = { name: 'cracked screen.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7 pretend photo of a cracked screen') };
+  await login(page, 'teacher@example.org');
+  await page.goto(base + '/Start/2');
+  await page.waitForSelector('.sf-form');
+  await field('Device name or asset tag').locator('input').fill('Laptop 9');
+  await field('What is wrong?').locator('select').selectOption('Cracked screen');
+  await page.setInputFiles('.sf-file-input', pdf);
+  await page.waitForSelector('.sf-files li');
+  check((await page.locator('.sf-files li').textContent()).includes('cracked screen.pdf'), 'file uploads and is listed');
+  await page.setInputFiles('.sf-file-input', { name: 'tool.exe', mimeType: 'application/octet-stream', buffer: Buffer.from('MZ program') });
+  await page.waitForSelector('.sf-attach .sf-error:not([hidden])');
+  check((await page.locator('.sf-attach .sf-error').textContent()).includes('cannot be uploaded'), 'a program file is refused');
+  await page.setInputFiles('.sf-file-input', { name: 'fake.pdf', mimeType: 'application/pdf', buffer: Buffer.from('MZ really a program') });
+  await page.waitForFunction(() => /does not look like a real PDF/.test(document.querySelector('.sf-attach .sf-error')?.textContent || ''));
+  check(await page.locator('.sf-files li').count() === 1, 'a program renamed to .pdf is refused');
+  await page.screenshot({ path: S + '/shots/26-attachments-form.png', fullPage: true });
+  await page.click('button:has-text("Save for later")');
+  await page.waitForFunction(() => /Draft saved at/.test(document.querySelector('.sf-draft-status')?.textContent || ''));
+  await page.reload();
+  await page.waitForSelector('.sf-files li');
+  check((await page.locator('.sf-files li').textContent()).includes('cracked screen.pdf'), 'a draft keeps its uploaded file');
+  const pendingId = await page.evaluate(async () => {
+    const draft = new URLSearchParams(location.search).get('draft');
+    return (await (await fetch('/api/forms/drafts/' + draft)).json()).values.photos[0].id;
+  });
+  const fetchFile = (id) => page.evaluate(async (fileId) => {
+    const r = await fetch('/files/' + fileId, { redirect: 'manual' });
+    return { status: r.status, disposition: r.headers.get('content-disposition') || '', type: r.headers.get('content-type') || '', start: r.ok ? (await r.text()).slice(0, 8) : '' };
+  }, id);
+  check((await fetchFile(pendingId)).status === 200, 'the uploader can download their own file before submitting');
+  await page.click('button[type=submit]');
+  await page.waitForURL(/Requests\/Detail\/\d+/);
+  const fileRunUrl = page.url();
+  check((await page.locator('.file-list').textContent()).includes('cracked screen.pdf'), 'the request page lists the file');
+  check((await page.locator('.timeline').textContent()).includes('Attached 1 file to ticket'), 'the file was sent to the Freshservice ticket');
+  const got = await fetchFile(pendingId);
+  check(got.status === 200 && got.start === '%PDF-1.7' && /attachment/.test(got.disposition) && got.type.startsWith('application/pdf'),
+    'file downloads intact, as a download (' + got.disposition.slice(0, 40) + ')');
+  const delAfter = await page.evaluate(async (id) => (await fetch('/api/attachments/' + id, { method: 'DELETE', headers: { RequestVerificationToken: document.querySelector('meta[name=csrf-token]').content } })).status, pendingId);
+  check(delAfter === 404, 'a submitted file can no longer be deleted by the uploader');
+  await page.screenshot({ path: S + '/shots/27-attachments-request.png', fullPage: true });
+
+  await login(page, 'principal@example.org');
+  check((await fetchFile(pendingId)).status === 404, 'someone unconnected to the request cannot download its file');
+  check((await fetchFile('0123456789abcdef0123456789abcdef')).status === 404, 'a made-up file link gives nothing away');
+  const strayUpload = await page.evaluate(async () => {
+    const data = new FormData();
+    data.append('workflowId', '4'); data.append('field', 'destination');
+    data.append('file', new File(['%PDF-1.7'], 'x.pdf', { type: 'application/pdf' }));
+    return (await fetch('/api/attachments', { method: 'POST', body: data, headers: { RequestVerificationToken: document.querySelector('meta[name=csrf-token]').content } })).status;
+  });
+  check(strayUpload === 400, 'uploads are refused for a form that has no attachments field there (' + strayUpload + ')');
+  await login(page, 'admin@example.org');
+  check((await fetchFile(pendingId)).status === 200, 'a builder/admin can download a request\'s file');
+  await page.goto(fileRunUrl);
+  check(await page.locator('.file-list a').count() === 1, 'the file link shows for staff who can open the request');
+
+  note('13. admin + help + mobile');
   await login(page, 'admin@example.org');
   await page.goto(base + '/Admin/Settings');
   await page.click('button:has-text("Test connection")');

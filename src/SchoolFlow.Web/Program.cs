@@ -111,6 +111,13 @@ builder.Services.AddRateLimiter(options =>
         _ => new FixedWindowRateLimiterOptions { PermitLimit = 300, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
 });
 
+// ---- Uploaded files ---------------------------------------------------------------------
+var attachmentSettings = new AttachmentSettings(config, builder.Environment.ContentRootPath);
+Directory.CreateDirectory(attachmentSettings.Folder); // fail at start-up, not on someone's first upload, if the folder cannot be made
+builder.Services.AddSingleton(attachmentSettings);
+builder.Services.AddScoped<AttachmentService>();
+builder.Services.AddHostedService<AttachmentCleanupWorker>();
+
 builder.Services.AddScoped<RunService>();
 builder.Services.AddRazorPages(options =>
 {

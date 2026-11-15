@@ -24,6 +24,7 @@ front-end dependencies.
 | Notifications | In the app (bell with unread count) and by email through Microsoft 365. Sent automatically when an approval is needed and when a request is completed, not approved, cancelled or stuck; a *Send notification* step covers anything else, including outside addresses |
 | Locations | A locations table filled from Freshservice with one click (Admin → Locations → Sync), plus any you add by hand. Forms use it through a *Location* field |
 | Save and finish later | Every form has a *Save for later* button. The draft appears under *Your drafts* on the home page; once saved, further changes are saved automatically. Drafts are private to their owner and are removed when submitted |
+| Attachments | An *Attachments* field lets people upload files (PDF, images, Word, Excel, PowerPoint, text). Files are kept in a folder on the web server, shown on the request to the people allowed to see it, and can be attached to the Freshservice ticket a workflow creates |
 | Running requests | Timeline of every step, approvals inbox, retry of failed steps, cancel |
 | Safety | Draft vs. published versions; a request always finishes on the version it started with; publishing is blocked while the checker finds problems |
 
@@ -77,6 +78,8 @@ Settings come from `appsettings.json`, `appsettings.Production.json` or environm
 | `Email:Mode` | `Off` (default) or `Graph` to send email through Microsoft 365 |
 | `Email:From` | Mailbox to send as, e.g. a shared `no-reply@yourschool.org` mailbox |
 | `Email:BaseUrl` | Public address of this site, used for links in emails, e.g. `https://flow.yourschool.org` |
+| `Attachments:Path` | Folder for uploaded files. Default: `App_Data/uploads` inside the site folder |
+| `Attachments:MaxFileMb` | Largest single file, in MB (default 10, at most 25) |
 | `Freshservice:Domain` | e.g. `yourschool` or `yourschool.freshservice.com` |
 | `Freshservice:ApiKey` | API key of the Freshservice agent account SchoolFlow acts as |
 | `Freshservice:WebhookSecret` | 16+ random characters; enables the ticket-event webhook |
@@ -140,6 +143,27 @@ see notifications in the app. Addresses outside the sender's domain get the emai
   shows the exact URL, header and JSON body to use, and a log of recent events.
 - A ticket-triggered workflow runs **once per ticket**, so a workflow that updates the ticket it was
   started by cannot re-trigger itself in a loop.
+
+### Attachments
+
+- Add an **Attachments** field to a form and set how many files it takes. To send the files on to
+  Freshservice, tick **Attach the request's files to the ticket** on a *Create ticket* step.
+- **Where files live:** in `App_Data/uploads` on the web server (or `Attachments:Path`), under random
+  names. **Back this folder up** along with the database, and keep it across upgrades — the database
+  only holds each file's name, size and owner. Windows Defender (or your antivirus) scans the folder
+  like any other; a quarantined file simply shows as "no longer available" on its request.
+- **What is accepted:** pdf, png, jpg, gif, webp, heic, doc/docx, xls/xlsx, ppt/pptx, txt, csv, rtf,
+  up to 10 MB each by default. The first bytes must match the type, so a program renamed to `.pdf`
+  is refused. Files are always served as downloads, never displayed inside the site.
+- **Who can open a file:** the person who uploaded it; and once submitted, anyone who can open that
+  request — the requester, anyone asked to approve it, builders and admins. Everyone else gets
+  "not found".
+- **Freshservice:** the ticket is created first, then the files are added in a second call. If
+  Freshservice refuses them, the ticket and the request still go ahead and the request's timeline
+  says which files were left out. Freshservice allows 40 MB of attachments per ticket.
+- Files uploaded to a form that is never submitted or saved as a draft are deleted after 30 days.
+  Files on submitted requests are kept indefinitely.
+- Files are not copied by "start from a previous request".
 
 ### Locations
 
@@ -218,7 +242,8 @@ The in-app **Formula guide** (Build → Formula guide) documents the formula lan
 - **Verified against a simulator, not a live Freshservice account.** The API client follows the
   Freshservice v2 API and is unit-tested against recorded-style responses, but the first connection
   to your tenant should be tested with a throwaway workflow. The least certain calls are the
-  requester name search and "my devices" asset filter used by lookup fields.
+  requester name search and "my devices" asset filter used by lookup fields, and the call that adds
+  files to a ticket.
 - **Entra sign-in could not be exercised end to end** in the build environment (it needs a real
   tenant). Startup, the redirect to Microsoft and the role handling are covered.
 - **Email could not be tested against a real Microsoft 365 tenant.** The Graph calls are unit-tested

@@ -22,12 +22,15 @@ public sealed class RunService
     private readonly NotificationService _notifications;
     private readonly ILogger<RunService> _log;
 
-    public RunService(AppDbContext db, IFreshserviceClient freshservice, NotificationService notifications, ILogger<RunService> log)
+    private readonly AttachmentService _attachments;
+
+    public RunService(AppDbContext db, IFreshserviceClient freshservice, NotificationService notifications, AttachmentService attachments, ILogger<RunService> log)
     {
         _db = db;
         _freshservice = freshservice;
         _notifications = notifications;
-        _engine = new WorkflowEngine(freshservice, directory: new ApprovalDirectory(db));
+        _attachments = attachments;
+        _engine = new WorkflowEngine(freshservice, directory: new ApprovalDirectory(db), files: attachments);
         _log = log;
     }
 
@@ -59,7 +62,8 @@ public sealed class RunService
         var ambient = Values.NewDict();
         ambient["submitter"] = SubmitterRecord(email, name);
         var form = FormEvaluator.Evaluate(def.Form, input, ambient, departments: await ActiveDepartmentsAsync(ct),
-            locations: await ActiveLocationsAsync(ct));
+            locations: await ActiveLocationsAsync(ct),
+            attachments: await _attachments.PendingForAsync(email, workflow.Id, ct));
         if (!form.IsValid) return (form, null);
 
         var context = Values.NewDict();
@@ -75,7 +79,31 @@ public sealed class RunService
             run.DepartmentId = (long)departmentId;
             run.DepartmentName = Values.ToText(department.GetValueOrDefault("name"));
         }
-        var id = await StartAsync(run, def, context, ct);
+        // Every uploaded file on the form, as one list flow steps can use (e.g. to attach them to a ticket).
+        var files = new List<object?>();
+        foreach (var field in def.Form.Fields.Where(f => f.Type == FieldTypes.Attachments))
+        {
+            if (form.Values.GetValueOrDefault(field.Key) is not List<object?> list) continue;
+            foreach (var file in list.OfType<Dictionary<string, object?>>())
+            {
+                var copy = Values.NewDict();
+                foreach (var kv in file) copy[kv.Key] = kv.Value;
+                copy["field"] = field.Key;
+                files.Add(copy);
+            }
+        }
+        context["attachments"] = files;
+
+        // The files now belong to this request: claim them before any step runs, so they can never be
+        // deleted or attached to a second request while this one is in progress.
+        var fileIds = files.OfType<Dictionary<string, object?>>().Select(f => Values.ToText(f.GetValueOrDefault("id"))).ToList();
+        var id = await StartAsync(run, def, context, ct, async runId =>
+        {
+            if (fileIds.Count == 0) return;
+            var claimed = await _db.Attachments.Where(a => fileIds.Contains(a.PublicId) && a.OwnerEmail == email && a.RunId == null).ToListAsync(ct);
+            foreach (var attachment in claimed) attachment.RunId = runId;
+            await _db.SaveChangesAsync(ct);
+        });
         return (form, id);
     }
 
@@ -92,7 +120,8 @@ public sealed class RunService
         UpdatedAt = DateTime.UtcNow,
     };
 
-    private async Task<int> StartAsync(WorkflowRun run, WorkflowDefinition def, Dictionary<string, object?> context, CancellationToken ct)
+    private async Task<int> StartAsync(WorkflowRun run, WorkflowDefinition def, Dictionary<string, object?> context, CancellationToken ct,
+        Func<int, Task>? beforeFirstStep = null)
     {
         // Save first so the run has an ID that formulas (run.id) and the timeline can use.
         run.ContextJson = Json.Serialize(context);
@@ -103,6 +132,8 @@ public sealed class RunService
         runInfo["id"] = (decimal)run.Id;
         runInfo["workflow"] = run.WorkflowName;
         context["run"] = runInfo;
+
+        if (beforeFirstStep is not null) await beforeFirstStep(run.Id);
 
         var state = new RunState { Context = context };
         state.NewEvents.Add(new RunEvent(DateTime.Now, null, "info",

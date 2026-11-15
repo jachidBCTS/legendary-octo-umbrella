@@ -151,6 +151,27 @@ public class FormDraft
     public DateTime UpdatedAt { get; set; }
 }
 
+/// <summary>
+/// An uploaded file. The content is a file in the uploads folder (named <see cref="StoredName"/>);
+/// this row says what it is, who uploaded it and which request it belongs to.
+/// </summary>
+public class Attachment
+{
+    public int Id { get; set; }
+    /// <summary>Random identifier used in links and form values; cannot be guessed from another file's.</summary>
+    public string PublicId { get; set; } = "";
+    /// <summary>Random name of the file on disk. Never derived from what the person called their file.</summary>
+    public string StoredName { get; set; } = "";
+    public string FileName { get; set; } = "";
+    public string ContentType { get; set; } = "";
+    public long Size { get; set; }
+    public string OwnerEmail { get; set; } = "";
+    public int WorkflowId { get; set; }
+    /// <summary>The request this file was submitted with; null while the form is still being filled in.</summary>
+    public int? RunId { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
 /// <summary>A saved approval chain. OwnerEmail "" means a shared template; otherwise it is that person's own.</summary>
 public class ApprovalChainTemplate
 {
@@ -210,6 +231,7 @@ public class AppDbContext : DbContext
 
     public DbSet<Location> Locations => Set<Location>();
     public DbSet<FormDraft> FormDrafts => Set<FormDraft>();
+    public DbSet<Attachment> Attachments => Set<Attachment>();
 
     public DbSet<Workflow> Workflows => Set<Workflow>();
     public DbSet<WorkflowRun> Runs => Set<WorkflowRun>();
@@ -280,6 +302,17 @@ public class AppDbContext : DbContext
             e.Property(x => x.OwnerEmail).HasMaxLength(320);
             e.Property(x => x.Summary).HasMaxLength(300);
             e.HasIndex(x => new { x.OwnerEmail, x.WorkflowId });
+        });
+        b.Entity<Attachment>(e =>
+        {
+            e.Property(x => x.PublicId).HasMaxLength(40);
+            e.Property(x => x.StoredName).HasMaxLength(60);
+            e.Property(x => x.FileName).HasMaxLength(200);
+            e.Property(x => x.ContentType).HasMaxLength(120);
+            e.Property(x => x.OwnerEmail).HasMaxLength(320);
+            e.HasIndex(x => x.PublicId).IsUnique();
+            e.HasIndex(x => x.RunId);
+            e.HasIndex(x => new { x.OwnerEmail, x.RunId });
         });
         b.Entity<Location>(e =>
         {

@@ -17,6 +17,7 @@
     if (mounted) mounted.destroy();
     mounted = mountForm(root, {
       definition,
+      workflowId,
       initialValues,
       draftAlreadySaved: draftId !== null,
       evaluate: (values, init) => api('POST', '/api/forms/evaluate', { workflowId, values, init }),

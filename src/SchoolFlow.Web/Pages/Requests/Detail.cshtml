@@ -113,7 +113,18 @@
             @foreach (var f in Model.Fields)
             {
                 <dt>@f.Label</dt>
-                @if (f.Rows is not null)
+                @if (f.Files is not null)
+                {
+                    <dd>
+                        <ul class="file-list">
+                            @foreach (var file in f.Files)
+                            {
+                                <li><a href="@file.Url" download><partial name="_Icons" model='"clip"' /> @file.Name</a> <span class="muted small">@file.Size</span></li>
+                            }
+                        </ul>
+                    </dd>
+                }
+                else if (f.Rows is not null)
                 {
                     <dd class="full">
                         <div class="table-wrap"><table class="table compact">

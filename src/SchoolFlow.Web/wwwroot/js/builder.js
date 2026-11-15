@@ -24,6 +24,7 @@
     { type: 'department', label: 'Department', hint: 'Sets the final approver' },
     { type: 'approval_chain', label: 'Approval chain', hint: 'Requester picks approvers' },
     { type: 'location', label: 'Location', hint: 'Building or room' },
+    { type: 'attachments', label: 'Attachments', hint: 'Upload files' },
     { type: 'calculated', label: 'Calculated', hint: 'Formula result' },
     { type: 'table', label: 'Table', hint: 'Repeating rows' },
     { type: 'section', label: 'Section heading', hint: 'Group fields' },
@@ -78,7 +79,7 @@
     if (/^[0-9]/.test(s)) s = 'f_' + s;
     return s;
   };
-  const RESERVED = ['submitter', 'ticket', 'approval', 'approvals', 'run', 'event', 'chain', 'true', 'false', 'null', 'blank', 'and', 'or', 'not'];
+  const RESERVED = ['submitter', 'ticket', 'approval', 'approvals', 'run', 'event', 'chain', 'attachments', 'true', 'false', 'null', 'blank', 'and', 'or', 'not'];
   function uniqueKey(base, taken) {
     let key = RESERVED.includes(base) ? base + '_field' : base;
     let n = 2;
@@ -309,6 +310,8 @@
           items.push([f.key + '.id', (f.label || f.key) + ' (Freshservice ID)']);
         } else if (f.type === 'department' || f.type === 'location') {
           items.push([f.key + '.name', (f.label || f.key) + ' (name)']);
+        } else if (f.type === 'attachments') {
+          items.push(['COUNT(' + f.key + ')', 'Number of files in ' + (f.label || f.key)]);
         } else if (f.type === 'approval_chain') {
           // A chain is not a simple value; it is used by the "Approval chain" flow step.
         } else {
@@ -321,7 +324,8 @@
       items.push(['ticket.id', 'Ticket number'], ['ticket.status', 'Ticket status (2 Open, 3 Pending, 4 Resolved, 5 Closed)'],
         ['ticket.priority', 'Ticket priority (1 Low … 4 Urgent)'], ['ticket.subject', 'Ticket subject'],
         ['approval.by', 'Who made the last approval decision'], ['approval.comment', "The approver's comment"],
-        ['approval.approved', 'True if the last decision was Approve'], ['run.id', 'Request number in SchoolFlow']);
+        ['approval.approved', 'True if the last decision was Approve'], ['run.id', 'Request number in SchoolFlow'],
+        ['JOIN(attachments.name, ", ")', 'Names of all the files uploaded with the request'], ['COUNT(attachments)', 'How many files were uploaded']);
       state.def.flow.nodes.forEach((n) => {
         if (n.type === 'set_variable' && n.config.name) items.push([n.config.name.trim(), 'Value set by “' + (n.label || 'Set value') + '”']);
         if (n.type === 'fs_lookup' && n.config.saveAs) items.push([n.config.saveAs.trim() + '.name', 'Looked up by “' + (n.label || 'Look up') + '”']);
@@ -627,10 +631,14 @@
       panel.append(h('p', { class: 'b-help' }, 'People choose from the departments admins have set up (Admin → Departments). The request is filed under it, and an “Approval chain” flow step can add that department\'s final approver.'));
     if (field.type === 'location')
       panel.append(h('p', { class: 'b-help' }, 'People choose from the school\'s locations (Admin → Locations, which can be synced from Freshservice). In formulas use ' + (field.key || 'field') + '.name.'));
+    if (field.type === 'attachments')
+      panel.append(
+        row('Most files allowed', numberInput(field.maxFiles, (v) => { field.maxFiles = v === null ? null : Math.max(1, Math.min(20, Math.round(v))); }, { min: 1, max: 20, step: 1, placeholder: '5' })),
+        h('p', { class: 'b-help' }, 'People can upload PDFs, images, Word, Excel, PowerPoint and text files. Files show on the request for the requester, approvers and builders. To send them to Freshservice, tick “Attach the request\'s files” on a Create ticket step.'));
     if (field.type === 'approval_chain')
       panel.append(h('p', { class: 'b-help' }, 'People pick a saved chain or list their own approvers in order. Add an “Approval chain” step to the flow and point it at this field to run it.'));
 
-    if (!isSection && !['table', 'textarea', 'approval_chain'].includes(field.type))
+    if (!isSection && !['table', 'textarea', 'approval_chain', 'attachments'].includes(field.type))
       panel.append(row('Width', select(field.width || '', [['', 'Full width'], ['half', 'Half width (side by side)']], (v) => { field.width = clean(v); refresh(); })));
 
     if (['select', 'radio', 'multiselect'].includes(field.type))
@@ -657,7 +665,7 @@
 
     if (field.type === 'table') renderColumnsEditor(panel, field);
 
-    if (!isSection && !isCalc && !['table', 'lookup', 'department', 'approval_chain', 'location'].includes(field.type))
+    if (!isSection && !isCalc && !['table', 'lookup', 'department', 'approval_chain', 'location', 'attachments'].includes(field.type))
       panel.append(row('Default value (formula)', formulaInput(field.default, (v) => { field.default = clean(v); }, { placeholder: field.type === 'date' ? 'TODAY()' : 'e.g. submitter.email' }),
         'Worked out once when the form opens. Put plain text in quotes.'));
 
@@ -769,7 +777,7 @@
     // Nudge sideways until it does not sit on top of another step.
     while (state.def.flow.nodes.some((n) => Math.abs(n.x - x) < 40 && Math.abs(n.y - y) < 40)) x += 260;
     const node = { id: newNodeId(type), type, label: info.label, x, y, config: {}, customFields: {} };
-    if (type === 'fs_create_ticket') Object.assign(node.config, { subject: '', priority: '2', status: '2' });
+    if (type === 'fs_create_ticket') Object.assign(node.config, { subject: '', priority: '2', status: '2', attachFiles: 'true' });
     if (type === 'fs_add_note') node.config.visibility = 'private';
     if (type === 'fs_lookup') Object.assign(node.config, { kind: 'requester', saveAs: 'person' });
     if (type === 'wait_ticket') node.config.until = 'ticket.status >= 4';
@@ -1208,6 +1216,8 @@
             row('Category', tpl('category', 1)),
             row('Sub-category', tpl('subCategory', 1))),
           row('Tags', tpl('tags', 1, 'comma, separated')),
+          toggle('Attach the request\'s files to the ticket', c.attachFiles === 'true', (v) => { set('attachFiles')(v ? 'true' : ''); }),
+          h('p', { class: 'b-help' }, 'Sends everything uploaded through Attachments fields. If Freshservice refuses a file the ticket is still created, and the request\'s timeline says which files were left out.'),
           customFieldsEditor(node));
         break;
       case 'fs_service_request':

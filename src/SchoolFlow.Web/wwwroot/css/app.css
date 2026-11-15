@@ -314,6 +314,21 @@ pre.code { background: #171b3a; color: #e4e7ff; padding: 14px 16px; border-radiu
 .dept-save .b-toggle { margin: 0; }
 .panel.inactive { opacity: .65; }
 
+/* attachments */
+.sf-attach { border: 1px dashed var(--line-2); border-radius: 10px; padding: 12px; background: #fbfbfe; }
+.sf-attach-top { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+/* The real file input is kept for keyboard and screen-reader use but drawn as the button beside it. */
+.sf-file-input { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+.sf-file-input:focus-visible + .btn { outline: 2px solid var(--brand); outline-offset: 2px; }
+.btn.disabled { opacity: .55; cursor: not-allowed; }
+.sf-files, .file-list { list-style: none; margin: 0; padding: 0; }
+.sf-files li { display: flex; gap: 10px; align-items: center; background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 6px 6px 6px 12px; margin-top: 8px; }
+.sf-file-name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
+.file-list li { margin-bottom: 4px; overflow-wrap: anywhere; }
+.file-list a { display: inline-flex; gap: 6px; align-items: center; }
+.tl-warning .tl-dot { background: #e0a100; }
+.tl-warning .tl-msg { color: var(--warn); }
+
 /* drafts */
 .draft-list { padding: 4px 0; }
 .draft { display: flex; gap: 12px; align-items: center; padding: 12px 18px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }

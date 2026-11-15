@@ -23,6 +23,13 @@ public sealed class ChainStep
 
 public sealed record DepartmentInfo(long Id, string Name, List<string> FinalApprovers, string FinalRule);
 
+/// <summary>Where the engine reads uploaded files from when a step sends them somewhere (the web app keeps them on disk).</summary>
+public interface IAttachmentStore
+{
+    /// <summary>Returns the file, or null when it no longer exists.</summary>
+    Task<Freshservice.TicketFile?> ReadAsync(string attachmentId, CancellationToken ct = default);
+}
+
 /// <summary>Where the engine looks up chain templates and departments (the web app backs this with its database).</summary>
 public interface IApprovalDirectory
 {

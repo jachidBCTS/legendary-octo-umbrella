@@ -142,6 +142,8 @@ jobs:
           if (-not (Test-Path "$site\App_Data\schoolflow.db")) { Write-Host 'FAIL  database file was not created in App_Data'; $failed = $true } else { Write-Host 'ok    database created by migrations in App_Data' }
           if (-not (Get-ChildItem "$site\App_Data\keys" -Filter *.xml -ErrorAction SilentlyContinue)) { Write-Host 'FAIL  sign-in keys were not saved to App_Data\keys'; $failed = $true } else { Write-Host 'ok    sign-in keys saved to App_Data\keys' }
 
+          if (-not (Test-Path "$site\App_Data\uploads")) { Write-Host 'FAIL  uploads folder was not created in App_Data'; $failed = $true } else { Write-Host 'ok    uploads folder created in App_Data' }
+
           # Keys must survive an app-pool recycle (otherwise everyone is signed out on every restart).
           $before = (Get-ChildItem "$site\App_Data\keys" -Filter *.xml).Name -join ','
           Restart-WebAppPool SchoolFlow

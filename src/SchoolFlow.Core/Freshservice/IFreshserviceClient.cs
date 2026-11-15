@@ -34,6 +34,9 @@ public sealed class TicketUpdate
     public bool IsEmpty => Priority is null && Status is null && GroupId is null && ResponderId is null && CustomFields.Count == 0;
 }
 
+/// <summary>A file to attach to a ticket.</summary>
+public sealed record TicketFile(string Name, string ContentType, byte[] Content);
+
 public sealed record LookupItem(string Id, string Name, string? Email = null, string? Detail = null);
 
 /// <summary>Everything the workflow engine and the form lookups need from Freshservice.</summary>
@@ -48,6 +51,9 @@ public interface IFreshserviceClient
     Task<Dictionary<string, object?>> UpdateTicketAsync(long ticketId, TicketUpdate update, CancellationToken ct = default);
 
     Task AddNoteAsync(long ticketId, string bodyHtml, bool isPrivate, CancellationToken ct = default);
+
+    /// <summary>Adds files to an existing ticket.</summary>
+    Task AttachFilesAsync(long ticketId, IReadOnlyList<TicketFile> files, CancellationToken ct = default);
 
     Task<Dictionary<string, object?>?> GetTicketAsync(long ticketId, CancellationToken ct = default);
 

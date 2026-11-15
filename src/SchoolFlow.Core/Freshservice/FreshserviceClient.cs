@@ -82,6 +82,29 @@ public sealed class FreshserviceClient : IFreshserviceClient
         using var _ = await SendAsync(HttpMethod.Post, $"api/v2/tickets/{ticketId}/notes", body, ct);
     }
 
+    /// <summary>
+    /// Freshservice takes files as a multipart form on the ticket update call
+    /// (PUT /api/v2/tickets/{id} with one "attachments[]" part per file).
+    /// </summary>
+    public async Task AttachFilesAsync(long ticketId, IReadOnlyList<TicketFile> files, CancellationToken ct = default)
+    {
+        if (files.Count == 0) return;
+        using var form = new MultipartFormDataContent();
+        foreach (var file in files)
+        {
+            var part = new ByteArrayContent(file.Content);
+            part.Headers.ContentType = MediaTypeHeaderValue.TryParse(file.ContentType, out var type) ? type : new MediaTypeHeaderValue("application/octet-stream");
+            // Quotes and line breaks in a file name would break the multipart header.
+            var safeName = new string(file.Name.Where(c => c != '"' && c != '\\' && !char.IsControl(c)).ToArray());
+            form.Add(part, "attachments[]", safeName.Length == 0 ? "file" : safeName);
+        }
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v2/tickets/{ticketId}") { Content = form };
+        using var response = await _http.SendAsync(request, ct);
+        if (response.IsSuccessStatusCode) return;
+        var text = await response.Content.ReadAsStringAsync(ct);
+        throw new FreshserviceException(DescribeError(response.StatusCode, text), (int)response.StatusCode);
+    }
+
     public async Task<Dictionary<string, object?>?> GetTicketAsync(long ticketId, CancellationToken ct = default)
     {
         using var doc = await SendAsync(HttpMethod.Get, $"api/v2/tickets/{ticketId}", null, ct, notFoundIsNull: true);

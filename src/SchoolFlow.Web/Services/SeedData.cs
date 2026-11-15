@@ -84,7 +84,9 @@ public static class SeedData
           { "key": "approver_email", "label": "Approver's email", "type": "email", "visibleWhen": "total >= 500", "required": true,
             "help": "Orders of $500 or more need approval from your supervisor or principal.",
             "rules": [ { "check": "LOWER(approver_email) != LOWER(submitter.email)", "message": "You cannot approve your own request." } ] },
-          { "key": "justification", "label": "Justification", "type": "textarea", "requiredWhen": "total >= 500", "help": "Required for orders of $500 or more." }
+          { "key": "justification", "label": "Justification", "type": "textarea", "requiredWhen": "total >= 500", "help": "Required for orders of $500 or more." },
+          { "key": "quotes", "label": "Quotes or supporting documents", "type": "attachments", "maxFiles": 5, "requiredWhen": "total >= 2500",
+            "help": "Attach the vendor quote. Required for orders of $2,500 or more." }
         ]
       },
       "flow": {
@@ -98,7 +100,7 @@ public static class SeedData
               "subject": "Purchase request: {{title}} ({{TEXT(total, 'C2')}})",
               "description": "Requested by: {{submitter.name}} ({{submitter.email}})\nDepartment: {{department.name}}\nNeeded by: {{TEXT(needed_by, 'MMM d, yyyy')}}\nType: {{kind}}\n\nItems:\n{{JOIN(items.item, ', ')}}\n\nSubtotal: {{TEXT(subtotal, 'C2')}}\nShipping: {{TEXT(shipping, 'C2')}}\nTotal: {{TEXT(total, 'C2')}}\n\nJustification: {{justification}}\nStudent data: {{IF(student_data, 'Yes — ' & privacy_notes, 'No')}}",
               "priority": "2", "priorityFormula": "IF(DATEDIFF(TODAY(), needed_by, 'weekdays') <= 7, 3, 2)", "status": "2",
-              "departmentId": "{{department}}", "tags": "purchase-request, {{LOWER(kind)}}" } },
+              "departmentId": "{{department}}", "tags": "purchase-request, {{LOWER(kind)}}", "attachFiles": "true" } },
           { "id": "note", "type": "fs_add_note", "label": "Record approval", "x": 30, "y": 750,
             "config": { "body": "Approved by {{approval.by}}.\n{{approval.comment}}", "visibility": "private" } },
           { "id": "was_approved", "type": "condition", "label": "Was approval needed?", "x": 290, "y": 600, "config": { "expression": "NOT(ISBLANK(approval.by))" } },
@@ -141,7 +143,8 @@ public static class SeedData
             "placeholder": "Anything that helps us fix it faster" },
           { "key": "days_ago", "label": "Days since it happened", "type": "calculated", "formula": "DATEDIFF(happened_on, TODAY())", "visibleWhen": "DATEDIFF(happened_on, TODAY()) > 7",
             "help": "Reports more than a week old are flagged for follow-up." },
-          { "key": "needs_loaner", "label": "I need a loaner device", "type": "checkbox" }
+          { "key": "needs_loaner", "label": "I need a loaner device", "type": "checkbox" },
+          { "key": "photos", "label": "Photos of the problem", "type": "attachments", "maxFiles": 4, "help": "Optional. A photo of the damage or of the error on screen helps us fix it faster." }
         ]
       },
       "flow": {
@@ -153,7 +156,7 @@ public static class SeedData
             "config": {
               "subject": "{{problem}}: {{COALESCE(device.name, device_other)}}",
               "description": "Reported by: {{submitter.name}} ({{submitter.email}})\nDevice: {{COALESCE(device.name, device_other)}}\nProblem: {{problem}}\nHappened on: {{TEXT(happened_on, 'MMM d, yyyy')}}\nPick-up location: {{location.name}}\nLoaner needed: {{IF(needs_loaner, 'Yes', 'No')}}\n\n{{details}}",
-              "priority": "2", "priorityFormula": "priority_level", "status": "2", "tags": "device-repair" } },
+              "priority": "2", "priorityFormula": "priority_level", "status": "2", "tags": "device-repair", "attachFiles": "true" } },
           { "id": "is_lost", "type": "condition", "label": "Lost or stolen?", "x": 290, "y": 440, "config": { "expression": "problem == 'Lost or stolen'" } },
           { "id": "lost_note", "type": "fs_add_note", "label": "Flag for security", "x": 30, "y": 580,
             "config": { "body": "Device reported lost or stolen. Police report filed: {{IF(police_report, 'Yes', 'No')}}. Lock the device in the management console.", "visibility": "private" } },

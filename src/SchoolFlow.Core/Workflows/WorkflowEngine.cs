@@ -60,12 +60,18 @@ public sealed class WorkflowEngine
 
     private readonly IFreshserviceClient _freshservice;
     private readonly IApprovalDirectory? _directory;
+    private readonly IAttachmentStore? _files;
     private readonly Func<DateTime> _now;
 
-    public WorkflowEngine(IFreshserviceClient freshservice, Func<DateTime>? now = null, IApprovalDirectory? directory = null)
+    /// <summary>Freshservice's documented ceiling for all attachments on one ticket.</summary>
+    public const long MaxTicketAttachmentBytes = 40L * 1024 * 1024;
+
+    public WorkflowEngine(IFreshserviceClient freshservice, Func<DateTime>? now = null, IApprovalDirectory? directory = null,
+        IAttachmentStore? files = null)
     {
         _freshservice = freshservice;
         _directory = directory;
+        _files = files;
         _now = now ?? (() => DateTime.Now);
     }
 
@@ -455,6 +461,8 @@ public sealed class WorkflowEngine
                 var ticket = await _freshservice.CreateTicketAsync(request, ct);
                 state.Context["ticket"] = ticket;
                 Log(state, node.Id, "ticket", $"{Sim()}Created Freshservice ticket #{Values.ToText(ticket.GetValueOrDefault("id"))}: {request.Subject}");
+                if (node.Get("attachFiles") == "true" && Values.TryToNumber(ticket.GetValueOrDefault("id"), out var newTicketId))
+                    await AttachRequestFilesAsync(state, node, (long)newTicketId, ct);
                 Follow(flow, state, node, "next");
                 break;
             }
@@ -550,6 +558,43 @@ public sealed class WorkflowEngine
 
             default:
                 throw new ExpressionException($"Unknown step type '{node.Type}'.");
+        }
+    }
+
+    /// <summary>
+    /// Sends the request's uploaded files to the ticket. The ticket already exists, so a problem here is
+    /// recorded on the timeline and the request carries on: the files remain available in SchoolFlow.
+    /// </summary>
+    private async Task AttachRequestFilesAsync(RunState state, NodeDef node, long ticketId, CancellationToken ct)
+    {
+        if (state.Context.GetValueOrDefault("attachments") is not List<object?> listed || listed.Count == 0) return;
+        var files = new List<TicketFile>();
+        var skipped = new List<string>();
+        long total = 0;
+        foreach (var item in listed.OfType<Dictionary<string, object?>>())
+        {
+            var id = Values.ToText(item.GetValueOrDefault("id"));
+            var name = Values.ToText(item.GetValueOrDefault("name"));
+            var file = _files is null ? null : await _files.ReadAsync(id, ct);
+            if (file is null) { skipped.Add($"{name} (file missing)"); continue; }
+            if (total + file.Content.LongLength > MaxTicketAttachmentBytes) { skipped.Add($"{name} (over Freshservice's 40 MB per-ticket limit)"); continue; }
+            total += file.Content.LongLength;
+            files.Add(file);
+        }
+        try
+        {
+            if (files.Count > 0)
+            {
+                await _freshservice.AttachFilesAsync(ticketId, files, ct);
+                Log(state, node.Id, "ticket", $"{Sim()}Attached {files.Count} file{(files.Count == 1 ? "" : "s")} to ticket #{ticketId}: {string.Join(", ", files.Select(f => f.Name))}");
+            }
+            if (skipped.Count > 0)
+                Log(state, node.Id, "warning", $"Not attached to ticket #{ticketId}: {string.Join(", ", skipped)}. Anything still on file is available on this request.");
+        }
+        catch (Exception ex) when (ex is FreshserviceException or HttpRequestException || (ex is TaskCanceledException && !ct.IsCancellationRequested))
+        {
+            Log(state, node.Id, "warning",
+                $"Ticket #{ticketId} was created, but the files could not be attached to it ({(ex is FreshserviceException ? ex.Message : "Freshservice could not be reached")}). They are still available on this request.");
         }
     }
 

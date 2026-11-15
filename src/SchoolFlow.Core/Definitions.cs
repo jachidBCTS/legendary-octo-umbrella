@@ -52,12 +52,12 @@ public static class FieldTypes
     public const string Text = "text", TextArea = "textarea", Email = "email", Number = "number", Currency = "currency",
         Date = "date", Select = "select", Radio = "radio", MultiSelect = "multiselect", Checkbox = "checkbox",
         Lookup = "lookup", Calculated = "calculated", Table = "table", Section = "section",
-        Department = "department", ApprovalChain = "approval_chain", Location = "location";
+        Department = "department", ApprovalChain = "approval_chain", Location = "location", Attachments = "attachments";
 
     public static readonly string[] All =
     {
         Text, TextArea, Email, Number, Currency, Date, Select, Radio, MultiSelect, Checkbox, Lookup, Calculated, Table, Section,
-        Department, ApprovalChain, Location,
+        Department, ApprovalChain, Location, Attachments,
     };
 
     public static readonly string[] Column = { Text, Number, Currency, Date, Select, Checkbox, Calculated };
@@ -102,7 +102,12 @@ public sealed class FieldDef
     public List<ColumnDef>? Columns { get; set; }
     public int? MinRows { get; set; }
     public int? MaxRows { get; set; }
+    /// <summary>For attachment fields: how many files may be added (default 5).</summary>
+    public int? MaxFiles { get; set; }
 }
+
+/// <summary>An uploaded file as the form sees it. The file itself is kept by the web app.</summary>
+public sealed record AttachmentInfo(string Id, string Name, long Size);
 
 public sealed class RuleDef
 {

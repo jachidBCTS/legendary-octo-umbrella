@@ -30,7 +30,11 @@ public sealed class RunServiceTests : IDisposable
         db.SaveChanges();
     }
 
-    public void Dispose() => _connection.Dispose();
+    public void Dispose()
+    {
+        _connection.Dispose();
+        if (Directory.Exists(_uploads)) Directory.Delete(_uploads, recursive: true);
+    }
 
     private AppDbContext Db() => new(_options);
     private static readonly Microsoft.Extensions.Configuration.IConfiguration Config =
@@ -41,8 +45,14 @@ public sealed class RunServiceTests : IDisposable
             ["Auth:Admins:0"] = "admin@school.org",
         }).Build();
 
+    private readonly string _uploads = Path.Combine(Path.GetTempPath(), "schoolflow-tests-" + Guid.NewGuid().ToString("N"));
+
+    private AttachmentService Files(AppDbContext db) => new(db,
+        new AttachmentSettings(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Attachments:Path"] = _uploads, ["Attachments:MaxFileMb"] = "1" }).Build(), _uploads),
+        NullLogger<AttachmentService>.Instance);
+
     private RunService Service(AppDbContext db) =>
-        new(db, _freshservice, new NotificationService(db, new EmailSettings(Config), Config), NullLogger<RunService>.Instance);
+        new(db, _freshservice, new NotificationService(db, new EmailSettings(Config), Config), Files(db), NullLogger<RunService>.Instance);
 
     private static Dictionary<string, object?> PurchaseInput(decimal price) => new()
     {
@@ -449,6 +459,148 @@ public sealed class RunServiceTests : IDisposable
         Assert.Equal("", rows[1].Link);                         // outside the school: cannot sign in, so no link
         Assert.Equal("/Requests/Detail/1", rows[0].Link);       // same domain as the sender mailbox: treated as staff
         Assert.All(rows, r => Assert.Equal(EmailStatus.Pending, r.EmailStatus));
+    }
+
+    // ---- attachments ----------------------------------------------------------------------
+
+    private static readonly byte[] Pdf = "%PDF-1.7 pretend quote"u8.ToArray();
+
+    private static Microsoft.AspNetCore.Http.IFormFile Upload(string name, byte[] content) =>
+        new Microsoft.AspNetCore.Http.FormFile(new MemoryStream(content), 0, content.Length, "file", name);
+
+    [Fact]
+    public async Task Upload_StoresTheFileUnderARandomName_InsideTheUploadsFolder()
+    {
+        await using var db = Db();
+        var result = await Files(db).SaveAsync(Upload("..\\..\\web.config\\Quote: \"final\".pdf", Pdf), 1, "t@school.org", default);
+        Assert.Null(result.Error);
+        var saved = result.Attachment!;
+        Assert.Equal("Quote final.pdf", saved.FileName);                    // path parts and awkward characters removed
+        Assert.Equal("application/pdf", saved.ContentType);
+        Assert.Matches("^[0-9a-f]{32}\\.bin$", saved.StoredName);            // nothing of the uploaded name reaches the disk
+        Assert.Equal(new[] { saved.StoredName }, Directory.GetFiles(_uploads).Select(Path.GetFileName).ToArray());
+        Assert.Equal(Pdf, await File.ReadAllBytesAsync(Path.Combine(_uploads, saved.StoredName)));
+        Assert.Null(saved.RunId);
+    }
+
+    [Theory]
+    [InlineData("virus.exe", "MZ-program", "cannot be uploaded")]
+    [InlineData("page.html", "<script>", "cannot be uploaded")]
+    [InlineData("noextension", "%PDF-1.7", "cannot be uploaded")]
+    [InlineData("renamed.pdf", "MZ this is really a program", "does not look like a real PDF")]
+    [InlineData("renamed.png", "%PDF-1.7", "does not look like a real PNG")]
+    [InlineData("notes.txt", "MZ\0\0binary", "does not look like a real TXT")]
+    [InlineData("empty.pdf", "", "empty")]
+    public async Task Upload_RejectsDangerousOrMislabelledFiles_AndLeavesNothingOnDisk(string name, string content, string expected)
+    {
+        await using var db = Db();
+        var result = await Files(db).SaveAsync(Upload(name, System.Text.Encoding.Latin1.GetBytes(content)), 1, "t@school.org", default);
+        Assert.Null(result.Attachment);
+        Assert.Contains(expected, result.Error);
+        Assert.Equal(0, await db.Attachments.CountAsync());
+        Assert.True(!Directory.Exists(_uploads) || Directory.GetFiles(_uploads).Length == 0);
+    }
+
+    [Fact]
+    public async Task Upload_EnforcesTheSizeLimit()
+    {
+        await using var db = Db();
+        var big = new byte[1024 * 1024 + 1];
+        Pdf.CopyTo(big, 0);
+        var result = await Files(db).SaveAsync(Upload("big.pdf", big), 1, "t@school.org", default);
+        Assert.Contains("larger than the 1 MB limit", result.Error);
+    }
+
+    [Fact]
+    public async Task SubmittedFiles_BelongToTheRequest_GoToTheTicket_AndCannotBeReusedOrDeleted()
+    {
+        int repairId;
+        string fileId;
+        await using (var db = Db())
+        {
+            repairId = (await db.Workflows.SingleAsync(w => w.Name == "Device Repair Request")).Id;
+            fileId = (await Files(db).SaveAsync(Upload("crack.pdf", Pdf), repairId, "t@school.org", default)).Attachment!.PublicId;
+        }
+        Dictionary<string, object?> Input(string id) => new()
+        {
+            ["device_other"] = "Laptop 7", ["problem"] = "Cracked screen",
+            ["photos"] = new List<object?> { new Dictionary<string, object?> { ["id"] = id, ["name"] = "spoofed-name.exe", ["size"] = 1m } },
+        };
+
+        // Someone else cannot attach a file they did not upload, even knowing its ID.
+        await using (var db = Db())
+        {
+            var workflow = await db.Workflows.SingleAsync(w => w.Id == repairId);
+            var (form, runId) = await Service(db).SubmitFormAsync(workflow, Input(fileId), "other@school.org", "Other", default);
+            Assert.Null(runId);
+            Assert.Contains("could not be found", form.Fields["photos"].Errors.Single());
+        }
+
+        int run;
+        await using (var db = Db())
+        {
+            var workflow = await db.Workflows.SingleAsync(w => w.Id == repairId);
+            var (form, runId) = await Service(db).SubmitFormAsync(workflow, Input(fileId), "t@school.org", "T Teacher", default);
+            Assert.True(form.IsValid, string.Join(" | ", form.Fields.SelectMany(f => f.Value.Errors)));
+            run = runId!.Value;
+        }
+        await using (var db = Db())
+        {
+            Assert.Equal(run, (await db.Attachments.SingleAsync()).RunId);
+            var (ticketId, files) = ((long, IReadOnlyList<TicketFile>))_freshservice.Calls.Single(c => c.Action == "attach_files").Payload;
+            Assert.Equal(90001, ticketId);
+            Assert.Equal("crack.pdf", files.Single().Name);                  // the server's name, not the browser's
+            Assert.Equal(Pdf, files.Single().Content);
+            Assert.Contains(await db.RunEvents.ToListAsync(), e => e.Message.Contains("Attached 1 file to ticket #90001: crack.pdf"));
+            Assert.Contains("\"attachments\":[{", (await db.Runs.SingleAsync()).ContextJson);
+
+            // Part of the request's record now: the uploader can no longer delete it, and it cannot ride on a second request.
+            Assert.False(await Files(db).DeletePendingAsync(fileId, "t@school.org", default));
+            var workflow = await db.Workflows.SingleAsync(w => w.Id == repairId);
+            var (again, second) = await Service(db).SubmitFormAsync(workflow, Input(fileId), "t@school.org", "T Teacher", default);
+            Assert.Null(second);
+            Assert.Contains("could not be found", again.Fields["photos"].Errors.Single());
+        }
+    }
+
+    [Fact]
+    public async Task AbandonedUploads_AreCleanedUp_ButNotOnesInADraftOrARequest()
+    {
+        await using var db = Db();
+        var files = Files(db);
+        var old = DateTime.UtcNow.AddDays(-40);
+        async Task<Attachment> Add(string name, DateTime created, int? runId = null)
+        {
+            var a = (await files.SaveAsync(Upload(name, Pdf), 1, "t@school.org", default)).Attachment!;
+            a.CreatedAt = created;
+            a.RunId = runId;
+            return a;
+        }
+        var abandoned = await Add("abandoned.pdf", old);
+        var inDraft = await Add("in-draft.pdf", old);
+        var submitted = await Add("submitted.pdf", old, runId: 7);
+        var recent = await Add("recent.pdf", DateTime.UtcNow.AddDays(-2));
+        db.FormDrafts.Add(new FormDraft { WorkflowId = 1, OwnerEmail = "t@school.org", ValuesJson = $"{{\"photos\":[{{\"id\":\"{inDraft.PublicId}\"}}]}}", CreatedAt = old, UpdatedAt = old });
+        await db.SaveChangesAsync();
+
+        Assert.Equal(1, await files.RemoveAbandonedAsync(AttachmentCleanupWorker.KeepUnsubmittedFor, DateTime.UtcNow, default));
+        var left = await db.Attachments.AsNoTracking().Select(a => a.FileName).OrderBy(n => n).ToListAsync();
+        Assert.Equal(new[] { "in-draft.pdf", "recent.pdf", "submitted.pdf" }, left.ToArray());
+        Assert.False(File.Exists(Path.Combine(_uploads, abandoned.StoredName)));
+        Assert.True(File.Exists(Path.Combine(_uploads, submitted.StoredName)));
+        Assert.Equal(3, Directory.GetFiles(_uploads).Length);
+    }
+
+    [Fact]
+    public async Task MissingFileOnDisk_IsReported_NotThrown()
+    {
+        await using var db = Db();
+        var files = Files(db);
+        var saved = (await files.SaveAsync(Upload("gone.pdf", Pdf), 1, "t@school.org", default)).Attachment!;
+        File.Delete(Path.Combine(_uploads, saved.StoredName)); // e.g. quarantined by antivirus
+        Assert.Null(await files.OpenAsync(saved.PublicId, default));
+        Assert.Null(await files.ReadAsync(saved.PublicId));
+        Assert.Null(await files.OpenAsync("no-such-id", default));
     }
 
     [Theory]

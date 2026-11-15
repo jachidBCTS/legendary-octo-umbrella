@@ -275,6 +275,9 @@
           labelFor = null;
           body = buildChain(field, control);
           break;
+        case 'attachments':
+          body = buildAttachments(field, id, control);
+          break;
         case 'calculated': {
           labelFor = null;
           const out = h('output', { class: 'sf-calc' }, '—');
@@ -290,7 +293,7 @@
           body = input(h('input', { id, type: 'text', placeholder: field.placeholder || null, maxlength: 10000 }), field.key, control);
       }
 
-      const wide = field.type === 'table' || field.type === 'textarea' || field.type === 'approval_chain';
+      const wide = ['table', 'textarea', 'approval_chain', 'attachments'].includes(field.type);
       control.wrap = h('div', { class: 'sf-field' + (field.width === 'half' && !wide ? ' half' : '') + (field.type === 'calculated' ? ' is-calc' : '') },
         h('label', { class: 'sf-label', for: labelFor }, field.label || field.key, ' ', required),
         body,
@@ -393,6 +396,102 @@
         control.error.hidden = false;
       });
       return h('div', null, select, hint);
+    }
+
+    function buildAttachments(field, id, control) {
+      const limit = Math.min(Math.max(Number.isInteger(field.maxFiles) ? field.maxFiles : 5, 1), 20);
+      let files = []; // [{ id, name, size }]
+      let uploading = 0;
+      const list = h('ul', { class: 'sf-files' });
+      const status = h('div', { class: 'muted small', role: 'status' });
+      const picker = h('input', { id, type: 'file', multiple: limit > 1, class: 'sf-file-input',
+        accept: '.pdf,.png,.jpg,.jpeg,.gif,.webp,.heic,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.rtf' });
+      const choose = h('label', { class: 'btn small', for: id }, 'Choose files');
+      const size = (bytes) => (bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(bytes / 1024)) + ' KB');
+
+      function store(notify) {
+        values[field.key] = files.map((f) => ({ id: f.id, name: f.name, size: f.size }));
+        if (notify) changed(field.key, true);
+      }
+
+      function render() {
+        list.textContent = '';
+        for (const file of files) {
+          list.appendChild(h('li', null,
+            h('span', { class: 'sf-file-name' }, file.name), h('span', { class: 'muted small' }, size(file.size)),
+            h('button', { type: 'button', class: 'icon-btn danger', title: 'Remove file', 'aria-label': 'Remove ' + file.name, onclick: () => remove(file) }, '×')));
+        }
+        const full = files.length >= limit;
+        picker.disabled = full || options.preview;
+        choose.classList.toggle('disabled', picker.disabled);
+        status.textContent = options.preview ? 'Uploads are switched off in the preview.'
+          : uploading ? 'Uploading…'
+            : full ? 'That is the most files this question takes.'
+              : 'Up to ' + limit + ' file' + (limit === 1 ? '' : 's') + '. PDF, images, Word, Excel, PowerPoint or text.';
+      }
+
+      async function remove(file) {
+        files = files.filter((f) => f !== file);
+        store(true);
+        render();
+        // Tidy the server copy too; if that fails the nightly clean-up will catch it.
+        try { await api('DELETE', '/api/attachments/' + encodeURIComponent(file.id)); } catch (e) { /* not worth interrupting the person */ }
+      }
+
+      async function upload(file) {
+        const data = new FormData();
+        data.append('workflowId', String(options.workflowId || 0));
+        data.append('field', field.key);
+        data.append('file', file);
+        let response;
+        try {
+          response = await fetch('/api/attachments', { method: 'POST', credentials: 'same-origin', body: data, redirect: 'manual',
+            headers: { Accept: 'application/json', RequestVerificationToken: document.querySelector('meta[name="csrf-token"]')?.content || '' } });
+        } catch (e) {
+          throw new Error('“' + file.name + '” could not be uploaded. Check your connection and try again.');
+        }
+        let body = null;
+        try { body = await response.json(); } catch (e) { body = null; }
+        if (response.type === 'opaqueredirect' || response.status === 401) throw new Error('Your session has expired. Save a draft if you can, then reload the page.');
+        if (response.status === 413) throw new Error('“' + file.name + '” is too large to upload.');
+        if (!response.ok) throw new Error((body && body.error) || '“' + file.name + '” could not be uploaded.');
+        return body;
+      }
+
+      picker.addEventListener('change', async () => {
+        const chosen = Array.from(picker.files || []);
+        picker.value = ''; // so the same file can be chosen again after removing it
+        const errors = [];
+        const room = limit - files.length;
+        if (chosen.length > room) errors.push('Only ' + limit + ' file' + (limit === 1 ? '' : 's') + ' can be added here; the extra ones were left out.');
+        uploading++;
+        render();
+        for (const file of chosen.slice(0, Math.max(0, room))) {
+          try {
+            files.push(await upload(file));
+            store(false);
+            render();
+          } catch (e) {
+            errors.push(e.message);
+          }
+        }
+        uploading--;
+        store(true);
+        render();
+        control.uploadError = errors.join(' ');
+        uploadNote.textContent = control.uploadError;
+        uploadNote.hidden = errors.length === 0;
+      });
+
+      const uploadNote = h('div', { class: 'sf-error', hidden: true });
+      control.set = (v) => {
+        if (!Array.isArray(v)) return;
+        files = v.filter((f) => f && f.id && f.name).map((f) => ({ id: String(f.id), name: String(f.name), size: Number(f.size) || 0 }));
+        store(false);
+        render();
+      };
+      render();
+      return h('div', { class: 'sf-attach' }, h('div', { class: 'sf-attach-top' }, picker, choose, status), list, uploadNote);
     }
 
     function buildChain(field, control) {

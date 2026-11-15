@@ -199,6 +199,33 @@ public class FreshserviceClientTests
         Assert.Equal(2, handler.Requests.Count);
     }
 
+    [Fact]
+    public async Task AttachFiles_SendsAMultipartUpdate_WithOnePartPerFile()
+    {
+        var (client, handler) = Client();
+        handler.Responses.Enqueue((HttpStatusCode.OK, "{\"ticket\":{\"id\":77}}"));
+        await client.AttachFilesAsync(77, new[]
+        {
+            new TicketFile("quote \"final\".pdf", "application/pdf", "%PDF-1.7"u8.ToArray()),
+            new TicketFile("photo.png", "image/png", new byte[] { 0x89, 0x50, 0x4E, 0x47 }),
+        });
+        var request = handler.Requests.Single();
+        Assert.Equal(HttpMethod.Put, request.Method);
+        Assert.Equal("/api/v2/tickets/77", request.Url);
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(request.Body!, "name=\"attachments\\[\\]\"|name=attachments\\[\\]").Count);
+        Assert.Contains("quote final.pdf", request.Body);     // the quotes that would break the header are removed
+        Assert.Contains("Content-Type: application/pdf", request.Body);
+        Assert.Contains("Content-Type: image/png", request.Body);
+        Assert.Contains("%PDF-1.7", request.Body);
+
+        await client.AttachFilesAsync(77, Array.Empty<TicketFile>()); // nothing to send: no request at all
+        Assert.Single(handler.Requests);
+
+        handler.Responses.Enqueue((HttpStatusCode.BadRequest, "{\"errors\":[{\"field\":\"attachments\",\"message\":\"Invalid file type\"}]}"));
+        var ex = await Assert.ThrowsAsync<FreshserviceException>(() => client.AttachFilesAsync(77, new[] { new TicketFile("a.pdf", "application/pdf", new byte[] { 1 }) }));
+        Assert.Contains("attachments: Invalid file type", ex.Message);
+    }
+
     [Theory]
     [InlineData("myschool", "https://myschool.freshservice.com/")]
     [InlineData("https://help.myschool.org/", "https://help.myschool.org/")]

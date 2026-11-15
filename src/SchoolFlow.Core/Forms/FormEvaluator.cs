@@ -39,9 +39,14 @@ public static class FormEvaluator
     /// (builder preview, unit tests) any well-formed department value is accepted.
     /// </param>
     /// <param name="locations">Active locations (id → name), checked the same way for location fields.</param>
+    /// <param name="attachments">
+    /// Files this person has uploaded and may attach (id → details). When given, attachment fields only
+    /// accept these and take the name and size from here, never from the browser.
+    /// </param>
     public static FormResult Evaluate(FormDefinition form, IDictionary<string, object?> input,
         IDictionary<string, object?>? ambient = null, bool applyDefaults = false, Func<DateTime>? now = null,
-        IReadOnlyDictionary<long, string>? departments = null, IReadOnlyDictionary<long, string>? locations = null)
+        IReadOnlyDictionary<long, string>? departments = null, IReadOnlyDictionary<long, string>? locations = null,
+        IReadOnlyDictionary<string, AttachmentInfo>? attachments = null)
     {
         var result = new FormResult();
         var submitterEmail = ambient is not null && ambient.TryGetValue("submitter", out var who) && who is Dictionary<string, object?> person
@@ -91,6 +96,7 @@ public static class FormEvaluator
                         FieldTypes.Table => NormalizeTable(field, raw, scope, state),
                         FieldTypes.Department => NormalizeListed(raw, departments, "department", state.Errors),
                         FieldTypes.Location => NormalizeListed(raw, locations, "location", state.Errors),
+                        FieldTypes.Attachments => NormalizeAttachments(field, raw, attachments, state.Errors),
                         FieldTypes.ApprovalChain => Workflows.ChainValue.Normalize(raw, submitterEmail.Length > 0 ? submitterEmail : null, state.Errors),
                         _ => NormalizeScalar(field.Type, field.Options, raw, state.Errors),
                     };
@@ -281,6 +287,47 @@ public static class FormEvaluator
                 return Truncate(text, MaxTextLength);
             }
         }
+    }
+
+    public const int DefaultMaxFiles = 5;
+    public const int AbsoluteMaxFiles = 20;
+
+    /// <summary>Uploaded files: stored as a list of { id, name, size }.</summary>
+    private static object? NormalizeAttachments(FieldDef field, object? raw, IReadOnlyDictionary<string, AttachmentInfo>? known, List<string> errors)
+    {
+        var files = new List<object?>();
+        if (raw is not List<object?> list) return files;
+        var limit = Math.Clamp(field.MaxFiles ?? DefaultMaxFiles, 1, AbsoluteMaxFiles);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var missing = false;
+        foreach (var item in list.OfType<Dictionary<string, object?>>())
+        {
+            var id = Values.ToText(Member(item, "id")).Trim();
+            if (id.Length is 0 or > 64 || !seen.Add(id)) continue;
+            string name;
+            decimal size;
+            if (known is not null)
+            {
+                // The server's record is the authority; an ID that is not this person's own upload is dropped.
+                if (!known.TryGetValue(id, out var info)) { missing = true; continue; }
+                name = info.Name;
+                size = info.Size;
+            }
+            else
+            {
+                name = Values.ToText(Member(item, "name")).Trim();
+                if (name.Length == 0) continue;
+                Values.TryToNumber(Member(item, "size"), out size);
+            }
+            var file = Values.NewDict();
+            file["id"] = id;
+            file["name"] = Truncate(name, 200);
+            file["size"] = size;
+            files.Add(file);
+        }
+        if (missing) errors.Add("One of the files could not be found. Remove it and upload it again.");
+        if (files.Count > limit) errors.Add($"No more than {limit} file{(limit == 1 ? "" : "s")} can be added here.");
+        return files.Take(AbsoluteMaxFiles).ToList();
     }
 
     /// <summary>A choice from a list the admins maintain (departments, locations): stored as { id, name }.</summary>

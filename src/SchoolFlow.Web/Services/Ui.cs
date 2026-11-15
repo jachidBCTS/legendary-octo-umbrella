@@ -44,6 +44,8 @@ public static class Ui
     {
         if (Values.IsBlank(value)) return "—";
         if (ChainValue.IsChain(value)) return ChainValue.Describe(value);
+        if (type == FieldTypes.Attachments && value is List<object?> files)
+            return string.Join(", ", files.OfType<Dictionary<string, object?>>().Select(f => Values.ToText(f.GetValueOrDefault("name"))));
         if (value is bool b) return b ? "Yes" : "No";
         if (value is decimal d)
         {
