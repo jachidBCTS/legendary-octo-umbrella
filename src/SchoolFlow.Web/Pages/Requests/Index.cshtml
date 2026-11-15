@@ -1,0 +1,58 @@
+@page
+@model SchoolFlow.Web.Pages.Requests.IndexModel
+@{
+    ViewData["Title"] = Model.All ? "All requests" : "My requests";
+}
+<div class="page-head">
+    <div>
+        <h1>@(Model.All ? "All requests" : "My requests")</h1>
+        <p class="sub">@(Model.All ? "Every request across the school." : "Requests you have submitted.")</p>
+    </div>
+    @if (User.IsBuilder())
+    {
+        <div class="seg">
+            <a class="@(Model.All ? "" : "on")" href="/Requests">Mine</a>
+            <a class="@(Model.All ? "on" : "")" href="/Requests?all=true">Everyone's</a>
+        </div>
+    }
+</div>
+<form method="get" class="filters">
+    @if (Model.All) { <input type="hidden" name="all" value="true" /> }
+    <select name="status" data-autosubmit aria-label="Filter by status">
+        <option value="">Any status</option>
+        @foreach (var s in new[] { RunStatus.WaitingApproval, RunStatus.WaitingTicket, RunStatus.Completed, RunStatus.Rejected, RunStatus.Failed, RunStatus.Cancelled })
+        {
+            <option value="@s" selected="@(Model.Status == s)">@Ui.Status(s).Label</option>
+        }
+    </select>
+</form>
+@if (Model.Runs.Count == 0)
+{
+    <div class="empty"><p>Nothing here yet.</p><a class="btn primary" href="/">Start a request</a></div>
+}
+else
+{
+    <div class="panel table-wrap">
+        <table class="table">
+            <thead><tr><th>Request</th>@if (Model.All) { <th>Submitted by</th> }<th>Status</th><th>Ticket</th><th>Submitted</th><th>Updated</th></tr></thead>
+            <tbody>
+            @foreach (var r in Model.Runs)
+            {
+                var (label, css) = Ui.Status(r.Status);
+                <tr>
+                    <td><a href="/Requests/Detail/@r.Id"><strong>@r.WorkflowName</strong></a> <span class="muted">#@r.Id</span></td>
+                    @if (Model.All) { <td>@r.SubmitterName</td> }
+                    <td><span class="pill @css">@label</span></td>
+                    <td>@(r.TicketId is long t ? "#" + t : "—")</td>
+                    <td class="muted">@Ui.When(r.CreatedAt)</td>
+                    <td class="muted">@Ui.When(r.UpdatedAt)</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+    <div class="pager">
+        @if (Model.PageNumber > 1) { <a class="btn" href="@Model.PageUrl(Model.PageNumber - 1)">Newer</a> }
+        @if (Model.HasMore) { <a class="btn" href="@Model.PageUrl(Model.PageNumber + 1)">Older</a> }
+    </div>
+}

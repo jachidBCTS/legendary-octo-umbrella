@@ -1,0 +1,78 @@
+@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Home";
+}
+<div class="page-head">
+    <div>
+        <h1>@Model.Greeting, @User.DisplayName().Split(' ')[0]</h1>
+        <p class="sub">Start a request, or pick up where you left off.</p>
+    </div>
+</div>
+
+@if (Model.Pending.Count > 0)
+{
+    <section class="callout">
+        <div class="callout-icon"><partial name="_Icons" model='"clock"' /></div>
+        <div class="grow">
+            <strong>@Model.Pending.Count request@(Model.Pending.Count == 1 ? " is" : "s are") waiting for your approval</strong>
+            <div class="muted">@string.Join(" · ", Model.Pending.Take(3).Select(p => p.Title))</div>
+        </div>
+        <a class="btn primary" href="/Approvals">Review</a>
+    </section>
+}
+
+<h2 class="section-title">Start a request</h2>
+@if (Model.Groups.Count == 0)
+{
+    <div class="empty">
+        <p>No forms have been published yet.</p>
+        @if (User.IsBuilder()) { <a class="btn primary" href="/Builder">Open the workflow builder</a> }
+    </div>
+}
+@foreach (var group in Model.Groups)
+{
+    @if (Model.Groups.Count > 1 || group.Key.Length > 0)
+    {
+        <div class="group-label">@(group.Key.Length == 0 ? "Other" : group.Key)</div>
+    }
+    <div class="card-grid">
+        @foreach (var w in group)
+        {
+            <a class="wf-card tone-@w.Color" href="/Start/@w.Id">
+                <span class="wf-dot">@Ui.Initials(w.Name)</span>
+                <span class="wf-body">
+                    <strong>@w.Name</strong>
+                    <span>@w.Description</span>
+                </span>
+                <span class="wf-go"><partial name="_Icons" model='"arrow"' /></span>
+            </a>
+        }
+    </div>
+}
+
+<h2 class="section-title">Your recent requests</h2>
+@if (Model.Recent.Count == 0)
+{
+    <div class="empty small"><p>Requests you submit will appear here.</p></div>
+}
+else
+{
+    <div class="panel table-wrap">
+        <table class="table">
+            <thead><tr><th>Request</th><th>Status</th><th>Ticket</th><th>Updated</th></tr></thead>
+            <tbody>
+            @foreach (var r in Model.Recent)
+            {
+                var (label, css) = Ui.Status(r.Status);
+                <tr>
+                    <td><a href="/Requests/Detail/@r.Id"><strong>@r.WorkflowName</strong></a> <span class="muted">#@r.Id</span></td>
+                    <td><span class="pill @css">@label</span></td>
+                    <td>@(r.TicketId is long t ? "#" + t : "—")</td>
+                    <td class="muted">@Ui.When(r.UpdatedAt)</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}

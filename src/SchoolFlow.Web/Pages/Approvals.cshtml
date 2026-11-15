@@ -1,0 +1,46 @@
+@page
+@model ApprovalsModel
+@{
+    ViewData["Title"] = "Approvals";
+}
+<div class="page-head">
+    <div><h1>Approvals</h1><p class="sub">Requests waiting for your decision.</p></div>
+</div>
+@if (Model.Pending.Count == 0)
+{
+    <div class="empty"><div class="empty-art"><partial name="_Icons" model='"check"' /></div><p>You're all caught up.</p></div>
+}
+<div class="stack">
+@foreach (var item in Model.Pending)
+{
+    <section class="panel approve-box">
+        <div class="row-between">
+            <h2>@item.Task.Title</h2>
+            <span class="muted small">@Ui.When(item.Task.CreatedAt)</span>
+        </div>
+        <p class="muted">@item.Run.WorkflowName #@item.Run.Id · from @item.Run.SubmitterName</p>
+        @if (item.Task.Instructions.Length > 0) { <p class="pre">@item.Task.Instructions</p> }
+        <a class="btn" href="/Requests/Detail/@item.Run.Id">Open request to review and decide <partial name="_Icons" model='"arrow"' /></a>
+    </section>
+}
+</div>
+@if (Model.Decided.Count > 0)
+{
+    <h2 class="section-title">Your recent decisions</h2>
+    <div class="panel table-wrap">
+        <table class="table">
+            <thead><tr><th>Approval</th><th>Decision</th><th>Comment</th><th>When</th></tr></thead>
+            <tbody>
+            @foreach (var t in Model.Decided)
+            {
+                <tr>
+                    <td><a href="/Requests/Detail/@t.RunId">@t.Title</a> <span class="muted">#@t.RunId</span></td>
+                    <td><span class="pill @(t.Status == ApprovalStatus.Approved ? "ok" : "bad")">@t.Status</span></td>
+                    <td>@(string.IsNullOrEmpty(t.Comment) ? "—" : t.Comment)</td>
+                    <td class="muted">@(t.DecidedAt is DateTime d ? Ui.When(d) : "")</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}

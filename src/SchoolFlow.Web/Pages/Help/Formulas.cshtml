@@ -1,0 +1,50 @@
+@page
+@using SchoolFlow.Core.Expressions
+@{
+    ViewData["Title"] = "Formula guide";
+}
+<div class="page-head"><div><h1>Formula guide</h1><p class="sub">Formulas drive calculations, show/hide rules, required rules, validation and flow decisions.</p></div></div>
+
+<section class="panel prose">
+    <h2>The basics</h2>
+    <ul>
+        <li><strong>Refer to a field by its key</strong>: <code>quantity * unit_price</code>. Keys are not case-sensitive. An empty field counts as 0 in maths and as empty text.</li>
+        <li><strong>Maths</strong>: <code>+ - * / % ^</code> and brackets. <strong>Compare</strong>: <code>== != &lt; &gt; &lt;= &gt;=</code> (<code>=</code> and <code>&lt;&gt;</code> also work). Text comparisons ignore upper/lower case.</li>
+        <li><strong>Combine conditions</strong>: <code>and</code>, <code>or</code>, <code>not</code> (or <code>&amp;&amp;</code>, <code>||</code>, <code>!</code>). Example: <code>total &gt; 500 and kind == "Hardware"</code>.</li>
+        <li><strong>Text</strong> goes in quotes: <code>"Hardware"</code> or <code>'Hardware'</code>. Join with <code>&amp;</code>: <code>first &amp; " " &amp; last</code>.</li>
+        <li><strong>Tables</strong>: <code>items.line_total</code> is the list of that column's values, so <code>SUM(items.line_total)</code> totals it and <code>COUNT(items)</code> counts rows. Inside a table column's formula, use the other column keys directly.</li>
+        <li><strong>Lookups</strong> (department, location…) have parts: <code>department.name</code> and <code>department.id</code>.</li>
+        <li><strong>Multi-select</strong> fields are lists: <code>CONTAINS(days, "Friday")</code>.</li>
+        <li><strong>Dates</strong>: use <code>TODAY()</code>, <code>DATEADD</code> and <code>DATEDIFF</code>. A comparison with an empty date is simply false.</li>
+    </ul>
+    <h2>Always available</h2>
+    <ul>
+        <li><code>submitter.name</code>, <code>submitter.email</code> — the person filling in the form.</li>
+        <li>In flow steps: <code>ticket.id</code>, <code>ticket.status</code>, <code>ticket.priority</code>… once a ticket exists; <code>approval.by</code>, <code>approval.comment</code>, <code>approval.approved</code> after an approval; <code>run.id</code>.</li>
+    </ul>
+    <h2>Placeholders in ticket text</h2>
+    <p>In subjects, descriptions, notes and approver settings, wrap a formula in double braces: <code>Purchase: {{title}} ({{TEXT(total, "C2")}})</code>.</p>
+    <h2>Where formulas are used</h2>
+    <ul>
+        <li><strong>Calculated field</strong> — the value shown and stored.</li>
+        <li><strong>Show when</strong> — the field appears only while this is true. Hidden fields are cleared and never required.</li>
+        <li><strong>Required when</strong> — the field becomes mandatory while this is true.</li>
+        <li><strong>Validation rule</strong> — must be true for the value to be accepted; otherwise your message is shown. Rules are skipped while the field is empty.</li>
+        <li><strong>Decision step</strong> — chooses the Yes or No branch of the flow.</li>
+    </ul>
+</section>
+
+@foreach (var group in Functions.Catalog.GroupBy(f => f.Category))
+{
+    <section class="panel">
+        <h2>@group.Key functions</h2>
+        <div class="table-wrap"><table class="table compact fn-table">
+            <tbody>
+            @foreach (var f in group)
+            {
+                <tr><td><code>@f.Signature</code></td><td>@f.Description</td></tr>
+            }
+            </tbody>
+        </table></div>
+    </section>
+}

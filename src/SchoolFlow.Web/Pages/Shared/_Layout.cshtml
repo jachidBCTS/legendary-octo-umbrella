@@ -1,0 +1,94 @@
+@using Microsoft.AspNetCore.Antiforgery
+@using Microsoft.EntityFrameworkCore
+@using SchoolFlow.Core.Freshservice
+@inject IAntiforgery Antiforgery
+@inject AppDbContext Db
+@inject IFreshserviceClient Freshservice
+@{
+    var signedIn = User.Identity?.IsAuthenticated == true;
+    var email = User.Email();
+    var name = User.DisplayName();
+    var path = Context.Request.Path.Value ?? "/";
+    string Active(string prefix, bool exact = false) =>
+        (exact ? path == prefix || path == "/Index" : path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) ? "active" : "";
+    var pendingCount = 0;
+    if (signedIn && email.Length > 0)
+    {
+        var needle = ";" + email + ";";
+        pendingCount = await Db.ApprovalTasks.CountAsync(t => t.Status == ApprovalStatus.Pending && t.Assignees.Contains(needle));
+    }
+    var wide = ViewData["Wide"] as bool? == true;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@ViewData["Title"] · SchoolFlow</title>
+    @if (signedIn)
+    {
+        <meta name="csrf-token" content="@Antiforgery.GetAndStoreTokens(Context).RequestToken" />
+    }
+    <link rel="stylesheet" href="~/css/app.css" asp-append-version="true" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Cpath d='M9 10h8a4 4 0 0 1 0 8h-2a4 4 0 0 0 0 8h8' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' transform='translate(0 -2)'/%3E%3C/svg%3E" />
+</head>
+<body class="@(wide ? "wide" : "")">
+@if (signedIn)
+{
+    <aside class="sidebar" id="sidebar">
+        <a class="brand" href="/">
+            <span class="brand-mark"><svg viewBox="0 0 32 32"><path d="M9 8h8a4 4 0 0 1 0 8h-2a4 4 0 0 0 0 8h8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></span>
+            <span>SchoolFlow</span>
+        </a>
+        <nav>
+            <a class="@Active("/", true)" href="/"><partial name="_Icons" model='"home"' /> Home</a>
+            <a class="@Active("/Requests")" href="/Requests"><partial name="_Icons" model='"inbox"' /> My requests</a>
+            <a class="@Active("/Approvals")" href="/Approvals"><partial name="_Icons" model='"check"' /> Approvals
+                @if (pendingCount > 0) { <span class="badge">@pendingCount</span> }
+            </a>
+            @if (User.IsBuilder())
+            {
+                <div class="nav-label">Build</div>
+                <a class="@Active("/Builder")" href="/Builder"><partial name="_Icons" model='"flow"' /> Workflows</a>
+                <a class="@Active("/Help")" href="/Help/Formulas"><partial name="_Icons" model='"fx"' /> Formula guide</a>
+            }
+            @if (User.IsAdmin())
+            {
+                <div class="nav-label">Admin</div>
+                <a class="@Active("/Admin")" href="/Admin/Settings"><partial name="_Icons" model='"gear"' /> Settings</a>
+            }
+        </nav>
+        <div class="sidebar-user">
+            <span class="avatar">@Ui.Initials(name)</span>
+            <span class="who"><strong>@name</strong><small>@email</small></span>
+            <a href="/Account/SignOut" title="Sign out" aria-label="Sign out"><partial name="_Icons" model='"signout"' /></a>
+        </div>
+    </aside>
+}
+<div class="shell @(signedIn ? "" : "no-sidebar")">
+    @if (signedIn)
+    {
+        <header class="mobile-bar">
+            <button type="button" class="icon-btn" data-toggle-sidebar aria-label="Menu"><svg viewBox="0 0 24 24" class="icon"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+            <strong>SchoolFlow</strong>
+        </header>
+        @if (!Freshservice.IsLive)
+        {
+            <div class="sim-banner"><partial name="_Icons" model='"alert"' />
+                <span><strong>Simulation mode.</strong> Freshservice is not connected yet, so tickets are pretend and nothing is sent.
+                @if (User.IsAdmin()) { <a href="/Admin/Settings">Connect Freshservice</a> }</span>
+            </div>
+        }
+    }
+    <main class="@(wide ? "main-wide" : "main")">
+        @if (TempData["Flash"] is string flash)
+        {
+            <div class="flash @(TempData["FlashKind"] as string ?? "ok")" role="status">@flash</div>
+        }
+        @RenderBody()
+    </main>
+</div>
+<script src="~/js/common.js" asp-append-version="true"></script>
+@await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

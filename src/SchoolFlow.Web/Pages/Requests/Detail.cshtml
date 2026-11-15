@@ -1,0 +1,104 @@
+@page "/Requests/Detail/{id:int}"
+@model SchoolFlow.Web.Pages.Requests.DetailModel
+@{
+    ViewData["Title"] = $"{Model.Run.WorkflowName} #{Model.Run.Id}";
+    var (label, css) = Ui.Status(Model.Run.Status);
+}
+<a class="back-link" href="/Requests"><partial name="_Icons" model='"back"' /> Requests</a>
+<div class="page-head">
+    <div>
+        <h1>@Model.Run.WorkflowName <span class="muted">#@Model.Run.Id</span></h1>
+        <p class="sub">
+            <span class="pill @css">@label</span>
+            Submitted by @Model.Run.SubmitterName · @Ui.When(Model.Run.CreatedAt)
+            @if (Model.Run.TicketId is long ticketId)
+            {
+                <span>·</span>
+                @if (Model.TicketUrl is not null) { <a href="@Model.TicketUrl" target="_blank" rel="noopener">Freshservice ticket #@ticketId</a> }
+                else { <span>Ticket #@ticketId (simulated)</span> }
+            }
+        </p>
+    </div>
+    @if (Model.CanManage)
+    {
+        <div class="actions">
+            @if (Model.Run.Status == RunStatus.Failed)
+            {
+                <form method="post" asp-page-handler="Retry"><button class="btn primary">Retry failed step</button></form>
+            }
+            @if (!RunStatus.IsFinished(Model.Run.Status))
+            {
+                <form method="post" asp-page-handler="Cancel" data-confirm="Cancel this request? This cannot be undone."><button class="btn danger">Cancel request</button></form>
+            }
+        </div>
+    }
+</div>
+
+@if (Model.Run.Status == RunStatus.Failed)
+{
+    <div class="flash bad"><strong>This request hit a problem.</strong> @Model.Run.Error
+        @if (!Model.CanManage) { <span>The help desk has been shown this error and can retry it.</span> }
+    </div>
+}
+
+@foreach (var task in Model.MyTasks)
+{
+    <section class="panel approve-box">
+        <h2><partial name="_Icons" model='"check"' /> @task.Title</h2>
+        @if (task.Instructions.Length > 0) { <p class="pre">@task.Instructions</p> }
+        <form method="post" asp-page-handler="Decide">
+            <input type="hidden" name="taskId" value="@task.Id" />
+            <label class="lbl" for="comment-@task.Id">Comment <span class="muted">(optional, shown to the requester)</span></label>
+            <textarea id="comment-@task.Id" name="comment" rows="2" maxlength="2000"></textarea>
+            <div class="actions">
+                <button class="btn success" name="approved" value="true">Approve</button>
+                <button class="btn danger" name="approved" value="false">Reject</button>
+            </div>
+        </form>
+    </section>
+}
+
+<div class="detail-grid">
+    <section class="panel">
+        <h2>Progress</h2>
+        <ol class="timeline">
+            @foreach (var e in Model.Events)
+            {
+                <li class="tl-@e.Kind">
+                    <span class="tl-dot"></span>
+                    <div><div class="tl-msg">@e.Message</div><div class="muted small">@Ui.When(e.At)</div></div>
+                </li>
+            }
+            @if (Model.Run.Status == RunStatus.WaitingApproval && Model.PendingAssignees.Count > 0)
+            {
+                <li class="tl-pending"><span class="tl-dot"></span><div><div class="tl-msg">Waiting on @string.Join(", ", Model.PendingAssignees)</div></div></li>
+            }
+        </ol>
+    </section>
+    <section class="panel">
+        <h2>What was submitted</h2>
+        @if (Model.Fields.Count == 0)
+        {
+            <p class="muted">This request was started by a Freshservice ticket event, not a form.</p>
+        }
+        <dl class="answers">
+            @foreach (var f in Model.Fields)
+            {
+                <dt>@f.Label</dt>
+                @if (f.Rows is not null)
+                {
+                    <dd class="full">
+                        <div class="table-wrap"><table class="table compact">
+                            <thead><tr>@foreach (var c in f.Columns!) { <th>@c</th> }</tr></thead>
+                            <tbody>@foreach (var row in f.Rows) { <tr>@foreach (var cell in row) { <td>@cell</td> }</tr> }</tbody>
+                        </table></div>
+                    </dd>
+                }
+                else
+                {
+                    <dd class="pre">@f.Value</dd>
+                }
+            }
+        </dl>
+    </section>
+</div>

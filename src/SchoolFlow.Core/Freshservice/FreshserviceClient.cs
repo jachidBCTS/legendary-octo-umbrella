@@ -232,7 +232,13 @@ public sealed class FreshserviceClient : IFreshserviceClient
         {
             using var request = new HttpRequestMessage(method, path);
             if (body is not null)
-                request.Content = new StringContent(JsonSerializer.Serialize(body, JsonOptions), Encoding.UTF8, "application/json");
+            {
+                // Leave unset fields out entirely rather than sending null (which would clear them on update).
+                var payload = body is Dictionary<string, object?> map
+                    ? map.Where(kv => kv.Value is not null).ToDictionary(kv => kv.Key, kv => kv.Value)
+                    : body;
+                request.Content = new StringContent(JsonSerializer.Serialize(payload, JsonOptions), Encoding.UTF8, "application/json");
+            }
 
             using var response = await _http.SendAsync(request, ct);
 

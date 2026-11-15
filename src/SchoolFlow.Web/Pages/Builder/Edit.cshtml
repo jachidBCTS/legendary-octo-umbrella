@@ -1,0 +1,14 @@
+@page "/Builder/Edit/{id:int}"
+@model SchoolFlow.Web.Pages.Builder.EditModel
+@{
+    ViewData["Title"] = "Builder";
+    ViewData["Wide"] = true;
+}
+<div id="builder" data-workflow-id="@Model.Id" data-live="@(Model.IsLive ? "true" : "false")">
+    <div class="builder-loading">Loading builder…</div>
+</div>
+<script type="application/json" id="function-catalog">@Html.Raw(Model.CatalogJson)</script>
+@section Scripts {
+    <script src="~/js/form-runtime.js" asp-append-version="true"></script>
+    <script src="~/js/builder.js" asp-append-version="true"></script>
+}

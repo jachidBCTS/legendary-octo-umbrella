@@ -8,7 +8,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.11" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.11" />
-    <PackageReference Include="Microsoft.Identity.Web" Version="3.5.0" />
+    <PackageReference Include="Microsoft.Identity.Web" Version="3.14.1" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\SchoolFlow.Core\SchoolFlow.Core.csproj" />

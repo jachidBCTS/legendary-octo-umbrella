@@ -1,0 +1,90 @@
+@page
+@model SchoolFlow.Web.Pages.Admin.SettingsModel
+@{
+    ViewData["Title"] = "Settings";
+}
+<div class="page-head"><div><h1>Settings</h1><p class="sub">Freshservice connection, webhooks and who can build workflows.</p></div></div>
+
+<section class="panel">
+    <h2>Freshservice connection</h2>
+    @if (Model.IsLive)
+    {
+        <p><span class="pill ok">Connected</span> Using <strong>@Model.Domain</strong> with the API key from server configuration.</p>
+    }
+    else
+    {
+        <p><span class="pill warn">Simulation mode</span> No domain and API key are configured, so ticket steps only pretend to run.</p>
+        <p class="muted">To connect, set <code>Freshservice:Domain</code> and <code>Freshservice:ApiKey</code> in the server's configuration (environment variables
+            <code>Freshservice__Domain</code> and <code>Freshservice__ApiKey</code>, or <code>appsettings.Production.json</code>) and restart the site.
+            The key is never stored in the database or shown in this app.</p>
+    }
+    <form method="post" asp-page-handler="Test"><button class="btn">Test connection</button></form>
+    @if (Model.TestResult is not null) { <div class="flash @(Model.TestOk ? "ok" : "bad")">@Model.TestResult</div> }
+</section>
+
+<section class="panel">
+    <h2>Ticket events from Freshservice (webhook)</h2>
+    @if (!Model.WebhookEnabled)
+    {
+        <p><span class="pill warn">Off</span> Set <code>Freshservice:WebhookSecret</code> (16 or more random characters) in server configuration to turn this on.</p>
+    }
+    else
+    {
+        <p><span class="pill ok">On</span> In Freshservice, open <em>Admin → Workflow Automator</em>, create an automator for the ticket events you care about, and add a <em>Trigger Webhook</em> action with:</p>
+    }
+    <dl class="kv">
+        <dt>Request type</dt><dd>POST</dd>
+        <dt>URL</dt><dd><code>@Model.WebhookUrl</code></dd>
+        <dt>Custom header</dt><dd><code>X-SchoolFlow-Secret: <em>your webhook secret</em></code></dd>
+        <dt>Encoding</dt><dd>JSON → Advanced, with this content:</dd>
+    </dl>
+<pre class="code">{
+  "event": "ticket_updated",
+  "ticket": { "id": "{{ticket.id_numeric}}" }
+}</pre>
+    <p class="muted">Only the ticket ID is needed: SchoolFlow reads the rest of the ticket (status, priority, group, custom fields…) from the Freshservice API,
+        so formulas such as <code>ticket.status &gt;= 4</code> use the same numeric values as the API (2 Open, 3 Pending, 4 Resolved, 5 Closed).
+        You may add more fields to the JSON; they become available to formulas too.</p>
+    @if (Model.WebhookLogs.Count > 0)
+    {
+        <h3>Recent events</h3>
+        <div class="table-wrap"><table class="table compact">
+            <thead><tr><th>When</th><th>Received</th><th>Result</th></tr></thead>
+            <tbody>@foreach (var l in Model.WebhookLogs) { <tr><td class="muted">@Ui.When(l.At)</td><td>@l.Summary</td><td>@l.Outcome</td></tr> }</tbody>
+        </table></div>
+    }
+</section>
+
+<section class="panel">
+    <h2>People and roles</h2>
+    <p class="muted">Everyone who signs in can submit forms and approve requests sent to them. <strong>Builders</strong> can also create workflows and see all requests.
+        <strong>Admins</strong> can also change these settings. People appear here after their first sign-in.</p>
+    <div class="table-wrap"><table class="table">
+        <thead><tr><th>Person</th><th>Last seen</th><th>Role</th></tr></thead>
+        <tbody>
+        @foreach (var u in Model.Users)
+        {
+            var locked = Model.ConfigAdmins.Contains(u.Email);
+            <tr>
+                <td><strong>@u.Name</strong><div class="muted small">@u.Email</div></td>
+                <td class="muted">@Ui.When(u.LastSeenAt)</td>
+                <td>
+                    @if (locked)
+                    {
+                        <span class="pill info">Admin</span> <span class="muted small">set in server configuration</span>
+                    }
+                    else
+                    {
+                        <form method="post" asp-page-handler="Role" class="inline-form">
+                            <input type="hidden" name="email" value="@u.Email" />
+                            <select name="role" data-autosubmit aria-label="Role for @u.Name">
+                                @foreach (var r in Roles.All) { <option value="@r" selected="@(u.Role == r)">@r</option> }
+                            </select>
+                        </form>
+                    }
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table></div>
+</section>

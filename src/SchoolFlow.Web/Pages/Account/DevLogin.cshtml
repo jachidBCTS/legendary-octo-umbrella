@@ -1,0 +1,20 @@
+@page
+@model SchoolFlow.Web.Pages.Account.DevLoginModel
+@{
+    ViewData["Title"] = "Development sign-in";
+}
+<div class="login-card panel">
+    <h1>Development sign-in</h1>
+    <p class="muted">This screen only exists when the site runs in Development mode. In production, people sign in with their Microsoft school account.</p>
+    <form method="post">
+        <input type="hidden" name="returnUrl" value="@Model.ReturnUrl" />
+        <div class="stack">
+            @foreach (var p in SchoolFlow.Web.Pages.Account.DevLoginModel.Personas)
+            {
+                <button class="choice as-button" name="email" value="@p.Email"><span><strong>@p.Name</strong><small>@p.Email — @p.Note</small></span></button>
+            }
+        </div>
+        <label class="lbl" for="custom">Or sign in as any email</label>
+        <div class="row"><input id="custom" name="custom" type="email" placeholder="someone@example.org" /><button class="btn primary">Sign in</button></div>
+    </form>
+</div>

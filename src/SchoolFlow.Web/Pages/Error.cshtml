@@ -1,0 +1,11 @@
+@page
+@attribute [Microsoft.AspNetCore.Mvc.IgnoreAntiforgeryToken]
+@{
+    ViewData["Title"] = "Something went wrong";
+}
+<div class="empty">
+    <div class="empty-art"><partial name="_Icons" model='"alert"' /></div>
+    <h1>Something went wrong</h1>
+    <p>The problem has been logged. Go back and try again; if it keeps happening, contact the help desk.</p>
+    <a class="btn primary" href="/">Back to home</a>
+</div>
