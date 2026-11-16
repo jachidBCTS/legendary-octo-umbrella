@@ -82,6 +82,8 @@ builder.Services.AddMemoryCache();
 builder.Services.AddScoped<GroupDirectory>();
 builder.Services.AddScoped<AccessService>();
 builder.Services.AddScoped<AuditService>();
+builder.Services.AddScoped<SchoolCalendar>();
+builder.Services.AddHostedService<FollowUpWorker>();
 
 // ---- Freshservice -----------------------------------------------------------------------
 var fsDomain = config["Freshservice:Domain"];

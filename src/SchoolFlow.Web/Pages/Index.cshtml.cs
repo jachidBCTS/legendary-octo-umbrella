@@ -33,7 +33,7 @@ public class IndexModel : PageModel
         Drafts = drafts.Select(d => (d, live.FirstOrDefault(w => w.Id == d.WorkflowId))).Where(x => x.Item2 is not null).Select(x => (x.d, x.Item2!)).ToList();
         var needle = ";" + email + ";";
         Pending = email.Length == 0 ? new() : await _db.ApprovalTasks.AsNoTracking()
-            .Where(t => t.Status == ApprovalStatus.Pending && t.Assignees.Contains(needle) && !t.ApprovedBy.Contains(needle)).OrderBy(t => t.CreatedAt).ToListAsync();
+            .Where(t => t.Status == ApprovalStatus.Pending && (t.Assignees.Contains(needle) || t.Extra.Contains(needle)) && !t.ApprovedBy.Contains(needle)).OrderBy(t => t.CreatedAt).ToListAsync();
     }
 
     public async Task<Microsoft.AspNetCore.Mvc.IActionResult> OnPostDeleteDraftAsync(int id)

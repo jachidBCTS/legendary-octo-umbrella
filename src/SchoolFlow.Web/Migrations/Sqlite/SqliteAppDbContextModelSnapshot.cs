@@ -115,8 +115,29 @@ namespace SchoolFlow.Web.Migrations.Sqlite
                         .HasMaxLength(320)
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("EscalateDays")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("EscalateTo")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Escalated")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("EscalatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Extra")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Instructions")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastReminderAt")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("NodeId")
@@ -129,6 +150,12 @@ namespace SchoolFlow.Web.Migrations.Sqlite
                         .HasMaxLength(40)
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("RemindDays")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ReminderCount")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Rule")
                         .IsRequired()
                         .HasMaxLength(10)
@@ -136,6 +163,10 @@ namespace SchoolFlow.Web.Migrations.Sqlite
 
                     b.Property<int>("RunId")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("StandIns")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -249,6 +280,60 @@ namespace SchoolFlow.Web.Migrations.Sqlite
                     b.HasIndex("At");
 
                     b.ToTable("AuditEntries");
+                });
+
+            modelBuilder.Entity("SchoolFlow.Web.Data.ClosedDay", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("Date")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Date")
+                        .IsUnique();
+
+                    b.ToTable("ClosedDays");
+                });
+
+            modelBuilder.Entity("SchoolFlow.Web.Data.Delegation", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("EndsOn")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FromEmail")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("StartsOn")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ToEmail")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FromEmail");
+
+                    b.ToTable("Delegations");
                 });
 
             modelBuilder.Entity("SchoolFlow.Web.Data.Department", b =>
@@ -426,6 +511,39 @@ namespace SchoolFlow.Web.Migrations.Sqlite
                     b.ToTable("Notifications");
                 });
 
+            modelBuilder.Entity("SchoolFlow.Web.Data.RunComment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("AuthorEmail")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AuthorName")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("RunId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RunId");
+
+                    b.ToTable("RunComments");
+                });
+
             modelBuilder.Entity("SchoolFlow.Web.Data.RunEventRow", b =>
                 {
                     b.Property<int>("Id")
@@ -587,6 +705,9 @@ namespace SchoolFlow.Web.Migrations.Sqlite
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Error")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastPolledAt")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Status")

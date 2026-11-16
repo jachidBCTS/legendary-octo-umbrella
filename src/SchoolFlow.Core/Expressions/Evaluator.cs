@@ -6,14 +6,23 @@ public sealed class Scope
     private readonly IDictionary<string, object?> _values;
     private readonly Scope? _parent;
 
-    public Scope(IDictionary<string, object?>? values = null, Scope? parent = null, Func<DateTime>? now = null)
+    public Scope(IDictionary<string, object?>? values = null, Scope? parent = null, Func<DateTime>? now = null,
+        IReadOnlySet<DateTime>? closedDays = null)
     {
         _values = values ?? Values.NewDict();
         _parent = parent;
         Now = now ?? parent?.Now ?? (() => DateTime.Now);
+        ClosedDays = closedDays ?? parent?.ClosedDays;
     }
 
     public Func<DateTime> Now { get; }
+
+    /// <summary>Weekdays the school is closed (holidays, breaks). "Weekday"/"school day" date maths skips them.</summary>
+    public IReadOnlySet<DateTime>? ClosedDays { get; }
+
+    /// <summary>Monday to Friday, and not a day the school calendar marks as closed.</summary>
+    public bool IsSchoolDay(DateTime date) =>
+        date.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday) && (ClosedDays is null || !ClosedDays.Contains(date.Date));
 
     public bool TryGet(string name, out object? value)
     {

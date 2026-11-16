@@ -25,6 +25,7 @@ public static class Ui
         RunStatus.Running => ("In progress", "info"),
         RunStatus.WaitingApproval => ("Awaiting approval", "warn"),
         RunStatus.WaitingTicket => ("With help desk", "info"),
+        RunStatus.ChangesRequested => ("Changes requested", "warn"),
         RunStatus.Completed => ("Completed", "ok"),
         RunStatus.Rejected => ("Not approved", "bad"),
         RunStatus.Failed => ("Needs attention", "bad"),

@@ -24,6 +24,9 @@ public class IndexModel : PageModel
     [BindProperty(SupportsGet = true)] public bool All { get; set; }
     [BindProperty(SupportsGet = true)] public string? Status { get; set; }
     [BindProperty(SupportsGet = true)] public int? Department { get; set; }
+    [BindProperty(SupportsGet = true)] public int? Workflow { get; set; }
+    /// <summary>Workflows that have requests in the current view, for the filter.</summary>
+    public List<(int Id, string Name)> Workflows { get; private set; } = new();
     [BindProperty(SupportsGet = true, Name = "p")] public int PageNumber { get; set; } = 1;
 
     public List<Department> Departments { get; private set; } = new();
@@ -34,9 +37,37 @@ public class IndexModel : PageModel
     public bool ShowsOthers => Scope is "managed" or "department";
 
     public string PageUrl(int page) =>
-        $"/Requests?p={page}&scope={Scope}{(string.IsNullOrEmpty(Status) ? "" : "&status=" + Uri.EscapeDataString(Status))}{(Department is int d ? "&department=" + d : "")}";
+        $"/Requests?p={page}&scope={Scope}{(string.IsNullOrEmpty(Status) ? "" : "&status=" + Uri.EscapeDataString(Status))}{(Department is int d ? "&department=" + d : "")}{(Workflow is int w ? "&workflow=" + w : "")}";
+
+    public string ExportUrl => PageUrl(1).Replace("/Requests?", "/Requests?handler=Export&");
 
     public async Task OnGetAsync()
+    {
+        var query = await FilteredAsync();
+        var rows = await query.OrderByDescending(r => r.Id).Skip((PageNumber - 1) * PageSize).Take(PageSize + 1).ToListAsync();
+        HasMore = rows.Count > PageSize;
+        Runs = rows.Take(PageSize).ToList();
+    }
+
+    /// <summary>Downloads what the list is showing (same scope and filters) as a spreadsheet file, one column per form answer.</summary>
+    public async Task<IActionResult> OnGetExportAsync([FromServices] AuditService audit)
+    {
+        const int MaxRows = 5000;
+        var runs = await (await FilteredAsync()).OrderByDescending(r => r.Id).Take(MaxRows).ToListAsync();
+        var csv = RequestExport.ToCsv(runs);
+        if (Scope != "mine")
+        {
+            // Other people's answers are leaving the system: note who took them.
+            audit.Record(User, "requests.exported", Scope == "department" ? "Department requests" : "Managed requests",
+                $"{runs.Count} request(s){(Workflow is int w ? $", workflow #{w}" : "")}{(Department is int d ? $", department #{d}" : "")}{(string.IsNullOrEmpty(Status) ? "" : $", status {Status}")}.");
+            await _db.SaveChangesAsync();
+        }
+        return File(System.Text.Encoding.UTF8.GetPreamble().Concat(System.Text.Encoding.UTF8.GetBytes(csv)).ToArray(), "text/csv",
+            $"schoolflow-requests-{DateTime.Now:yyyy-MM-dd}.csv");
+    }
+
+    /// <summary>The requests this person may see in the chosen scope, with the page's filters applied.</summary>
+    private async Task<IQueryable<WorkflowRun>> FilteredAsync()
     {
         var email = User.Email();
         var managed = await _access.ManagedWorkflowIdsAsync(User);          // null = everything (admin)
@@ -58,13 +89,14 @@ public class IndexModel : PageModel
             _ => query.Where(r => r.SubmitterEmail == email && email != ""),
         };
         if (!string.IsNullOrEmpty(Status)) query = query.Where(r => r.Status == Status);
+        Workflows = (await query.Select(r => new { r.WorkflowId, r.WorkflowName }).Distinct().ToListAsync())
+            .GroupBy(x => x.WorkflowId).Select(g => (g.Key, g.First().WorkflowName)).OrderBy(x => x.WorkflowName).ToList();
         if (Department is int departmentId) query = query.Where(r => r.DepartmentId == departmentId);
+        if (Workflow is int workflowId) query = query.Where(r => r.WorkflowId == workflowId);
 
         var departments = await _db.Departments.AsNoTracking().OrderBy(d => d.Name).ToListAsync();
         Departments = Scope == "department" ? departments.Where(d => myDepartments.Contains(d.Id)).ToList() : departments;
 
-        var rows = await query.OrderByDescending(r => r.Id).Skip((PageNumber - 1) * PageSize).Take(PageSize + 1).ToListAsync();
-        HasMore = rows.Count > PageSize;
-        Runs = rows.Take(PageSize).ToList();
+        return query;
     }
 }

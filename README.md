@@ -26,7 +26,15 @@ front-end dependencies.
 | Save and finish later | Every form has a *Save for later* button. The draft appears under *Your drafts* on the home page; once saved, further changes are saved automatically. Drafts are private to their owner and are removed when submitted |
 | Attachments | An *Attachments* field lets people upload files (PDF, images, Word, Excel, PowerPoint, text). Files are kept in a folder on the web server, shown on the request to the people allowed to see it, and can be attached to the Freshservice ticket a workflow creates |
 | Permissions | Roles from Microsoft Entra groups; each workflow has owners (who can edit it and see its requests) and an optional audience (which groups may submit it); department final approvers see their department's requests; an audit log records changes and admin overrides |
-| Running requests | Timeline of every step, approvals inbox, retry of failed steps, cancel |
+| Running requests | Timeline of every step, approvals inbox, retry of failed steps, cancel. The requester can withdraw a request while it is still waiting |
+| Send back for changes | An approver can approve, reject, or *send back for changes* with a note. The requester edits and resubmits, and it returns to the same approver — earlier approvals in a chain are kept |
+| Discussion | Each request has a message thread for questions and answers; everyone involved is notified |
+| Reminders and escalation | Approvers are reminded when a request sits unanswered (default: every 2 school days, at most 5 times). A step can also escalate to someone else after a set number of school days. Both are set per approval step in the builder |
+| Away / stand-in | Anyone can name a colleague to approve in their place for a date range. The request history records who decided and for whom |
+| School calendar | Admins list the days the school is closed. "School day" formulas (`DATEADD(…, 'weekdays')`, `WEEKDAYS`, `ISSCHOOLDAY`), reminders and escalation all skip them |
+| Reports and export | A Reports page (counts, time to finish, approvals waiting longest) for admins, workflow owners and department approvers; any request list can be downloaded as a spreadsheet (CSV) with one column per question |
+| Print | A clean printable / save-as-PDF record of a request with its answers, approvals, history and a signature line |
+| Missed ticket events | If Freshservice is connected, requests waiting on a ticket are also checked directly every 15 minutes, so a missed webhook does not leave a request stuck |
 | Safety | Draft vs. published versions; a request always finishes on the version it started with; publishing is blocked while the checker finds problems |
 
 Formulas are evaluated **on the server only**. The browser sends the current answers and gets back

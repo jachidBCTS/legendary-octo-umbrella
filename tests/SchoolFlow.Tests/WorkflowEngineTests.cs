@@ -246,6 +246,65 @@ public class WorkflowEngineTests
     }
 
     [Fact]
+    public async Task Approval_CarriesReminderAndEscalationSettings()
+    {
+        var flow = PurchaseFlow();
+        var approve = flow.Nodes.Single(n => n.Id == "approve");
+        var state = State(900);
+        await new WorkflowEngine(new SimulatedFreshserviceClient()).StartAsync(flow, state);
+        Assert.Equal(WorkflowEngine.DefaultRemindDays, state.PendingApproval!.RemindDays);   // on by default
+        Assert.Equal(0, state.PendingApproval.EscalateDays);
+
+        approve.Config["remindDays"] = "0";
+        approve.Config["escalateDays"] = "5";
+        approve.Config["escalateTo"] = "{{principal_email}}, Super@School.org";   // the first is already an approver
+        state = State(900);
+        await new WorkflowEngine(new SimulatedFreshserviceClient()).StartAsync(flow, state);
+        Assert.Equal(0, state.PendingApproval!.RemindDays);
+        Assert.Equal(5, state.PendingApproval.EscalateDays);
+        Assert.Equal(new[] { "super@school.org" }, state.PendingApproval.EscalateTo);
+
+        approve.Config["escalateTo"] = "{{principal_email}}";                     // nobody new to escalate to: escalation is off
+        state = State(900);
+        await new WorkflowEngine(new SimulatedFreshserviceClient()).StartAsync(flow, state);
+        Assert.Equal(0, state.PendingApproval!.EscalateDays);
+    }
+
+    [Fact]
+    public async Task SentBackRequest_ReentersTheApprovalStep()
+    {
+        var engine = new WorkflowEngine(new SimulatedFreshserviceClient());
+        var flow = PurchaseFlow();
+        var state = State(900);
+        await engine.StartAsync(flow, state);
+        state.Status = RunStatus.ChangesRequested;      // what the web layer does when an approver sends it back
+        state.PendingApproval = null;
+        state.Context["title"] = "Lab kits (revised)";
+        state.Context["principal_email"] = "newboss@school.org";
+        await engine.ReenterApprovalAsync(flow, state);
+        Assert.Equal(RunStatus.WaitingApproval, state.Status);
+        Assert.Equal("approve", state.CurrentNodeId);
+        Assert.Contains("newboss@school.org", state.PendingApproval!.Assignees);   // a single approval step is worked out afresh
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => engine.ReenterApprovalAsync(flow, state));   // only from "changes requested"
+    }
+
+    [Fact]
+    public void Validator_ChecksReminderAndEscalationSettings()
+    {
+        var def = new WorkflowDefinition { Flow = PurchaseFlow() };
+        var approve = def.Flow.Nodes.Single(n => n.Id == "approve");
+        approve.Config["remindDays"] = "soon";
+        approve.Config["escalateDays"] = "3";
+        var errors = string.Join("\n", DefinitionValidator.Validate(def).Where(i => i.IsError).Select(i => i.Message));
+        Assert.Contains("“Remind after” must be a whole number", errors);
+        Assert.Contains("say who to escalate to", errors);
+        approve.Config["remindDays"] = "1";
+        approve.Config["escalateTo"] = "boss@school.org";
+        Assert.DoesNotContain(DefinitionValidator.Validate(def), i => i.IsError && i.Target == "approve");
+    }
+
+    [Fact]
     public async Task Resume_InWrongState_IsRefused()
     {
         var engine = new WorkflowEngine(new SimulatedFreshserviceClient());

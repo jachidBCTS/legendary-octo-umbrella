@@ -74,7 +74,7 @@ public static class Functions
         return Math.Round(value / factor, 0, mode) * factor;
     }
 
-    private static DateTime AddUnits(DateTime date, int amount, string unit) => NormalizeUnit(unit) switch
+    private static DateTime AddUnits(DateTime date, int amount, string unit, Scope scope) => NormalizeUnit(unit) switch
     {
         "day" => date.AddDays(amount),
         "week" => date.AddDays(7.0 * amount),
@@ -82,7 +82,7 @@ public static class Functions
         "year" => date.AddYears(amount),
         "hour" => date.AddHours(amount),
         "minute" => date.AddMinutes(amount),
-        "schoolday" => AddWeekdays(date, amount),
+        "schoolday" => AddWeekdays(date, amount, scope),
         _ => throw new ExpressionException($"Unknown unit '{unit}' — use days, weekdays, weeks, months, years, hours or minutes"),
     };
 
@@ -102,7 +102,7 @@ public static class Functions
         };
     }
 
-    private static DateTime AddWeekdays(DateTime date, int amount)
+    private static DateTime AddWeekdays(DateTime date, int amount, Scope scope)
     {
         if (Math.Abs(amount) > 20000) throw new ExpressionException("Too many weekdays to add");
         var step = amount < 0 ? -1 : 1;
@@ -110,16 +110,23 @@ public static class Functions
         while (remaining > 0)
         {
             date = date.AddDays(step);
-            if (date.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday)) remaining--;
+            if (scope.IsSchoolDay(date)) remaining--;
         }
         return date;
     }
 
     /// <summary>Whole Monday–Friday days from start to end, inclusive of both ends. Negative if end is before start.</summary>
-    private static decimal Weekdays(DateTime start, DateTime end)
+    private static decimal Weekdays(DateTime start, DateTime end, Scope scope)
     {
         start = start.Date; end = end.Date;
-        if (end < start) return -Weekdays(end, start);
+        if (end < start) return -Weekdays(end, start, scope);
+        // Days the school calendar marks as closed do not count (weekend entries in it are ignored).
+        var closed = scope.ClosedDays?.Count(d => d >= start && d <= end && d.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday)) ?? 0;
+        return WeekdaysIgnoringCalendar(start, end) - closed;
+    }
+
+    private static decimal WeekdaysIgnoringCalendar(DateTime start, DateTime end)
+    {
         var totalDays = (end - start).Days + 1;
         var fullWeeks = totalDays / 7;
         var count = fullWeeks * 5;
@@ -133,10 +140,10 @@ public static class Functions
     }
 
     /// <summary>Weekdays that pass going from start to end (start itself is not counted).</summary>
-    private static decimal WeekdaysElapsed(DateTime start, DateTime end)
+    private static decimal WeekdaysElapsed(DateTime start, DateTime end, Scope scope)
     {
         if (start == end) return 0;
-        return end > start ? Weekdays(start.AddDays(1), end) : -Weekdays(end.AddDays(1), start);
+        return end > start ? Weekdays(start.AddDays(1), end, scope) : -Weekdays(end.AddDays(1), start, scope);
     }
 
     private static int MonthsBetween(DateTime a, DateTime b)
@@ -328,15 +335,15 @@ public static class Functions
                 try { return new DateTime(ToInt(a[0], "Year"), ToInt(a[1], "Month"), ToInt(a[2], "Day")); }
                 catch (ArgumentOutOfRangeException) { throw new ExpressionException("That is not a real calendar date"); }
             });
-        Eager("DATEADD", 2, 3, "DATEADD(date, amount, unit)", "Adds days (default), weekdays, weeks, months or years to a date. Blank date gives blank.", Date,
-            (a, _) =>
+        Eager("DATEADD", 2, 3, "DATEADD(date, amount, unit)", "Adds days (default), weekdays (school days, skipping closed days), weeks, months or years to a date. Blank date gives blank.", Date,
+            (a, s) =>
             {
                 if (Values.IsBlank(a[0])) return null;
-                try { return AddUnits(Values.ToDate(a[0]), ToInt(a[1], "Amount"), a.Length > 2 ? Values.ToText(a[2]) : "days"); }
+                try { return AddUnits(Values.ToDate(a[0]), ToInt(a[1], "Amount"), a.Length > 2 ? Values.ToText(a[2]) : "days", s); }
                 catch (ArgumentOutOfRangeException) { throw new ExpressionException("The resulting date is out of range"); }
             });
         Eager("DATEDIFF", 2, 3, "DATEDIFF(start, end, unit)", "Whole days (default), weekdays, weeks, months, years or hours from start to end. Blank when either date is blank.", Date,
-            (a, _) =>
+            (a, s) =>
             {
                 if (Values.IsBlank(a[0]) || Values.IsBlank(a[1])) return null;
                 var start = Values.ToDate(a[0]); var end = Values.ToDate(a[1]);
@@ -349,12 +356,14 @@ public static class Functions
                     "year" => (decimal)(MonthsBetween(start, end) / 12),
                     "hour" => Math.Truncate((decimal)(end - start).TotalHours),
                     "minute" => Math.Truncate((decimal)(end - start).TotalMinutes),
-                    "schoolday" => WeekdaysElapsed(start.Date, end.Date),
+                    "schoolday" => WeekdaysElapsed(start.Date, end.Date, s),
                     _ => throw new ExpressionException($"Unknown unit '{unit}' — use days, weekdays, weeks, months, years, hours or minutes"),
                 };
             });
-        Eager("WEEKDAYS", 2, 2, "WEEKDAYS(start, end)", "Number of Monday–Friday days from start to end, counting both.", Date,
-            (a, _) => Values.IsBlank(a[0]) || Values.IsBlank(a[1]) ? null : Weekdays(Values.ToDate(a[0]), Values.ToDate(a[1])));
+        Eager("WEEKDAYS", 2, 2, "WEEKDAYS(start, end)", "Number of school days (Monday–Friday, minus days the school calendar marks closed) from start to end, counting both.", Date,
+            (a, s) => Values.IsBlank(a[0]) || Values.IsBlank(a[1]) ? null : Weekdays(Values.ToDate(a[0]), Values.ToDate(a[1]), s));
+        Eager("ISSCHOOLDAY", 1, 1, "ISSCHOOLDAY(date)", "True when the date is a weekday the school is open.", Date,
+            (a, s) => !Values.IsBlank(a[0]) && s.IsSchoolDay(Values.ToDate(a[0])));
         Eager("YEAR", 1, 1, "YEAR(date)", "The year of a date.", Date, (a, _) => Values.IsBlank(a[0]) ? null : (decimal)Values.ToDate(a[0]).Year);
         Eager("MONTH", 1, 1, "MONTH(date)", "The month number (1–12).", Date, (a, _) => Values.IsBlank(a[0]) ? null : (decimal)Values.ToDate(a[0]).Month);
         Eager("DAY", 1, 1, "DAY(date)", "The day of the month.", Date, (a, _) => Values.IsBlank(a[0]) ? null : (decimal)Values.ToDate(a[0]).Day);

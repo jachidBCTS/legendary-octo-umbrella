@@ -1137,6 +1137,14 @@
     const fx = (key, placeholder) => formulaInput(c[key], set(key), { context: 'flow', placeholder });
     const PRIORITY = [['1', 'Low'], ['2', 'Medium'], ['3', 'High'], ['4', 'Urgent']];
     const STATUS = [['2', 'Open'], ['3', 'Pending'], ['4', 'Resolved'], ['5', 'Closed']];
+    // Reminder and escalation settings shared by the two approval steps.
+    const followUp = () => [
+      h('h4', { class: 'b-section' }, 'If nobody decides'),
+      h('div', { class: 'b-pair' },
+        row('Remind every (school days)', textInput(c.remindDays, set('remindDays'), { inputmode: 'numeric', placeholder: '2' }), '0 for no reminders. Up to 5 are sent.'),
+        row('Escalate after (school days)', textInput(c.escalateDays, set('escalateDays'), { inputmode: 'numeric', placeholder: 'never' }))),
+      row('Escalate to', tpl('escalateTo', 1, 'e.g. principal@school.org'), 'After that long with no decision, these people can also decide the step. Leave both blank for no escalation.'),
+    ];
     const ticketRow = () => row('Which ticket', tpl('ticketId', 1, '{{ticket.id}}'), 'Leave blank to use the ticket this request created or was started by.');
 
     panel.append(
@@ -1158,7 +1166,8 @@
           row('Approvers', tpl('approvers', 1, 'e.g. {{approver_email}} or principal@school.org'), 'One or more emails separated by commas.'),
           row('If there is more than one', select(c.rule || 'any', [['any', 'Any one of them can decide'], ['all', 'All of them must approve']], (v) => { set('rule')(v === 'any' ? '' : v); })),
           row('Instructions for the approver', tpl('instructions', 4, 'What should they check? e.g. Total: {{TEXT(total, "C2")}}')),
-          h('p', { class: 'b-help' }, 'For several approvers in sequence, or a department\'s final approver, use an “Approval chain” step instead.'));
+          h('p', { class: 'b-help' }, 'For several approvers in sequence, or a department\'s final approver, use an “Approval chain” step instead.'),
+          followUp());
         break;
       case 'approval_chain': {
         const fieldsOf = (type) => state.def.form.fields.filter((f) => f.type === type).map((f) => [f.key, f.label || f.key]);
@@ -1188,7 +1197,8 @@
         if (c.departmentSource === 'fixed')
           panel.append(row('Department', asyncSelect(() => api('GET', '/api/departments').then((d) => d.items.map((dep) => [dep.id, dep.name])), c.departmentId, set('departmentId'), 'Choose a department…')));
         panel.append(row('Instructions for the approvers', tpl('instructions', 4, 'Shown at every step. e.g. Trip to {{destination}} on {{TEXT(trip_date, "MMM d")}}')),
-          h('p', { class: 'b-help' }, 'Each step waits for its approver(s) before the next begins. A rejection at any step follows the Rejected line.'));
+          h('p', { class: 'b-help' }, 'Each step waits for its approver(s) before the next begins. A rejection at any step follows the Rejected line. Approvers can also send a request back to the requester for changes; it returns to the same step when resubmitted.'),
+          followUp());
         break;
       }
       case 'notify':

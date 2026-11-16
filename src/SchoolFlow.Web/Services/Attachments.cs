@@ -159,6 +159,17 @@ public sealed class AttachmentService : IAttachmentStore
             .Select(a => new { a.PublicId, a.FileName, a.Size }).ToListAsync(ct))
         .ToDictionary(a => a.PublicId, a => new AttachmentInfo(a.PublicId, a.FileName, a.Size));
 
+    /// <summary>
+    /// For a request that was sent back for changes: the files already on it, plus anything new its
+    /// requester has uploaded since.
+    /// </summary>
+    public async Task<Dictionary<string, AttachmentInfo>> UsableForRunAsync(string ownerEmail, WorkflowRun run, CancellationToken ct) =>
+        ownerEmail.Length == 0 ? new Dictionary<string, AttachmentInfo>()
+        : (await _db.Attachments.AsNoTracking()
+            .Where(a => a.OwnerEmail == ownerEmail && (a.RunId == run.Id || (a.RunId == null && a.WorkflowId == run.WorkflowId)))
+            .Select(a => new { a.PublicId, a.FileName, a.Size }).ToListAsync(ct))
+        .ToDictionary(a => a.PublicId, a => new AttachmentInfo(a.PublicId, a.FileName, a.Size));
+
     /// <summary>Removes a file the person uploaded but has not submitted. Submitted files are part of the request's record.</summary>
     public async Task<bool> DeletePendingAsync(string publicId, string ownerEmail, CancellationToken ct)
     {

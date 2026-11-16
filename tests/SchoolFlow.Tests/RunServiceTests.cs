@@ -51,8 +51,10 @@ public sealed class RunServiceTests : IDisposable
         new AttachmentSettings(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Attachments:Path"] = _uploads, ["Attachments:MaxFileMb"] = "1" }).Build(), _uploads),
         NullLogger<AttachmentService>.Instance);
 
-    private RunService Service(AppDbContext db) =>
-        new(db, _freshservice, new NotificationService(db, new EmailSettings(Config), Config), Files(db), NullLogger<RunService>.Instance);
+    private RunService Service(AppDbContext db, IFreshserviceClient? freshservice = null) =>
+        new(db, freshservice ?? _freshservice, new NotificationService(db, new EmailSettings(Config), Config), Files(db),
+            new SchoolCalendar(db, new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions())),
+            NullLogger<RunService>.Instance);
 
     private static Dictionary<string, object?> PurchaseInput(decimal price) => new()
     {
@@ -485,6 +487,303 @@ public sealed class RunServiceTests : IDisposable
         await using var db = Db();
         Assert.Equal(0, await db.AuditEntries.CountAsync());
         Assert.DoesNotContain(await db.RunEvents.ToListAsync(), e => e.Message.Contains("on behalf"));
+    }
+
+    // ---- send back, resubmit, withdraw, discussion ------------------------------------------
+
+    private async Task<ActionResult> ActAsync(int runId, string email, ApprovalAction action, string? comment = null, bool admin = false)
+    {
+        await using var db = Db();
+        var task = await db.ApprovalTasks.SingleAsync(t => t.RunId == runId && t.Status == ApprovalStatus.Pending);
+        return await Service(db).DecideAsync(task.Id, email, email, admin, action, comment, default);
+    }
+
+    [Fact]
+    public async Task SentBack_ThenResubmitted_ReturnsToTheSameStep_KeepingEarlierApprovals()
+    {
+        var chain = new Dictionary<string, object?>
+        {
+            ["steps"] = new List<object?> { new Dictionary<string, object?> { ["name"] = "Team leader", ["approvers"] = new List<object?> { "lead@school.org" } } },
+        };
+        var runId = await SubmitTripAsync("Science", chain);
+        await DecideAsync(runId, "lead@school.org");                                         // step 1 approved
+
+        Assert.False((await ActAsync(runId, "principal@example.org", ApprovalAction.Return)).Ok);   // must say what to change
+        Assert.True((await ActAsync(runId, "principal@example.org", ApprovalAction.Return, "Need 5 chaperones")).Ok);
+        await using (var db = Db())
+        {
+            Assert.Equal(RunStatus.ChangesRequested, (await db.Runs.SingleAsync()).Status);
+            Assert.Equal(0, await db.ApprovalTasks.CountAsync(t => t.Status == ApprovalStatus.Pending));
+            var note = await db.Notifications.Where(n => n.UserEmail == "t@school.org").OrderBy(n => n.Id).LastAsync();
+            Assert.StartsWith("Changes needed", note.Title);
+            Assert.Contains("Need 5 chaperones", note.Body);
+
+            // Only the requester can resubmit, and the answers are validated again.
+            var input = TripInput("Science", (await db.Departments.SingleAsync(d => d.Name == "Science")).Id, chain);
+            Assert.False((await Service(db).ResubmitAsync(runId, input, "other@school.org", "Other", default)).Result.Ok);
+            input["chaperones"] = 1m;                                                        // breaks the 1-per-10 rule
+            var invalid = await Service(db).ResubmitAsync(runId, input, "t@school.org", "T Teacher", default);
+            Assert.False(invalid.Result.Ok);
+            Assert.Contains("every 10 students", invalid.Form!.Fields["chaperones"].Errors.Single());
+            Assert.Equal(RunStatus.ChangesRequested, (await db.Runs.AsNoTracking().SingleAsync()).Status);
+        }
+        await using (var db = Db())
+        {
+            var input = TripInput("Science", (await db.Departments.SingleAsync(d => d.Name == "Science")).Id, chain);
+            input["chaperones"] = 5m;
+            Assert.True((await Service(db).ResubmitAsync(runId, input, "t@school.org", "T Teacher", default)).Result.Ok);
+        }
+        await using (var db = Db())
+        {
+            var run = await db.Runs.SingleAsync();
+            Assert.Equal(RunStatus.WaitingApproval, run.Status);
+            Assert.Contains("\"chaperones\":5", run.ContextJson);
+            var task = await db.ApprovalTasks.SingleAsync(t => t.Status == ApprovalStatus.Pending);
+            Assert.Equal("Final approval — Science", task.Title);                            // back at the step that asked, not the start
+            Assert.Equal("Step 2 of 2", task.Position);
+            Assert.Equal(1, await db.ApprovalTasks.CountAsync(t => t.Status == ApprovalStatus.Approved));   // the team leader is not asked again
+            Assert.Equal(1, await db.ApprovalTasks.CountAsync(t => t.Status == ApprovalStatus.Returned));
+            Assert.Contains(await db.RunEvents.ToListAsync(), e => e.Message.Contains("Resubmitted with changes"));
+            Assert.False((await Service(db).ResubmitAsync(runId, new(), "t@school.org", "T", default)).Result.Ok);   // nothing to resubmit now
+        }
+        await DecideAsync(runId, "principal@example.org");
+        await using var done = Db();
+        Assert.Equal(RunStatus.Completed, (await done.Runs.SingleAsync()).Status);
+    }
+
+    [Fact]
+    public async Task Requester_CanWithdraw_WhileWaiting_ButNotOnceItHasMovedOn()
+    {
+        var waiting = await SubmitTripAsync("Science");
+        var finished = await SubmitTripAsync("Science");
+        await DecideAsync(finished, "principal@example.org");
+        await using var db = Db();
+        Assert.False((await Service(db).WithdrawAsync(waiting, "nosy@school.org", "Nosy", default)).Ok);     // not theirs
+        Assert.False((await Service(db).WithdrawAsync(finished, "t@school.org", "T", default)).Ok);          // already approved
+        Assert.True((await Service(db).WithdrawAsync(waiting, "t@school.org", "T Teacher", default)).Ok);
+        Assert.False((await Service(db).WithdrawAsync(waiting, "t@school.org", "T Teacher", default)).Ok);   // already withdrawn
+
+        await using var check = Db();
+        Assert.Equal(RunStatus.Cancelled, (await check.Runs.SingleAsync(r => r.Id == waiting)).Status);
+        Assert.Equal(ApprovalStatus.Cancelled, (await check.ApprovalTasks.SingleAsync(t => t.RunId == waiting)).Status);
+        Assert.Contains(await check.Notifications.Where(n => n.UserEmail == "principal@example.org").ToListAsync(), n => n.Title.StartsWith("Withdrawn"));
+        Assert.Contains(await check.RunEvents.Where(e => e.RunId == waiting).ToListAsync(), e => e.Message == "Withdrawn by T Teacher.");
+    }
+
+    [Fact]
+    public async Task Discussion_NotifiesTheOtherPeopleInvolved_NotTheAuthor()
+    {
+        var runId = await SubmitTripAsync("Science");
+        await using var db = Db();
+        var run = await db.Runs.AsNoTracking().SingleAsync();
+        var before = await db.Notifications.CountAsync();
+        Assert.False((await Service(db).CommentAsync(run, "principal@example.org", "Pat", "   ", default)).Ok);
+        Assert.True((await Service(db).CommentAsync(run, "principal@example.org", "Pat", "Which bus company?", default)).Ok);
+        Assert.True((await Service(db).CommentAsync(run, "t@school.org", "T Teacher", "Coach USA", default)).Ok);
+
+        var added = await db.Notifications.OrderBy(n => n.Id).Skip(before).ToListAsync();
+        Assert.Equal(new[] { "t@school.org", "principal@example.org" }, added.Select(n => n.UserEmail).ToArray());
+        Assert.Contains("Which bus company?", added[0].Body);
+        Assert.Equal(2, await db.RunComments.CountAsync(c => c.RunId == runId));
+    }
+
+    // ---- stand-ins, reminders, escalation ------------------------------------------------
+
+    [Fact]
+    public async Task StandIn_DecidesInPlaceOfAnAbsentApprover_AndCountsAsThemWhenAllMustApprove()
+    {
+        await using (var db = Db())
+        {
+            db.Delegations.Add(new Delegation { FromEmail = "principal@example.org", ToEmail = "deputy@school.org", StartsOn = DateTime.Today.AddDays(-1), EndsOn = DateTime.Today.AddDays(3) });
+            db.Delegations.Add(new Delegation { FromEmail = "admin@example.org", ToEmail = "t@school.org", StartsOn = DateTime.Today, EndsOn = DateTime.Today });   // would make the requester their own approver
+            db.Delegations.Add(new Delegation { FromEmail = "admin@example.org", ToEmail = "expired@school.org", StartsOn = DateTime.Today.AddDays(-9), EndsOn = DateTime.Today.AddDays(-2) });
+            await db.SaveChangesAsync();
+        }
+        var runId = await SubmitTripAsync("Mathematics");   // principal AND admin must both approve
+        await using (var db = Db())
+        {
+            var task = await db.ApprovalTasks.SingleAsync();
+            Assert.Equal("principal@example.org", task.StandsInFor("deputy@school.org"));
+            Assert.True(task.CanBeDecidedBy("deputy@school.org"));
+            Assert.False(task.CanBeDecidedBy("t@school.org"));
+            Assert.False(task.CanBeDecidedBy("expired@school.org"));
+            Assert.Contains(await db.Notifications.ToListAsync(), n => n.UserEmail == "deputy@school.org" && n.Title.StartsWith("Approval needed"));
+            Assert.Contains(await db.RunEvents.ToListAsync(), e => e.Message == "principal@example.org is away, so deputy@school.org can decide in their place.");
+        }
+        await DecideAsync(runId, "deputy@school.org");
+        await using (var db = Db())
+        {
+            var task = await db.ApprovalTasks.SingleAsync();
+            Assert.Equal(ApprovalStatus.Pending, task.Status);                           // admin still owes theirs
+            Assert.True(task.HasApproved("principal@example.org"));                      // counted as the person they stand in for
+            Assert.True(task.IsDoneFor("deputy@school.org"));
+            Assert.Contains(await db.RunEvents.ToListAsync(), e => e.Message.Contains("standing in for principal@example.org") && e.Message.Contains("(1 of 2)"));
+        }
+        await DecideAsync(runId, "principal@example.org", expectOk: false);              // the stand-in already signed for them
+        await DecideAsync(runId, "admin@example.org");
+        await using var done = Db();
+        Assert.Equal(RunStatus.Completed, (await done.Runs.SingleAsync()).Status);
+    }
+
+    [Fact]
+    public async Task Reminders_AndEscalation_FollowSchoolDays()
+    {
+        // Monday 2 Nov 2026; Wed 4th is a closed day.
+        var created = new DateTime(2026, 11, 2, 14, 0, 0, DateTimeKind.Utc);
+        var runId = await SubmitTripAsync("Science");
+        await using (var db = Db())
+        {
+            db.ClosedDays.Add(new ClosedDay { Date = new DateTime(2026, 11, 4), Name = "Election day" });
+            var task = await db.ApprovalTasks.SingleAsync();
+            task.CreatedAt = created;
+            Assert.Equal(WorkflowEngine.DefaultRemindDays, task.RemindDays);             // reminders are on by default
+            task.EscalateDays = 4;
+            task.EscalateTo = ApprovalTask.Pack(new[] { "super@school.org", "t@school.org" });
+            await db.SaveChangesAsync();
+        }
+        async Task<(int, int)> At(DateTime utc) { await using var db = Db(); return await Service(db).FollowUpApprovalsAsync(utc, default); }
+        async Task<int> Count(string email, string prefix) { await using var db = Db(); return await db.Notifications.CountAsync(n => n.UserEmail == email && n.Title.StartsWith(prefix)); }
+
+        Assert.Equal((0, 0), await At(created.AddDays(1)));                              // Tue: 1 school day
+        Assert.Equal((0, 0), await At(created.AddDays(2)));                              // Wed is closed: still 1
+        Assert.Equal((1, 0), await At(created.AddDays(3)));                              // Thu: 2 school days → reminder
+        Assert.Equal((0, 0), await At(created.AddDays(3).AddHours(2)));                  // not twice on the same day
+        Assert.Equal(1, await Count("principal@example.org", "Reminder"));
+        Assert.Equal((0, 0), await At(created.AddDays(5)));                              // Sat: Fri was only the 3rd school day
+        Assert.Equal((1, 1), await At(created.AddDays(7)));                              // next Mon: 4 school days → escalate, and remind again
+
+        await using (var db = Db())
+        {
+            var task = await db.ApprovalTasks.SingleAsync();
+            Assert.True(task.IsEscalatedTo("super@school.org"));
+            Assert.False(task.IsEscalatedTo("t@school.org"));                            // never the requester
+            Assert.Contains(await db.RunEvents.ToListAsync(), e => e.Message.Contains("escalated to super@school.org"));
+        }
+        Assert.Equal(1, await Count("super@school.org", "Escalated to you"));
+        Assert.Equal(1, await Count("super@school.org", "Reminder"));                    // they are now one of the people who owe a decision
+        Assert.Equal((0, 0), await At(created.AddDays(7).AddHours(1)));                  // escalates once
+
+        Assert.True((await ActAsync(runId, "super@school.org", ApprovalAction.Approve)).Ok);
+        await using var done = Db();
+        Assert.Equal(RunStatus.Completed, (await done.Runs.SingleAsync()).Status);
+        Assert.Contains(await done.RunEvents.ToListAsync(), e => e.Message.Contains("after the step was escalated"));
+        Assert.Equal((0, 0), await Service(done).FollowUpApprovalsAsync(created.AddDays(30), default));   // nothing pending, nothing sent
+    }
+
+    [Fact]
+    public async Task Reminders_StopAfterFive_AndCanBeSwitchedOff()
+    {
+        var created = new DateTime(2026, 11, 2, 14, 0, 0, DateTimeKind.Utc);
+        await SubmitTripAsync("Science");
+        await using (var db = Db()) { (await db.ApprovalTasks.SingleAsync()).CreatedAt = created; await db.SaveChangesAsync(); }
+        var sent = 0;
+        for (var week = 1; week <= 9; week++)
+        {
+            await using var db = Db();
+            sent += (await Service(db).FollowUpApprovalsAsync(created.AddDays(7 * week), default)).Reminded;
+        }
+        Assert.Equal(5, sent);
+
+        await SubmitTripAsync("Athletics");
+        await using var off = Db();
+        var quiet = await off.ApprovalTasks.OrderBy(t => t.Id).LastAsync();
+        quiet.CreatedAt = created;
+        quiet.RemindDays = 0;
+        await off.SaveChangesAsync();
+        Assert.Equal((0, 0), await Service(off).FollowUpApprovalsAsync(created.AddDays(90), default));
+    }
+
+    // ---- safety net for missed ticket events ---------------------------------------------
+
+    private sealed class LiveFreshservice : IFreshserviceClient
+    {
+        private readonly SimulatedFreshserviceClient _inner = new();
+        public Dictionary<long, Dictionary<string, object?>?> Tickets { get; } = new();
+        public bool Down { get; set; }
+        public bool IsLive => true;
+        public Task<Dictionary<string, object?>?> GetTicketAsync(long ticketId, CancellationToken ct = default) =>
+            Down ? throw new FreshserviceException("rate limited", 429) : Task.FromResult(Tickets.TryGetValue(ticketId, out var t) ? t : new Dictionary<string, object?> { ["status"] = 2m });
+        public Task<Dictionary<string, object?>> CreateTicketAsync(TicketCreate ticket, CancellationToken ct = default) => _inner.CreateTicketAsync(ticket, ct);
+        public Task<Dictionary<string, object?>> UpdateTicketAsync(long ticketId, TicketUpdate update, CancellationToken ct = default) => _inner.UpdateTicketAsync(ticketId, update, ct);
+        public Task AddNoteAsync(long ticketId, string bodyHtml, bool isPrivate, CancellationToken ct = default) => _inner.AddNoteAsync(ticketId, bodyHtml, isPrivate, ct);
+        public Task AttachFilesAsync(long ticketId, IReadOnlyList<TicketFile> files, CancellationToken ct = default) => _inner.AttachFilesAsync(ticketId, files, ct);
+        public Task<Dictionary<string, object?>?> FindRequesterAsync(string email, CancellationToken ct = default) => _inner.FindRequesterAsync(email, ct);
+        public Task<Dictionary<string, object?>> PlaceServiceRequestAsync(long itemDisplayId, string requesterEmail, int quantity, Dictionary<string, object?> customFields, CancellationToken ct = default) => _inner.PlaceServiceRequestAsync(itemDisplayId, requesterEmail, quantity, customFields, ct);
+        public Task<IReadOnlyList<LookupItem>> LookupAsync(string source, string? query, string? userEmail, CancellationToken ct = default) => _inner.LookupAsync(source, query, userEmail, ct);
+        public Task<string> TestConnectionAsync(CancellationToken ct = default) => _inner.TestConnectionAsync(ct);
+    }
+
+    [Fact]
+    public async Task MissedTicketEvents_AreCaughtByAskingFreshserviceDirectly()
+    {
+        var live = new LiveFreshservice();
+        var now = new DateTime(2026, 11, 16, 12, 0, 0, DateTimeKind.Utc);
+        int a, b, c;
+        async Task<int> Submit()
+        {
+            await using var db = Db();
+            var workflow = await db.Workflows.SingleAsync(w => w.Name == "Technology Purchase Request");
+            return (await Service(db, live).SubmitFormAsync(workflow, PurchaseInput(300), "t@school.org", "T Teacher", default)).RunId!.Value;
+        }
+        (a, b, c) = (await Submit(), await Submit(), await Submit());   // tickets 90001, 90002, 90003: all waiting to be resolved
+
+        await using (var db = Db())
+        {
+            Assert.Equal(0, await Service(db).CheckWaitingTicketsAsync(now, default));           // simulation mode: never polls
+            Assert.Equal(0, await Service(db, live).CheckWaitingTicketsAsync(now, default));     // all still open in Freshservice
+            Assert.All(await db.Runs.AsNoTracking().ToListAsync(), r => Assert.Equal(now, r.LastPolledAt));
+        }
+        live.Tickets[90001] = new() { ["status"] = 5m };     // closed, but the webhook never arrived
+        live.Tickets[90002] = null;                          // deleted in Freshservice
+        await using (var db = Db())
+        {
+            Assert.Equal(0, await Service(db, live).CheckWaitingTicketsAsync(now.AddMinutes(5), default));   // checked too recently
+            Assert.Equal(2, await Service(db, live).CheckWaitingTicketsAsync(now.AddMinutes(20), default));
+        }
+        await using (var db = Db())
+        {
+            Assert.Equal(RunStatus.Completed, (await db.Runs.SingleAsync(r => r.Id == a)).Status);
+            var gone = await db.Runs.SingleAsync(r => r.Id == b);
+            Assert.Equal(RunStatus.Failed, gone.Status);
+            Assert.Contains("no longer exists", gone.Error);
+            Assert.Equal(RunStatus.WaitingTicket, (await db.Runs.SingleAsync(r => r.Id == c)).Status);
+
+            live.Down = true;                                                                            // an outage is not an error on the request
+            Assert.Equal(0, await Service(db, live).CheckWaitingTicketsAsync(now.AddHours(2), default));
+            Assert.Equal(RunStatus.WaitingTicket, (await db.Runs.AsNoTracking().SingleAsync(r => r.Id == c)).Status);
+        }
+    }
+
+    // ---- export --------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Export_HasOneColumnPerAnswer_AndCannotSmuggleSpreadsheetFormulas()
+    {
+        await using (var db = Db())
+        {
+            var workflow = await db.Workflows.SingleAsync(w => w.Name == "Technology Purchase Request");
+            var input = PurchaseInput(300);
+            input["title"] = "=HYPERLINK(\"http://evil\",\"click\")";
+            input["justification"] = "He said \"yes\",\nthen left";
+            Assert.NotNull((await Service(db).SubmitFormAsync(workflow, input, "t@school.org", "T Teacher", default)).RunId);
+        }
+        await SubmitTripAsync("Science");
+        await using var read = Db();
+        var csv = RequestExport.ToCsv(await read.Runs.AsNoTracking().OrderBy(r => r.Id).ToListAsync());
+        var header = csv.Split('\n')[0];
+        Assert.StartsWith("\"Request #\",\"Form\",\"Status\",\"Submitted by\",\"Email\",\"Department\"", header);
+        Assert.Contains("\"What do you need?\"", header);              // a purchase question
+        Assert.Contains("\"Where are you going?\"", header);           // a trip question, in the same file
+        Assert.DoesNotContain("\"Items\",", header);                   // section headings are not answers
+        Assert.Contains("\"'=HYPERLINK(\"\"http://evil\"\",\"\"click\"\")\"", csv);   // neutralised and quoted
+        Assert.Contains("\"He said \"\"yes\"\",\nthen left\"", csv);
+        Assert.Contains("\"Projector | Hardware | 1 | 300 | 300\"", csv);  // table rows flattened, numbers left as numbers
+        Assert.Contains("\"Science Museum\"", csv);
+
+        Assert.Equal("\"-5\"", RequestExport.Cell("-5"));               // a real negative number is not text
+        Assert.Equal("\"'-5 apples\"", RequestExport.Cell("-5 apples"));
+        Assert.Equal("\"'@SUM(A1)\"", RequestExport.Cell("@SUM(A1)"));
+        Assert.Equal("\"\"", RequestExport.Cell(null));
     }
 
     // ---- attachments ----------------------------------------------------------------------

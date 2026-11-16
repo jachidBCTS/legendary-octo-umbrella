@@ -441,6 +441,7 @@
       async function upload(file) {
         const data = new FormData();
         data.append('workflowId', String(options.workflowId || 0));
+        if (options.runId) data.append('runId', String(options.runId));
         data.append('field', field.key);
         data.append('file', file);
         let response;

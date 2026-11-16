@@ -39,6 +39,7 @@ public static class FormEvaluator
     /// (builder preview, unit tests) any well-formed department value is accepted.
     /// </param>
     /// <param name="locations">Active locations (id → name), checked the same way for location fields.</param>
+    /// <param name="closedDays">Days the school is closed, so "school day" date formulas skip them.</param>
     /// <param name="attachments">
     /// Files this person has uploaded and may attach (id → details). When given, attachment fields only
     /// accept these and take the name and size from here, never from the browser.
@@ -46,12 +47,12 @@ public static class FormEvaluator
     public static FormResult Evaluate(FormDefinition form, IDictionary<string, object?> input,
         IDictionary<string, object?>? ambient = null, bool applyDefaults = false, Func<DateTime>? now = null,
         IReadOnlyDictionary<long, string>? departments = null, IReadOnlyDictionary<long, string>? locations = null,
-        IReadOnlyDictionary<string, AttachmentInfo>? attachments = null)
+        IReadOnlyDictionary<string, AttachmentInfo>? attachments = null, IReadOnlySet<DateTime>? closedDays = null)
     {
         var result = new FormResult();
         var submitterEmail = ambient is not null && ambient.TryGetValue("submitter", out var who) && who is Dictionary<string, object?> person
             ? Values.ToText(Workflows.ChainValue.Get(person, "email")).Trim() : "";
-        var ambientScope = new Scope(ambient, now: now);
+        var ambientScope = new Scope(ambient, now: now, closedDays: closedDays);
         var scope = new Scope(result.Values, ambientScope);
         var fields = form.Fields.Where(f => !string.IsNullOrWhiteSpace(f.Key)).ToList();
         var byKey = new Dictionary<string, FieldDef>(StringComparer.OrdinalIgnoreCase);

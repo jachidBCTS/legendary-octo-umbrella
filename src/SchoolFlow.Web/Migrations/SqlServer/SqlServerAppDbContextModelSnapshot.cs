@@ -124,9 +124,30 @@ namespace SchoolFlow.Web.Migrations.SqlServer
                         .HasMaxLength(320)
                         .HasColumnType("nvarchar(320)");
 
+                    b.Property<int>("EscalateDays")
+                        .HasColumnType("int");
+
+                    b.Property<string>("EscalateTo")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Escalated")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("EscalatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Extra")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("Instructions")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("LastReminderAt")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("NodeId")
                         .IsRequired()
@@ -138,6 +159,12 @@ namespace SchoolFlow.Web.Migrations.SqlServer
                         .HasMaxLength(40)
                         .HasColumnType("nvarchar(40)");
 
+                    b.Property<int>("RemindDays")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ReminderCount")
+                        .HasColumnType("int");
+
                     b.Property<string>("Rule")
                         .IsRequired()
                         .HasMaxLength(10)
@@ -145,6 +172,10 @@ namespace SchoolFlow.Web.Migrations.SqlServer
 
                     b.Property<int>("RunId")
                         .HasColumnType("int");
+
+                    b.Property<string>("StandIns")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -262,6 +293,64 @@ namespace SchoolFlow.Web.Migrations.SqlServer
                     b.HasIndex("At");
 
                     b.ToTable("AuditEntries");
+                });
+
+            modelBuilder.Entity("SchoolFlow.Web.Data.ClosedDay", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("Date")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Date")
+                        .IsUnique();
+
+                    b.ToTable("ClosedDays");
+                });
+
+            modelBuilder.Entity("SchoolFlow.Web.Data.Delegation", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("EndsOn")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("FromEmail")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<DateTime>("StartsOn")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ToEmail")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FromEmail");
+
+                    b.ToTable("Delegations");
                 });
 
             modelBuilder.Entity("SchoolFlow.Web.Data.Department", b =>
@@ -449,6 +538,41 @@ namespace SchoolFlow.Web.Migrations.SqlServer
                     b.ToTable("Notifications");
                 });
 
+            modelBuilder.Entity("SchoolFlow.Web.Data.RunComment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AuthorEmail")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<string>("AuthorName")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("RunId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RunId");
+
+                    b.ToTable("RunComments");
+                });
+
             modelBuilder.Entity("SchoolFlow.Web.Data.RunEventRow", b =>
                 {
                     b.Property<int>("Id")
@@ -619,6 +743,9 @@ namespace SchoolFlow.Web.Migrations.SqlServer
 
                     b.Property<string>("Error")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("LastPolledAt")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("Status")
                         .IsRequired()

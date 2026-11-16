@@ -100,7 +100,7 @@ async function login(page, email) {
   check((await page.locator('.approve-box .pre').textContent()).includes('$503.00'), 'approval instructions rendered with total');
   await page.click('.approve-box a.btn');
   await page.fill('.approve-box textarea', 'Go ahead');
-  await page.click('button[name=approved][value=true]');
+  await page.click('button[name=decision][value=approve]');
   await page.waitForSelector('.flash.ok');
   check((await page.locator('.page-head .pill').textContent()) === 'With help desk', 'after approval: waiting on ticket');
   const timeline = await page.locator('.timeline').textContent();
@@ -418,13 +418,13 @@ async function login(page, email) {
   await page.waitForURL(/Requests\/Detail\/\d+/);
   check(page.url() === tripUrl, 'notification opens the request');
   check((await page.locator('.approve-box h2').textContent()).includes('Step 1 of 2'), 'approval box shows the step position');
-  await page.click('button[name=approved][value=true]');
+  await page.click('button[name=decision][value=approve]');
   await page.waitForSelector('.flash.ok');
   steps = await track();
   check(steps[0].includes('Approved') && steps[1].includes('Waiting'), 'chain moved to the department step');
   await login(page, 'principal@example.org');
   await page.goto(tripUrl);
-  await page.click('button[name=approved][value=true]');
+  await page.click('button[name=decision][value=approve]');
   await page.waitForSelector('.flash.ok');
   check((await page.locator('.page-head .pill').first().textContent()) === 'Completed', 'trip completed after the final approver');
   check((await page.locator('.timeline').textContent()).includes('Notified teacher@example.org: Your trip to Liberty Science Center is approved'), 'notification step ran');
@@ -704,7 +704,7 @@ async function login(page, email) {
   await login(page, 'admin@example.org');
   await page.goto(behalfRun);
   await page.fill('.approve-box textarea', 'Principal is away');
-  await page.click('button[name=approved][value=true]');
+  await page.click('button[name=decision][value=approve]');
   await page.waitForSelector('.flash.ok');
   check((await page.locator('.timeline').textContent()).includes('an admin acting on behalf of principal@example.org'), 'an admin can approve on someone\'s behalf, and the request says so');
 
@@ -735,6 +735,136 @@ async function login(page, email) {
   await page.waitForSelector('.flash.bad');
   check((await page.locator('.flash.bad').textContent()).includes('Lab Booking'), 'a group that limits a form cannot be removed from under it');
   await page.screenshot({ path: S + '/shots/30-settings-groups.png', fullPage: true });
+
+  note('13b. calendar, stand-in, send back, discussion, withdraw, print, export, reports');
+  await login(page, 'admin@example.org');
+  await page.goto(base + '/Admin/Calendar');
+  await page.fill('#c-name', 'Winter break');
+  await page.fill('#c-from', '2026-12-24');
+  await page.fill('#c-to', '2026-12-31');
+  await page.click('button:has-text("Add")');
+  await page.waitForSelector('.flash.ok');
+  check((await page.locator('.flash.ok').textContent()).includes('6 school days'), 'a closure adds only its weekdays (6)');
+  check((await page.locator('tr:has-text("Winter break")').textContent()).includes('Dec 31, 2026'), 'the closure is listed as one range');
+  await page.screenshot({ path: S + '/shots/31-calendar.png', fullPage: true });
+
+  await login(page, 'principal@example.org');
+  await page.goto(base + '/Away');
+  await page.fill('#to', 'principal@example.org');
+  await page.fill('#to-date', new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10));
+  await page.click('button:has-text("Save")');
+  await page.waitForSelector('.flash.bad');
+  check(true, 'you cannot be your own stand-in');
+  await page.fill('#to', 'builder@example.org');
+  await page.fill('#to-date', new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10));
+  await page.click('button:has-text("Save")');
+  await page.waitForSelector('.flash.ok');
+  check((await page.locator('tr:has-text("builder@example.org")').textContent()).includes('Active now'), 'a stand-in is saved and active');
+  await page.screenshot({ path: S + '/shots/32-away.png', fullPage: true });
+
+  const submitTrip = async (place) => {
+    await login(page, 'teacher@example.org');
+    await page.goto(base + '/Start/4');
+    await page.waitForSelector('.sf-form');
+    await field('Where are you going?').locator('input').fill(place);
+    await page.waitForFunction(() => document.querySelectorAll('.sf-field select option').length > 3);
+    await field('Department').locator('select').selectOption({ label: 'Science' });
+    await field('Date of trip').locator('input').fill(new Date(Date.now() + 60 * 864e5).toISOString().slice(0, 10));
+    await field('Number of students').locator('input').fill('20');
+    await field('Number of chaperones').locator('input').fill('2');
+    await field('How does this trip').locator('textarea').fill('Ecology unit');
+    await page.click('button[type=submit]');
+    await page.waitForURL(/Requests\/Detail\/\d+/);
+    return page.url();
+  };
+  const sentBackUrl = await submitTrip('Wetlands centre');
+  check((await page.locator('.timeline').textContent()).includes('builder@example.org can decide in their place'), 'the request says a stand-in can decide');
+
+  await login(page, 'builder@example.org');
+  await page.goto(base + '/Approvals');
+  check((await page.locator('body').textContent()).includes('Wetlands centre') || await page.locator('.approve-box').count() > 0, 'the stand-in sees the approval');
+  await page.goto(sentBackUrl);
+  check((await page.locator('.approve-box').textContent()).includes('principal@example.org'), 'the stand-in is told who they are deciding for');
+  await page.click('button[name=decision][value=return]');
+  await page.waitForSelector('.flash.bad');
+  check(true, 'sending back needs a comment saying what to change');
+  await page.fill('.approve-box textarea', 'Please bring a third chaperone');
+  await page.click('button[name=decision][value=return]');
+  await page.waitForSelector('.flash.ok');
+  check((await page.locator('.page-head .pill').textContent()) === 'Changes requested', 'sent back: status is Changes requested');
+  check(await page.locator('a:has-text("Edit and resubmit")').count() === 0, 'only the requester can edit and resubmit');
+  await page.fill('#comment-body', 'Happy to approve once that is fixed.');
+  await page.click('button:has-text("Post message")');
+  await page.waitForSelector('.comments li');
+
+  await login(page, 'teacher@example.org');
+  await page.goto(sentBackUrl);
+  check((await page.locator('#discussion').textContent()).includes('Happy to approve once'), 'the requester sees the discussion');
+  await page.screenshot({ path: S + '/shots/33-changes-requested.png', fullPage: true });
+  await page.locator('a:has-text("Edit and resubmit")').first().click();
+  await page.waitForSelector('.sf-form');
+  check((await page.locator('.copy-bar').textContent()).includes('third chaperone'), 'the edit page repeats what was asked for');
+  await page.waitForFunction(() => [...document.querySelectorAll('.sf-field input')].some((i) => i.value === 'Wetlands centre'));
+  check(true, 'the edit page is filled with the earlier answers');
+  await field('Number of chaperones').locator('input').fill('3');
+  await page.screenshot({ path: S + '/shots/34-revise.png', fullPage: true });
+  await page.click('button[type=submit]');
+  await page.waitForURL(/Requests\/Detail\/\d+/);
+  check((await page.locator('.page-head .pill').textContent()) === 'Awaiting approval', 'resubmitted: awaiting approval again');
+  check((await page.locator('.timeline').textContent()).includes('Resubmitted with changes'), 'the history records the resubmission');
+
+  const printPage = await ctx.newPage();
+  await printPage.goto(sentBackUrl.replace('/Detail/', '/Print/'));
+  const printed = await printPage.locator('.print-page').textContent();
+  check(printed.includes('Wetlands centre') && printed.includes('Sent back for changes') && printed.includes('Signature'), 'the print view has the answers, decisions and a signature line');
+  await printPage.emulateMedia({ media: 'print' });
+  check(await printPage.locator('.no-print').isHidden(), 'buttons are left off the printed page');
+  await printPage.screenshot({ path: S + '/shots/35-print.png', fullPage: true });
+  await printPage.close();
+
+  await login(page, 'builder@example.org');
+  await page.goto(sentBackUrl);
+  await page.click('button[name=decision][value=approve]');
+  await page.waitForSelector('.flash.ok');
+  check((await page.locator('.timeline').textContent()).includes('standing in for principal@example.org'), 'the history says the decision was made by a stand-in');
+
+  const withdrawUrl = await submitTrip('Recycling plant');
+  page.once('dialog', (d) => d.accept());
+  await page.click('button:has-text("Withdraw")');
+  await page.waitForSelector('.flash.ok');
+  check((await page.locator('.page-head .pill').textContent()) === 'Cancelled', 'the requester can withdraw a waiting request');
+  check(await page.locator('button:has-text("Withdraw")').count() === 0, 'a withdrawn request cannot be withdrawn again');
+  await login(page, 'principal@example.org');
+  await page.goto(base + '/Notifications');
+  check((await page.locator('body').textContent()).includes('Withdrawn'), 'the approver is told it was withdrawn');
+  await page.goto(base + '/Away');
+  await page.locator('tr:has-text("builder@example.org") button:has-text("Remove")').click();
+  await page.waitForSelector('.flash.ok');
+
+  await login(page, 'teacher@example.org');
+  const mine = await page.evaluate(async () => { const r = await fetch('/Requests?handler=Export&scope=managed'); return { status: r.status, type: r.headers.get('content-type'), text: await r.text() }; });
+  check(mine.status === 200 && mine.text.includes('"Request #"') && !mine.text.includes('Planetarium') === false, 'staff can export their own requests (asking for more falls back to their own)');
+  check(await page.locator('.sidebar a[href="/Reports"]').count() === 0, 'staff with nothing to manage do not see Reports');
+  await login(page, 'admin@example.org');
+  await page.goto(base + '/Requests?scope=managed&workflow=4');
+  check(await page.locator('.table tbody tr').count() >= 3 && !(await page.locator('.table tbody').textContent()).includes('Technology Purchase'), 'the request list can be filtered by form');
+  const csv = await page.evaluate(async () => { const r = await fetch('/Requests?handler=Export&scope=managed&workflow=4'); return { status: r.status, type: r.headers.get('content-type'), text: await r.text() }; });
+  check(csv.status === 200 && /text\/csv/.test(csv.type) && csv.text.includes('"Where are you going?"') && csv.text.includes('"Wetlands centre"'), 'export gives a spreadsheet file with a column per question');
+  await page.goto(base + '/Reports');
+  check(Number(await page.locator('.stat strong').first().textContent()) >= 5, 'reports count the requests');
+  check((await page.locator('body').textContent()).includes('Field Trip'), 'reports break requests down by form');
+  await page.screenshot({ path: S + '/shots/36-reports.png', fullPage: true });
+  await page.goto(base + '/Admin/Audit');
+  const audit2 = await page.locator('.table tbody').textContent();
+  check(audit2.includes('Requests exported') && audit2.includes('Closed days added'), 'exports and calendar changes are in the audit log');
+  await page.setViewportSize({ width: 390, height: 800 });
+  for (const [name, url] of [['37-mobile-detail', sentBackUrl], ['38-mobile-reports', base + '/Reports'], ['39-mobile-away', base + '/Away'], ['40-mobile-calendar', base + '/Admin/Calendar']]) {
+    await page.goto(url);
+    const o = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    check(o <= 0, 'no horizontal overflow on phone: ' + name + ' (' + o + ')');
+    await page.screenshot({ path: S + '/shots/' + name + '.png', fullPage: true });
+  }
+  await page.setViewportSize({ width: 1360, height: 900 });
 
   note('14. admin + help + mobile');
   await login(page, 'admin@example.org');

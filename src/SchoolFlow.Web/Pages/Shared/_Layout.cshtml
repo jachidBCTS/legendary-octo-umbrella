@@ -16,7 +16,7 @@
     if (signedIn && email.Length > 0)
     {
         var needle = ";" + email + ";";
-        pendingCount = await Db.ApprovalTasks.CountAsync(t => t.Status == ApprovalStatus.Pending && t.Assignees.Contains(needle) && !t.ApprovedBy.Contains(needle));
+        pendingCount = await Db.ApprovalTasks.CountAsync(t => t.Status == ApprovalStatus.Pending && (t.Assignees.Contains(needle) || t.Extra.Contains(needle)) && !t.ApprovedBy.Contains(needle));
         unreadCount = await Db.Notifications.CountAsync(n => n.UserEmail == email && n.ReadAt == null);
     }
     var wide = ViewData["Wide"] as bool? == true;
@@ -53,10 +53,12 @@
                 @if (unreadCount > 0) { <span class="badge">@(unreadCount > 99 ? "99+" : unreadCount.ToString())</span> }
             </a>
             <a class="@Active("/Chains")" href="/Chains"><partial name="_Icons" model='"chain"' /> Approval chains</a>
+            <a class="@Active("/Away")" href="/Away"><partial name="_Icons" model='"clock"' /> Away / stand-in</a>
             @if (User.IsBuilder())
             {
                 <div class="nav-label">Build</div>
                 <a class="@Active("/Builder")" href="/Builder"><partial name="_Icons" model='"flow"' /> Workflows</a>
+                <a class="@Active("/Reports")" href="/Reports"><partial name="_Icons" model='"chart"' /> Reports</a>
                 <a class="@Active("/Help")" href="/Help/Formulas"><partial name="_Icons" model='"fx"' /> Formula guide</a>
             }
             @if (User.IsAdmin())
@@ -64,6 +66,7 @@
                 <div class="nav-label">Admin</div>
                 <a class="@Active("/Admin/Departments")" href="/Admin/Departments"><partial name="_Icons" model='"building"' /> Departments</a>
                 <a class="@Active("/Admin/Locations")" href="/Admin/Locations"><partial name="_Icons" model='"pin"' /> Locations</a>
+                <a class="@Active("/Admin/Calendar")" href="/Admin/Calendar"><partial name="_Icons" model='"calendar"' /> School calendar</a>
                 <a class="@Active("/Admin/Audit")" href="/Admin/Audit"><partial name="_Icons" model='"clock"' /> Audit log</a>
                 <a class="@Active("/Admin/Settings")" href="/Admin/Settings"><partial name="_Icons" model='"gear"' /> Settings</a>
             }

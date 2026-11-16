@@ -41,6 +41,15 @@ public class DetailModel : PageModel
     public List<ApprovalTask> MyTasks { get; private set; } = new();
     public List<string> PendingAssignees { get; private set; } = new();
     public List<Answer> Fields { get; private set; } = new();
+    public List<RunComment> Comments { get; private set; } = new();
+    /// <summary>Approval steps that have been decided, oldest first (for the printable record).</summary>
+    public List<ApprovalTask> Decisions { get; private set; } = new();
+    /// <summary>The requester may take the request back while it is still waiting for approval or for their own changes.</summary>
+    public bool CanWithdraw { get; private set; }
+    /// <summary>An approver sent it back and this is the requester: they can edit and resubmit.</summary>
+    public bool CanRevise { get; private set; }
+    /// <summary>What the approver asked to be changed, when the request has been sent back.</summary>
+    public ApprovalTask? ReturnedBy { get; private set; }
     /// <summary>Retry and cancel are for the workflow's owners and admins.</summary>
     public bool CanManage { get; private set; }
     public string? TicketUrl { get; private set; }
@@ -48,7 +57,7 @@ public class DetailModel : PageModel
     public string? CopyUrl { get; private set; }
 
     /// <summary>Loads the run if the current user may see it: the submitter, anyone asked to approve it, builders and admins.</summary>
-    private async Task<bool> LoadAsync(int id)
+    protected async Task<bool> LoadAsync(int id)
     {
         var run = await _db.Runs.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id);
         if (run is null) return false;
@@ -60,8 +69,15 @@ public class DetailModel : PageModel
         Run = run;
         var pending = tasks.Where(t => t.Status == ApprovalStatus.Pending).ToList();
         // Someone who has already approved an "all must approve" step has nothing left to do.
-        MyTasks = pending.Where(t => (t.IsAssignedTo(email) && !t.HasApproved(email)) || (User.IsAdmin() && !t.IsAssignedTo(email))).ToList();
-        PendingAssignees = pending.SelectMany(t => t.AssigneeList).Distinct().ToList();
+        MyTasks = pending.Where(t => (t.CanBeDecidedBy(email) && !t.IsDoneFor(email)) || (User.IsAdmin() && !t.CanBeDecidedBy(email))).ToList();
+        PendingAssignees = pending.SelectMany(t => t.AssigneeList.Where(a => !t.HasApproved(a)).Concat(t.StandInPairs.Select(p => p.StandIn)).Concat(t.EscalatedList)).Distinct().ToList();
+        Comments = await _db.RunComments.AsNoTracking().Where(c => c.RunId == id).OrderBy(c => c.Id).ToListAsync();
+        Decisions = tasks.Where(t => t.Status is ApprovalStatus.Approved or ApprovalStatus.Rejected or ApprovalStatus.Returned).OrderBy(t => t.Id).ToList();
+        var isSubmitter = email.Length > 0 && run.SubmitterEmail == email;
+        CanWithdraw = isSubmitter && run.Status is RunStatus.WaitingApproval or RunStatus.ChangesRequested && isSubmitter;
+        CanRevise = isSubmitter && run.Status == RunStatus.ChangesRequested;
+        if (run.Status == RunStatus.ChangesRequested)
+            ReturnedBy = tasks.Where(t => t.Status == ApprovalStatus.Returned).OrderByDescending(t => t.Id).FirstOrDefault();
         Events = await _db.RunEvents.AsNoTracking().Where(e => e.RunId == id).OrderBy(e => e.At).ThenBy(e => e.Id).ToListAsync();
 
         if (run.TicketId is long ticketId && _freshservice.IsLive && !string.IsNullOrWhiteSpace(_config["Freshservice:Domain"]))
@@ -119,14 +135,35 @@ public class DetailModel : PageModel
 
     public async Task<IActionResult> OnGetAsync(int id) => await LoadAsync(id) ? Page() : NotFound();
 
-    public async Task<IActionResult> OnPostDecideAsync(int id, int taskId, bool approved, string? comment, CancellationToken ct)
+    public async Task<IActionResult> OnPostCommentAsync(int id, string? body, CancellationToken ct)
+    {
+        var run = await _db.Runs.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (run is null || !await _access.CanViewRunAsync(User, run, ct)) return NotFound();
+        Flash(await _runs.CommentAsync(run, User.Email(), User.DisplayName(), body, ct), "Message added.");
+        return Redirect($"/Requests/Detail/{id}#discussion");
+    }
+
+    public async Task<IActionResult> OnPostWithdrawAsync(int id, CancellationToken ct)
+    {
+        Flash(await _runs.WithdrawAsync(id, User.Email(), User.DisplayName(), ct), "Request withdrawn.");
+        return RedirectToPage(new { id });
+    }
+
+    public async Task<IActionResult> OnPostDecideAsync(int id, int taskId, string? decision, string? comment, CancellationToken ct)
     {
         // The task must belong to this request; RunService checks the assignee.
         var belongs = await _db.ApprovalTasks.AsNoTracking().AnyAsync(t => t.Id == taskId && t.RunId == id, ct);
         var run = await _db.Runs.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id, ct);
         if (!belongs || run is null || !await _access.CanViewRunAsync(User, run, ct)) return NotFound();
-        var result = await _runs.DecideAsync(taskId, User.Email(), User.DisplayName(), User.IsAdmin(), approved, comment, ct);
-        Flash(result, approved ? "Approved. The request has moved on." : "Rejected. The requester will see your decision.");
+        var action = decision switch { "approve" => ApprovalAction.Approve, "return" => ApprovalAction.Return, "reject" => ApprovalAction.Reject, _ => (ApprovalAction?)null };
+        if (action is null) return BadRequest();
+        var result = await _runs.DecideAsync(taskId, User.Email(), User.DisplayName(), User.IsAdmin(), action.Value, comment, ct);
+        Flash(result, action switch
+        {
+            ApprovalAction.Approve => "Approved. The request has moved on.",
+            ApprovalAction.Return => "Sent back. The requester has been told what to change.",
+            _ => "Rejected. The requester will see your decision.",
+        });
         return RedirectToPage(new { id });
     }
 

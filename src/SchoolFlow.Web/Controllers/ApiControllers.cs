@@ -22,6 +22,14 @@ public sealed class EvaluateRequest
     public JsonElement Values { get; set; }
     /// <summary>True for the first call when a form opens, so defaults are applied.</summary>
     public bool Init { get; set; }
+    /// <summary>When editing a request that was sent back: the request, whose own version of the form is used.</summary>
+    public int? RunId { get; set; }
+}
+
+public sealed class ResubmitRequest
+{
+    public int RunId { get; set; }
+    public JsonElement Values { get; set; }
 }
 
 public sealed class SubmitRequest
@@ -50,9 +58,11 @@ public sealed class FormsController : ControllerBase
     private readonly RunService _runs;
     private readonly IFreshserviceClient _freshservice;
     private readonly AttachmentService _attachments;
+    private readonly SchoolCalendar _calendar;
 
-    public FormsController(AppDbContext db, RunService runs, IFreshserviceClient freshservice, AttachmentService attachments)
+    public FormsController(AppDbContext db, RunService runs, IFreshserviceClient freshservice, AttachmentService attachments, SchoolCalendar calendar)
     {
+        _calendar = calendar;
         _attachments = attachments;
         _db = db;
         _runs = runs;
@@ -68,6 +78,22 @@ public sealed class FormsController : ControllerBase
         var workflow = await _db.Workflows.AsNoTracking().FirstOrDefaultAsync(w => w.Id == workflowId, ct);
         return workflow is not null && workflow.IsLive && workflow.TriggerType == TriggerTypes.Form && AccessService.CanSubmit(User, workflow)
             ? workflow : null;
+    }
+
+    /// <summary>A request the current person submitted that an approver has sent back for changes.</summary>
+    private async Task<WorkflowRun?> RevisableAsync(int runId, CancellationToken ct)
+    {
+        var email = User.Email();
+        var run = await _db.Runs.AsNoTracking().FirstOrDefaultAsync(r => r.Id == runId, ct);
+        return run is not null && email.Length > 0 && run.SubmitterEmail == email && run.Status == RunStatus.ChangesRequested ? run : null;
+    }
+
+    [HttpPost("forms/resubmit")]
+    public async Task<IActionResult> Resubmit([FromBody] ResubmitRequest request, CancellationToken ct)
+    {
+        var (form, result) = await _runs.ResubmitAsync(request.RunId, Json.ToValues(request.Values), User.Email(), User.DisplayName(), ct);
+        if (form is null) return NotFound(new { error = result.Error });
+        return new JsonResult(new { ok = result.Ok, runId = result.Ok ? request.RunId : (int?)null, error = result.Ok ? null : result.Error, state = Shape(form) }, Json.Options);
     }
 
     private Dictionary<string, object?> Ambient()
@@ -94,7 +120,15 @@ public sealed class FormsController : ControllerBase
     public async Task<IActionResult> Evaluate([FromBody] EvaluateRequest request, CancellationToken ct)
     {
         FormDefinition form;
-        if (request.Definition is not null)
+        Dictionary<string, AttachmentInfo>? usableFiles = null;
+        if (request.RunId is int revisingId)
+        {
+            var revising = await RevisableAsync(revisingId, ct);
+            if (revising is null) return NotFound();
+            form = Json.ParseDefinition(revising.DefinitionJson).Form;
+            usableFiles = await _attachments.UsableForRunAsync(User.Email(), revising, ct);
+        }
+        else if (request.Definition is not null)
         {
             if (!User.IsBuilder()) return Forbid();
             form = request.Definition;
@@ -110,7 +144,8 @@ public sealed class FormsController : ControllerBase
         var result = FormEvaluator.Evaluate(form, Json.ToValues(request.Values), Ambient(), applyDefaults: request.Init,
             departments: await _runs.ActiveDepartmentsAsync(ct), locations: await _runs.ActiveLocationsAsync(ct),
             // In the builder's preview there is no real form to upload to, so files are taken as given.
-            attachments: request.Definition is not null ? null : await _attachments.PendingForAsync(User.Email(), request.WorkflowId, ct));
+            attachments: usableFiles ?? (request.Definition is not null ? null : await _attachments.PendingForAsync(User.Email(), request.WorkflowId, ct)),
+            closedDays: await _calendar.ClosedDaysAsync(ct));
         return new JsonResult(Shape(result), Json.Options);
     }
 
@@ -142,14 +177,26 @@ public sealed class FormsController : ControllerBase
     [HttpPost("attachments")]
     [RequestSizeLimit(27_000_000)] // above the largest configurable file size, so our own message is shown rather than a bare 413
     [RequestFormLimits(MultipartBodyLengthLimit = 27_000_000)]
-    public async Task<IActionResult> Upload([FromForm] int workflowId, [FromForm] string? field, IFormFile? file, CancellationToken ct)
+    public async Task<IActionResult> Upload([FromForm] int workflowId, [FromForm] string? field, [FromForm] int? runId, IFormFile? file, CancellationToken ct)
     {
         var email = User.Email();
         if (email.Length == 0) return BadRequest(new { error = "Your account has no email address, so files cannot be uploaded." });
-        var workflow = await LiveFormAsync(workflowId, ct);
-        if (workflow is null) return NotFound(new { error = "This form is no longer available." });
+        FormDefinition form;
+        if (runId is int revisingId)
+        {
+            // Adding a file while editing a request that was sent back: use that request's own form.
+            var revising = await RevisableAsync(revisingId, ct);
+            if (revising is null) return NotFound(new { error = "This request is not waiting for changes." });
+            form = Json.ParseDefinition(revising.DefinitionJson).Form;
+            workflowId = revising.WorkflowId;
+        }
+        else
+        {
+            var workflow = await LiveFormAsync(workflowId, ct);
+            if (workflow is null) return NotFound(new { error = "This form is no longer available." });
+            form = Json.ParseDefinition(workflow.PublishedJson!).Form;
+        }
         // Uploads are only accepted for a form that actually asks for files.
-        var form = Json.ParseDefinition(workflow.PublishedJson!).Form;
         if (!form.Fields.Any(f => f.Type == FieldTypes.Attachments && string.Equals(f.Key, field, StringComparison.OrdinalIgnoreCase)))
             return BadRequest(new { error = "This form does not accept files here." });
 

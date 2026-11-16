@@ -38,6 +38,10 @@ public class AuditModel : PageModel
         "request.retried" => "Request retried",
         "approval.override-approved" => "Approved on someone's behalf",
         "approval.override-rejected" => "Rejected on someone's behalf",
+        "approval.override-returned" => "Sent back on someone's behalf",
+        "calendar.closed" => "Closed days added",
+        "calendar.reopened" => "Closed days removed",
+        "requests.exported" => "Requests exported",
         _ => action,
     };
 

@@ -1,0 +1,84 @@
+@page "/Requests/Print/{id:int}"
+@model SchoolFlow.Web.Pages.Requests.PrintModel
+@{
+    Layout = null;
+    var (label, _) = Ui.Status(Model.Run.Status);
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@Model.Run.WorkflowName #@Model.Run.Id</title>
+    <link rel="stylesheet" href="~/css/app.css" asp-append-version="true" />
+</head>
+<body>
+<div class="print-page">
+    <div class="actions no-print">
+        <button type="button" class="btn primary" data-print>Print or save as PDF</button>
+        <a class="btn" href="/Requests/Detail/@Model.Run.Id">Back to the request</a>
+    </div>
+    <div class="print-head">
+        <div><h1>@Model.Run.WorkflowName</h1><div class="muted">Request #@Model.Run.Id</div></div>
+        <div><strong>@label</strong></div>
+    </div>
+    <dl class="print-meta">
+        <dt>Submitted by</dt><dd>@Model.Run.SubmitterName @(Model.Run.SubmitterEmail.Length > 0 ? $"({Model.Run.SubmitterEmail})" : "")</dd>
+        <dt>Submitted</dt><dd>@Ui.Local(Model.Run.CreatedAt).ToString("MMM d, yyyy h:mm tt")</dd>
+        @if (Model.Run.DepartmentName.Length > 0) { <dt>Department</dt><dd>@Model.Run.DepartmentName</dd> }
+        @if (Model.Run.TicketId is long ticket) { <dt>Freshservice ticket</dt><dd>#@ticket</dd> }
+        <dt>Printed</dt><dd>@DateTime.Now.ToString("MMM d, yyyy h:mm tt") by @User.DisplayName()</dd>
+    </dl>
+
+    <h2>Request</h2>
+    <dl class="answers">
+        @foreach (var f in Model.Fields)
+        {
+            <dt>@f.Label</dt>
+            @if (f.Files is not null) { <dd>@string.Join(", ", f.Files.Select(x => $"{x.Name} ({x.Size})"))</dd> }
+            else if (f.Rows is not null)
+            {
+                <dd class="full"><table class="table compact">
+                    <thead><tr>@foreach (var c in f.Columns!) { <th>@c</th> }</tr></thead>
+                    <tbody>@foreach (var row in f.Rows) { <tr>@foreach (var cell in row) { <td>@cell</td> }</tr> }</tbody>
+                </table></dd>
+            }
+            else { <dd class="pre">@f.Value</dd> }
+        }
+    </dl>
+
+    @if (Model.Decisions.Count > 0)
+    {
+        <h2>Approvals</h2>
+        <table class="table compact">
+            <thead><tr><th>Step</th><th>Decision</th><th>By</th><th>When</th><th>Comment</th></tr></thead>
+            <tbody>
+            @foreach (var t in Model.Decisions)
+            {
+                <tr>
+                    <td>@t.Title @(t.Position.Length > 0 ? $"({t.Position.ToLowerInvariant()})" : "")</td>
+                    <td>@(t.Status == ApprovalStatus.Returned ? "Sent back for changes" : t.Status)</td>
+                    <td>@(t.Rule == "all" && t.ApprovedByList.Any() ? string.Join(", ", t.ApprovedByList) : t.DecidedBy)</td>
+                    <td>@(t.DecidedAt is DateTime d ? Ui.Local(d).ToString("MMM d, yyyy h:mm tt") : "")</td>
+                    <td>@t.Comment</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+
+    <h2>History</h2>
+    <table class="table compact">
+        <tbody>
+        @foreach (var e in Model.Events)
+        {
+            <tr><td class="muted" style="white-space:nowrap">@Ui.Local(e.At).ToString("MMM d, yyyy h:mm tt")</td><td>@e.Message</td></tr>
+        }
+        </tbody>
+    </table>
+
+    <div class="print-sign"><div>Signature</div><div>Date</div></div>
+</div>
+<script src="~/js/print.js" asp-append-version="true"></script>
+</body>
+</html>

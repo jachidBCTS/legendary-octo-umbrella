@@ -92,6 +92,22 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   (`AttachFilesAsync`), and a failure there is a timeline **warning**, never a failed run — keep it
   that way while that Freshservice call is unverified. Downloads go through `FilesController`
   (`/files/{publicId}`), always as attachments.
+- **Send back / resubmit**: `ApprovalAction.Return` sets the run to `RunStatus.ChangesRequested`
+  (task status `Returned`). `RunService.ResubmitAsync` re-validates through `FormEvaluator`, replaces
+  the answers in the run context and calls `WorkflowEngine.ReenterApprovalAsync`, which re-enters the
+  *same* node (a chain keeps its `index`, so earlier approvals stand). `WithdrawAsync` (requester
+  only, while waiting) and `CommentAsync` (`RunComments`, the discussion thread) also live there.
+- **Approval follow-up**: `ApprovalTask` carries `RemindDays`/`EscalateDays`/`EscalateTo` copied
+  from the node config, `StandIns` (from `Delegations`, applied when the task is created and when a
+  delegation is added) and `Escalated`. Who may decide = `ApprovalTask.CanBeDecidedBy`. A stand-in's
+  approval counts as the person they stand in for. `FollowUpWorker` runs
+  `RunService.FollowUpApprovalsAsync` hourly (reminders capped at 5) and `CheckWaitingTicketsAsync`
+  every 15 minutes (live Freshservice only; the safety net for missed webhooks). All day counts are
+  **school days** (`SchoolCalendar`, `ClosedDays` table), and the same closed days reach formulas
+  through `Scope.ClosedDays`.
+- **Export / reports / print**: `RequestExport.ToCsv` (cells starting with `= + - @` are prefixed
+  with `'` — keep that guard), `Pages/Reports`, `Pages/Requests/Print` (inherits `DetailModel`;
+  do not redeclare `OnGetAsync` there — two matching handlers crash the page).
 - **Freshservice**: `IFreshserviceClient` has a live client and `SimulatedFreshserviceClient`
   (used when no domain/API key is configured; timeline entries are prefixed `[Simulated]`).
 - **Permissions** (owner: staff only sign in; admins keep the ability to approve on someone's
@@ -164,8 +180,10 @@ Known gaps (not requested yet, worth raising):
 - Group membership is read from the sign-in token, so it is as fresh as the person's last sign-in,
   and people in more than ~200 groups get none (no Graph fallback is implemented).
 - The owner has Entra groups but did not have their IDs to hand; none are registered yet.
-- No reminders/escalation for approvals that sit unanswered; no delegation when an approver is away.
-- No reporting/export of requests.
+- Reminders, escalation and the missed-ticket check run inside the web process: the IIS app pool
+  must be AlwaysRunning (see the deploy guide) or they are late.
+- No retention policy (how long requests, files and the audit log are kept) — the owner must choose the periods.
+- No student/staff picker field — waiting on the SQL Server data.
 - Departments cannot be deleted (only switched off); chain templates in use by a workflow cannot
   be deleted.
 - The flow builder works on a phone but is cramped; fine on tablet/desktop.

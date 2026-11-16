@@ -98,6 +98,24 @@ public class FormulaTests
     public void Evaluates(string source, string expected) =>
         Assert.Equal(expected, Values.ToText(Eval(source)));
 
+    [Theory]
+    // Thu 26 and Fri 27 Nov 2026 are closed (Thanksgiving); 28–29 is a weekend.
+    [InlineData("WEEKDAYS('2026-11-23', '2026-11-30')", "4")]              // Mon Tue Wed + next Mon
+    [InlineData("DATEADD('2026-11-25', 1, 'weekdays')", "2026-11-30")]     // the next school day after Wed is Monday
+    [InlineData("DATEADD('2026-11-30', -1, 'weekdays')", "2026-11-25")]
+    [InlineData("DATEADD('2026-11-16', 10, 'schooldays')", "2026-12-02")]
+    [InlineData("DATEDIFF('2026-11-25', '2026-11-30', 'weekdays')", "1")]
+    [InlineData("DATEDIFF('2026-11-25', '2026-11-30', 'days')", "5")]       // plain days are unaffected
+    [InlineData("ISSCHOOLDAY('2026-11-26')", "false")]
+    [InlineData("ISSCHOOLDAY('2026-11-28')", "false")]
+    [InlineData("ISSCHOOLDAY('2026-11-25')", "true")]
+    [InlineData("ISSCHOOLDAY('')", "false")]
+    public void SchoolCalendar_ClosedDaysAreSkipped(string source, string expected)
+    {
+        var closed = new HashSet<DateTime> { new(2026, 11, 26), new(2026, 11, 27), new(2026, 11, 28) }; // a weekend entry must not be double-counted
+        Assert.Equal(expected, Values.ToText(Formula.Evaluate(source, new Scope(null, now: () => FixedNow, closedDays: closed))));
+    }
+
     [Fact]
     public void Variables_AreCaseInsensitive_AndUnknownIsBlank()
     {

@@ -68,6 +68,8 @@ public class WorkflowRun
     public DateTime UpdatedAt { get; set; }
     /// <summary>Optimistic concurrency token: stops two people (or a person and a webhook) advancing the same run twice.</summary>
     public int Version { get; set; }
+    /// <summary>When SchoolFlow last asked Freshservice about the ticket this run is waiting on (the safety net for missed webhook events).</summary>
+    public DateTime? LastPolledAt { get; set; }
 }
 
 public class RunEventRow
@@ -101,6 +103,41 @@ public class ApprovalTask
     public DateTime CreatedAt { get; set; }
     public DateTime? DecidedAt { get; set; }
 
+    /// <summary>
+    /// Stand-ins for approvers who are away, packed as ";standin=original;". A stand-in decides in the
+    /// original approver's place.
+    /// </summary>
+    public string StandIns { get; set; } = "";
+    /// <summary>People the step was escalated to because it sat unanswered, packed. Any of them can decide the step.</summary>
+    public string Escalated { get; set; } = "";
+    /// <summary>Everyone in <see cref="StandIns"/> and <see cref="Escalated"/>, packed, so "can this person act?" is one text match.</summary>
+    public string Extra { get; set; } = "";
+    /// <summary>Remind every this many school days (0 = never); escalate after this many (0 = never).</summary>
+    public int RemindDays { get; set; }
+    public int EscalateDays { get; set; }
+    /// <summary>Who to escalate to, packed.</summary>
+    public string EscalateTo { get; set; } = "";
+    public DateTime? LastReminderAt { get; set; }
+    public int ReminderCount { get; set; }
+    public DateTime? EscalatedAt { get; set; }
+
+    public IEnumerable<string> EscalatedList => Escalated.Split(';', StringSplitOptions.RemoveEmptyEntries);
+    public IEnumerable<string> EscalateToList => EscalateTo.Split(';', StringSplitOptions.RemoveEmptyEntries);
+    public IEnumerable<(string StandIn, string For)> StandInPairs => StandIns.Split(';', StringSplitOptions.RemoveEmptyEntries)
+        .Select(p => p.Split('=')).Where(p => p.Length == 2).Select(p => (p[0], p[1]));
+    /// <summary>The approver this person is standing in for on this task, or null.</summary>
+    public string? StandsInFor(string email) => StandInPairs.Where(p => p.StandIn == email.ToLowerInvariant()).Select(p => p.For).FirstOrDefault();
+    public bool IsEscalatedTo(string email) => Escalated.Contains(";" + email.ToLowerInvariant() + ";", StringComparison.Ordinal);
+    /// <summary>Assigned, standing in for someone assigned, or escalated to.</summary>
+    public bool CanBeDecidedBy(string email) => email.Length > 0 && (IsAssignedTo(email) || StandsInFor(email) is not null || IsEscalatedTo(email));
+    /// <summary>Has nothing left to do: already approved (themselves, or the person they stand in for).</summary>
+    public bool IsDoneFor(string email) => HasApproved(email) || (StandsInFor(email) is { } original && HasApproved(original));
+    public void RebuildExtra()
+    {
+        var extra = StandInPairs.Select(p => p.StandIn).Concat(EscalatedList).Distinct().ToList();
+        Extra = extra.Count == 0 ? "" : Pack(extra);
+    }
+
     public IEnumerable<string> AssigneeList => Assignees.Split(';', StringSplitOptions.RemoveEmptyEntries);
     public IEnumerable<string> ApprovedByList => ApprovedBy.Split(';', StringSplitOptions.RemoveEmptyEntries);
     public bool HasApproved(string email) => ApprovedBy.Contains(";" + email.ToLowerInvariant() + ";", StringComparison.Ordinal);
@@ -110,7 +147,9 @@ public class ApprovalTask
 
 public static class ApprovalStatus
 {
-    public const string Pending = "Pending", Approved = "Approved", Rejected = "Rejected", Cancelled = "Cancelled";
+    public const string Pending = "Pending", Approved = "Approved", Rejected = "Rejected", Cancelled = "Cancelled",
+        /// <summary>The approver sent the request back to the requester for changes.</summary>
+        Returned = "Returned";
 }
 
 public class AppUser
@@ -217,6 +256,39 @@ public class Attachment
     public DateTime CreatedAt { get; set; }
 }
 
+/// <summary>"I'm away: let this person approve for me between these dates."</summary>
+public class Delegation
+{
+    public int Id { get; set; }
+    public string FromEmail { get; set; } = "";
+    public string ToEmail { get; set; } = "";
+    /// <summary>First and last day (inclusive, server-local dates).</summary>
+    public DateTime StartsOn { get; set; }
+    public DateTime EndsOn { get; set; }
+    public DateTime CreatedAt { get; set; }
+
+    public bool IsActiveOn(DateTime day) => StartsOn.Date <= day.Date && day.Date <= EndsOn.Date;
+}
+
+/// <summary>A message in the discussion on a request.</summary>
+public class RunComment
+{
+    public int Id { get; set; }
+    public int RunId { get; set; }
+    public string AuthorEmail { get; set; } = "";
+    public string AuthorName { get; set; } = "";
+    public string Body { get; set; } = "";
+    public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>A weekday the school is closed. "School day" date maths, reminders and escalation skip these.</summary>
+public class ClosedDay
+{
+    public int Id { get; set; }
+    public DateTime Date { get; set; }
+    public string Name { get; set; } = "";
+}
+
 /// <summary>A saved approval chain. OwnerEmail "" means a shared template; otherwise it is that person's own.</summary>
 public class ApprovalChainTemplate
 {
@@ -278,6 +350,9 @@ public class AppDbContext : DbContext
     public DbSet<FormDraft> FormDrafts => Set<FormDraft>();
     public DbSet<Attachment> Attachments => Set<Attachment>();
     public DbSet<DirectoryGroup> DirectoryGroups => Set<DirectoryGroup>();
+    public DbSet<Delegation> Delegations => Set<Delegation>();
+    public DbSet<RunComment> RunComments => Set<RunComment>();
+    public DbSet<ClosedDay> ClosedDays => Set<ClosedDay>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 
     public DbSet<Workflow> Workflows => Set<Workflow>();
@@ -350,6 +425,23 @@ public class AppDbContext : DbContext
             e.Property(x => x.OwnerEmail).HasMaxLength(320);
             e.Property(x => x.Summary).HasMaxLength(300);
             e.HasIndex(x => new { x.OwnerEmail, x.WorkflowId });
+        });
+        b.Entity<Delegation>(e =>
+        {
+            e.Property(x => x.FromEmail).HasMaxLength(320);
+            e.Property(x => x.ToEmail).HasMaxLength(320);
+            e.HasIndex(x => x.FromEmail);
+        });
+        b.Entity<RunComment>(e =>
+        {
+            e.Property(x => x.AuthorEmail).HasMaxLength(320);
+            e.Property(x => x.AuthorName).HasMaxLength(300);
+            e.HasIndex(x => x.RunId);
+        });
+        b.Entity<ClosedDay>(e =>
+        {
+            e.Property(x => x.Name).HasMaxLength(200);
+            e.HasIndex(x => x.Date).IsUnique();
         });
         b.Entity<DirectoryGroup>(e =>
         {

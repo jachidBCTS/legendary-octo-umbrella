@@ -28,11 +28,18 @@
     <input type="hidden" name="scope" value="@Model.Scope" />
     <select name="status" data-autosubmit aria-label="Filter by status">
         <option value="">Any status</option>
-        @foreach (var s in new[] { RunStatus.WaitingApproval, RunStatus.WaitingTicket, RunStatus.Completed, RunStatus.Rejected, RunStatus.Failed, RunStatus.Cancelled })
+        @foreach (var s in new[] { RunStatus.WaitingApproval, RunStatus.ChangesRequested, RunStatus.WaitingTicket, RunStatus.Completed, RunStatus.Rejected, RunStatus.Failed, RunStatus.Cancelled })
         {
             <option value="@s" selected="@(Model.Status == s)">@Ui.Status(s).Label</option>
         }
     </select>
+    @if (Model.Workflows.Count > 1)
+    {
+        <select name="workflow" data-autosubmit aria-label="Filter by form">
+            <option value="">Any form</option>
+            @foreach (var w in Model.Workflows) { <option value="@w.Id" selected="@(Model.Workflow == w.Id)">@w.Name</option> }
+        </select>
+    }
     @if (Model.Departments.Count > 0)
     {
         <select name="department" data-autosubmit aria-label="Filter by department">
@@ -68,6 +75,8 @@ else
         </table>
     </div>
     <div class="pager">
+        <a class="btn" href="@Model.ExportUrl" download>Export to spreadsheet (CSV)</a>
+        @if (Model.ShowsOthers) { <a class="btn" href="/Reports?scope=@Model.Scope">Reports</a> }
         @if (Model.PageNumber > 1) { <a class="btn" href="@Model.PageUrl(Model.PageNumber - 1)">Newer</a> }
         @if (Model.HasMore) { <a class="btn" href="@Model.PageUrl(Model.PageNumber + 1)">Older</a> }
     </div>

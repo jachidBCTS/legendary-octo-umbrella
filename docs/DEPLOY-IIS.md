@@ -173,6 +173,15 @@ icacls C:\inetpub\SchoolFlow\appsettings.Production.json /inheritance:r /grant "
     staff to see, and add owners to the ones you keep (they start with none, so only admins can
     manage them).
 
+### Background work — keep the site running
+
+SchoolFlow sends email, approval reminders and escalations, and checks Freshservice for missed
+ticket events from inside the web site's own process. IIS stops an idle site after 20 minutes by
+default, and nothing is sent while it is stopped. On the application pool set **Start Mode =
+AlwaysRunning** and **Idle Time-out = 0**, and on the site set **Preload Enabled = True**
+(needs the *Application Initialization* IIS feature). Nothing is lost if the site is stopped —
+the work is picked up when it starts again — it is only late.
+
 ## 8. Upgrading to a new version
 
 1. **Back up the database and the `App_Data` folder** (and keep a copy of the current site folder).

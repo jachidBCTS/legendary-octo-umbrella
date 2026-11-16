@@ -7,7 +7,9 @@ namespace SchoolFlow.Core.Workflows;
 public static class RunStatus
 {
     public const string Running = "Running", WaitingApproval = "WaitingApproval", WaitingTicket = "WaitingTicket",
-        Completed = "Completed", Rejected = "Rejected", Failed = "Failed", Cancelled = "Cancelled";
+        Completed = "Completed", Rejected = "Rejected", Failed = "Failed", Cancelled = "Cancelled",
+        /// <summary>An approver sent the request back; it waits for the requester to edit and resubmit.</summary>
+        ChangesRequested = "ChangesRequested";
 
     public static bool IsFinished(string status) => status is Completed or Rejected or Cancelled;
     public static bool IsWaiting(string status) => status is WaitingApproval or WaitingTicket;
@@ -25,6 +27,11 @@ public sealed class PendingApproval
     public string Rule { get; set; } = ApprovalRules.Any;
     /// <summary>For chains: "Step 2 of 3".</summary>
     public string Position { get; set; } = "";
+    /// <summary>Remind the approvers every this many school days; 0 for never.</summary>
+    public int RemindDays { get; set; }
+    /// <summary>After this many school days unanswered, also let <see cref="EscalateTo"/> decide; 0 for never.</summary>
+    public int EscalateDays { get; set; }
+    public List<string> EscalateTo { get; set; } = new();
 }
 
 /// <summary>A message the engine wants delivered (in the app and, where possible, by email).</summary>
@@ -66,9 +73,13 @@ public sealed class WorkflowEngine
     /// <summary>Freshservice's documented ceiling for all attachments on one ticket.</summary>
     public const long MaxTicketAttachmentBytes = 40L * 1024 * 1024;
 
+    private readonly IReadOnlySet<DateTime>? _closedDays;
+    public const int DefaultRemindDays = 2;
+
     public WorkflowEngine(IFreshserviceClient freshservice, Func<DateTime>? now = null, IApprovalDirectory? directory = null,
-        IAttachmentStore? files = null)
+        IAttachmentStore? files = null, IReadOnlySet<DateTime>? closedDays = null)
     {
+        _closedDays = closedDays;
         _freshservice = freshservice;
         _directory = directory;
         _files = files;
@@ -172,6 +183,7 @@ public sealed class WorkflowEngine
             Rule = step.Rule,
             Position = $"Step {index + 1} of {steps.Count}",
         };
+        ApplyFollowUp(node, state.PendingApproval, state);
         state.Status = RunStatus.WaitingApproval;
         var who = string.Join(step.Rule == ApprovalRules.All && step.Approvers.Count > 1 ? " and " : " or ", step.Approvers);
         Log(state, node.Id, "waiting", $"{step.Name} ({state.PendingApproval.Position.ToLowerInvariant()}): waiting for {who}");
@@ -391,6 +403,7 @@ public sealed class WorkflowEngine
                     Assignees = assignees,
                     Rule = rule,
                 };
+                ApplyFollowUp(node, state.PendingApproval, state);
                 state.Status = RunStatus.WaitingApproval;
                 Log(state, node.Id, "waiting", rule == ApprovalRules.All && assignees.Count > 1
                     ? $"Waiting for approval from all of: {string.Join(", ", assignees)}"
@@ -600,7 +613,44 @@ public sealed class WorkflowEngine
 
     // ---- helpers ---------------------------------------------------------------------
 
-    private Scope NewScope(RunState state) => new(state.Context, now: _now);
+    private Scope NewScope(RunState state) => new(state.Context, now: _now, closedDays: _closedDays);
+
+    /// <summary>Reads a step's reminder and escalation settings onto the approval it is about to ask for.</summary>
+    private void ApplyFollowUp(NodeDef node, PendingApproval approval, RunState state)
+    {
+        static int Days(string text, int whenBlank) =>
+            string.IsNullOrWhiteSpace(text) ? whenBlank : int.TryParse(text.Trim(), out var n) ? Math.Clamp(n, 0, 60) : whenBlank;
+        approval.RemindDays = Days(node.Get("remindDays"), DefaultRemindDays);
+        approval.EscalateDays = Days(node.Get("escalateDays"), 0);
+        // People already asked are left out: escalating to someone who is ignoring it helps nobody.
+        approval.EscalateTo = ParseEmails(Template.Render(node.Get("escalateTo"), NewScope(state))).Except(approval.Assignees).ToList();
+        if (approval.EscalateTo.Count == 0) approval.EscalateDays = 0;
+    }
+
+    /// <summary>
+    /// Puts a request that was sent back for changes in front of the same approval step again, now that
+    /// the requester has resubmitted it.
+    /// </summary>
+    public Task ReenterApprovalAsync(FlowDefinition flow, RunState state, CancellationToken ct = default)
+    {
+        if (state.Status != RunStatus.ChangesRequested) throw new InvalidOperationException("This request is not waiting for changes.");
+        var node = FindNode(flow, state.CurrentNodeId);
+        if (node is null)
+        {
+            Fail(state, state.CurrentNodeId, "The approval step no longer exists in this workflow version.");
+            return Task.CompletedTask;
+        }
+        if (node.Type == NodeTypes.ApprovalChain && state.Context.GetValueOrDefault("chain") is Dictionary<string, object?> chain
+            && chain.GetValueOrDefault("steps") is List<object?>)
+        {
+            // Keep the chain and its earlier approvals; go back to the step that asked for changes.
+            try { EnterChainStep(state, node, chain); }
+            catch (ExpressionException ex) { Fail(state, node.Id, ex.Message); }
+            return Task.CompletedTask;
+        }
+        state.Status = RunStatus.Running; // a single approval step is simply asked again
+        return AdvanceAsync(flow, state, ct);
+    }
 
     private string Sim() => _freshservice.IsLive ? "" : "[Simulated] ";
 

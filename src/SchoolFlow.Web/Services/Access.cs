@@ -96,7 +96,8 @@ public sealed class AccessService
         if (await CanManageRunAsync(user, run, ct)) return true;
         if (email.Length == 0) return false;
         var needle = ";" + email + ";";
-        if (await _db.ApprovalTasks.AsNoTracking().AnyAsync(t => t.RunId == run.Id && t.Assignees.Contains(needle), ct)) return true;
+        // Asked to approve it — directly, as a stand-in, or after escalation.
+        if (await _db.ApprovalTasks.AsNoTracking().AnyAsync(t => t.RunId == run.Id && (t.Assignees.Contains(needle) || t.Extra.Contains(needle)), ct)) return true;
         return run.DepartmentId is long departmentId
                && await _db.Departments.AsNoTracking().AnyAsync(d => d.Id == departmentId && d.FinalApprovers.Contains(needle), ct);
     }
@@ -150,4 +151,92 @@ public sealed class GroupDirectory
         (await AllAsync()).Where(g => g.Role is Roles.Admin or Roles.Builder).ToDictionary(g => g.ObjectId, g => (g.Role, g.Name));
 
     public void Invalidate() => _cache.Remove(CacheKey);
+}
+
+public enum ApprovalAction
+{
+    Approve,
+    Reject,
+    /// <summary>Send the request back to the requester for changes.</summary>
+    Return,
+}
+
+/// <summary>
+/// The school's closed days (holidays, breaks), cached briefly. "School days" are Monday to Friday
+/// minus these; they are what date formulas, reminders and escalation count.
+/// </summary>
+public sealed class SchoolCalendar
+{
+    private const string CacheKey = "closed-days";
+    private readonly AppDbContext _db;
+    private readonly IMemoryCache _cache;
+
+    public SchoolCalendar(AppDbContext db, IMemoryCache cache)
+    {
+        _db = db;
+        _cache = cache;
+    }
+
+    public async Task<IReadOnlySet<DateTime>> ClosedDaysAsync(CancellationToken ct = default) =>
+        (await _cache.GetOrCreateAsync(CacheKey, async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(60);
+            return (await _db.ClosedDays.AsNoTracking().Select(d => d.Date).ToListAsync(ct)).Select(d => d.Date).ToHashSet();
+        }))!;
+
+    public void Invalidate() => _cache.Remove(CacheKey);
+
+    /// <summary>School days that have passed going from one moment to another (the starting day is not counted).</summary>
+    public async Task<int> SchoolDaysBetweenAsync(DateTime from, DateTime to, CancellationToken ct = default) =>
+        SchoolDaysBetween(from, to, await ClosedDaysAsync(ct));
+
+    public static int SchoolDaysBetween(DateTime from, DateTime to, IReadOnlySet<DateTime> closed)
+    {
+        var count = 0;
+        // Bounded: nothing here waits anywhere near ten years.
+        for (var day = from.Date.AddDays(1); day <= to.Date && count < 3650; day = day.AddDays(1))
+            if (day.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday) && !closed.Contains(day)) count++;
+        return count;
+    }
+}
+
+/// <summary>Hourly: approval reminders and escalation. Every 15 minutes: check Freshservice for tickets that requests are waiting on.</summary>
+public sealed class FollowUpWorker : BackgroundService
+{
+    private readonly IServiceScopeFactory _scopes;
+    private readonly ILogger<FollowUpWorker> _log;
+
+    public FollowUpWorker(IServiceScopeFactory scopes, ILogger<FollowUpWorker> log)
+    {
+        _scopes = scopes;
+        _log = log;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        var pass = 0;
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromMinutes(pass == 0 ? 2 : 15), stoppingToken); // first pass shortly after start-up
+                using var scope = _scopes.CreateScope();
+                var runs = scope.ServiceProvider.GetRequiredService<RunService>();
+                var moved = await runs.CheckWaitingTicketsAsync(DateTime.UtcNow, stoppingToken);
+                if (moved > 0) _log.LogInformation("Ticket check moved {Count} waiting request(s) on", moved);
+                if (pass % 4 == 0)
+                {
+                    var (reminded, escalated) = await runs.FollowUpApprovalsAsync(DateTime.UtcNow, stoppingToken);
+                    if (reminded + escalated > 0) _log.LogInformation("Approval follow-up: {Reminded} reminder(s), {Escalated} escalation(s)", reminded, escalated);
+                }
+                pass++;
+            }
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "Follow-up pass failed");
+                pass++;
+            }
+        }
+    }
 }

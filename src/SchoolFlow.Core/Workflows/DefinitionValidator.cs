@@ -237,12 +237,14 @@ public static class DefinitionValidator
                 case NodeTypes.Approval:
                     Text("approvers", "approvers", true);
                     Text("instructions", "instructions", false);
+                    CheckFollowUp(n, name, Text, Error);
                     if (!flow.Edges.Any(e => e.From == n.Id && e.Port == "approved"))
                         Warn(n.Id, $"“{name}”: the Approved branch is not connected, so nothing happens after approval.");
                     break;
                 case NodeTypes.ApprovalChain:
                 {
                     Text("instructions", "instructions", false);
+                    CheckFollowUp(n, name, Text, Error);
                     var chainSource = n.Get("chainSource");
                     var departmentSource = n.Get("departmentSource");
                     FieldDef? FieldOf(string key) => def.Form.Fields.FirstOrDefault(f => string.Equals(f.Key, key.Trim(), StringComparison.OrdinalIgnoreCase));
@@ -341,6 +343,20 @@ public static class DefinitionValidator
             if (!flow.Nodes.Any(n => reached.Contains(n.Id) && n.Type != NodeTypes.Start && n.Type != NodeTypes.End))
                 Warn(null, "The flow has no steps between Start and End, so submitting it does nothing.");
         }
+    }
+
+    /// <summary>Reminder and escalation settings shared by the approval steps.</summary>
+    private static void CheckFollowUp(NodeDef n, string name, Action<string, string, bool> text, Action<string?, string> error)
+    {
+        text("escalateTo", "escalate-to", false);
+        foreach (var (key, what) in new[] { ("remindDays", "Remind after"), ("escalateDays", "Escalate after") })
+        {
+            var value = n.Get(key).Trim();
+            if (value.Length > 0 && (!int.TryParse(value, out var days) || days < 0 || days > 60))
+                error(n.Id, $"“{name}”: “{what}” must be a whole number of school days from 0 to 60.");
+        }
+        if (int.TryParse(n.Get("escalateDays").Trim(), out var escalate) && escalate > 0 && string.IsNullOrWhiteSpace(n.Get("escalateTo")))
+            error(n.Id, $"“{name}”: say who to escalate to, or clear “Escalate after”.");
     }
 
     private static string Name(NodeDef n) => string.IsNullOrWhiteSpace(n.Label) ? n.Type : n.Label!;
