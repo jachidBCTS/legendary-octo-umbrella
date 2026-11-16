@@ -193,7 +193,10 @@ Everything below works against simulators/fakes only. Treat first contact as a t
 2. **Entra ID sign-in** end to end (needs a real tenant).
 3. **Microsoft Graph email** (needs `Mail.Send` application permission; recommend an application
    access policy limiting it to the sender mailbox).
-4. **SQL Server migrations** — generated and inspected, never executed on a real SQL Server.
+4. **SQL Server migrations** — the owner's first start on their SQL Server (Nov 16, 2026, site
+   `forms.bergen.org`, folder `X:\wwwroot\SchoolFlow`) applied all seven migrations through
+   `AddRates` without error, run from a console as their own account. Not yet confirmed: the same
+   under the IIS app pool's account, and an upgrade of a database that already holds data.
 
 ## Open items
 
