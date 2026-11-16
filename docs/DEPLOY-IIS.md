@@ -109,6 +109,8 @@ In the Entra admin center → App registrations → New registration:
 2. Redirect URI, platform **Web**: `https://schoolflow.yourschool.org/signin-oidc`
 3. After creating it: **Authentication** → Front-channel logout URL:
    `https://schoolflow.yourschool.org/signout-callback-oidc`
+   On the same page, under *Implicit grant and hybrid flows*, tick **ID tokens**. Without it
+   sign-in can fail with error `AADSTS700054` ("response_type 'id_token' is not enabled").
 4. **Certificates & secrets** → New client secret. Copy the secret **Value** now (it is shown once).
    Put a reminder in your calendar before it expires — sign-in stops working when it does.
 5. From **Overview**, note the *Application (client) ID* and *Directory (tenant) ID*.
