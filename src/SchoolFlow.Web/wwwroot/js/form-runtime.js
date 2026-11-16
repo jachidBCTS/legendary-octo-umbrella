@@ -149,8 +149,15 @@
       showPage(page + 1, true);
     }
 
-    const form = h('form', { class: 'sf-form', novalidate: true, onsubmit: onSubmit },
-      definition.intro ? h('p', { class: 'sf-intro' }, definition.intro) : null,
+    // Intro lines that start with a bullet become a list of notices; anything else stays a paragraph.
+    const introLines = (definition.intro || '').split('\n').map((l) => l.trim()).filter(Boolean);
+    const isBullet = (l) => /^[•\-*]\s+/.test(l);
+    const intro = !introLines.length ? null
+      : introLines.every(isBullet) ? h('ul', { class: 'sf-intro sf-notices' }, introLines.map((l) => h('li', null, l.replace(/^[•\-*]\s+/, ''))))
+        : h('p', { class: 'sf-intro' }, definition.intro);
+
+    const form = h('form', { class: 'sf-form' + (definition.style === 'paper' ? ' sf-paper' : ''), novalidate: true, onsubmit: onSubmit },
+      intro,
       steps, banner, grid,
       h('div', { class: 'sf-submit-row' }, backButton, nextButton, submitButton, draftButton, busy, draftStatus,
         options.preview ? h('span', { class: 'muted' }, 'Preview — nothing is submitted.') : null));
@@ -159,10 +166,22 @@
     if (fields.length === 0) {
       grid.appendChild(h('p', { class: 'muted' }, 'This form has no fields yet.'));
     }
+    // A worksheet draws other fields of the form inside its rows, so those are built compact and
+    // placed by the worksheet instead of in the grid.
+    const byKey = {};
+    fields.forEach((f) => { byKey[f.key.toLowerCase()] = f; });
+    const rowKeys = (row) => {
+      const keys = [];
+      (row.description || '').replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (_, k) => { keys.push(k); return ''; });
+      if (row.cost) keys.push(row.cost);
+      return keys.map((k) => byKey[k.trim().toLowerCase()]).filter(Boolean);
+    };
+    const held = new Set();
+    fields.forEach((f) => { if (f.type === 'worksheet') (f.rows || []).forEach((row) => rowKeys(row).forEach((x) => held.add(x.key))); });
+    for (const field of fields) if (field.type !== 'worksheet') controls[field.key] = buildField(field, held.has(field.key));
     for (const field of fields) {
-      const control = buildField(field);
-      controls[field.key] = control;
-      grid.appendChild(control.wrap);
+      if (field.type === 'worksheet') controls[field.key] = buildWorksheet(field);
+      if (!held.has(field.key)) grid.appendChild(controls[field.key].wrap);
     }
     showPage(0, false);
 
@@ -252,7 +271,47 @@
 
     // ---- field controls ------------------------------------------------------------
 
-    function buildField(field) {
+    function buildWorksheet(field) {
+      const placed = new Set();
+      const place = (f) => {
+        if (!f || placed.has(f.key) || !controls[f.key]) return null;
+        placed.add(f.key);
+        return controls[f.key];
+      };
+      const rows = (field.rows || []).map((row) => {
+        const description = h('div', { class: 'ws-desc' });
+        const errors = [];
+        let last = 0;
+        const text = row.description || '';
+        text.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (match, key, at) => {
+          if (at > last) description.appendChild(h('span', null, text.slice(last, at).trim()));
+          const control = place(byKey[key.toLowerCase()]);
+          if (control) { description.appendChild(control.wrap); errors.push(control.error); }
+          last = at + match.length;
+          return match;
+        });
+        if (last < text.length && text.slice(last).trim()) description.appendChild(h('span', null, text.slice(last).trim()));
+        const cost = h('div', { class: 'ws-cost' });
+        const costControl = row.cost ? place(byKey[row.cost.trim().toLowerCase()]) : null;
+        if (costControl) { cost.appendChild(costControl.wrap); errors.push(costControl.error); }
+        errors.forEach((e) => description.appendChild(e));
+        const isSum = !row.number && !row.item && !/\{/.test(text);
+        return h('div', { class: 'ws-row' + (isSum ? ' is-sum' : ''), role: 'row' },
+          h('div', { class: 'ws-no', role: 'cell' }, row.number || ''),
+          h('div', { class: 'ws-item', role: 'cell' }, row.item || ''),
+          description, cost);
+      });
+      const wrap = h('div', { class: 'sf-field sf-worksheet' },
+        // A page break just above with the same title already names it.
+        field.label && !fields.some((f) => f.type === 'page' && f.label === field.label) ? h('h3', null, field.label) : null,
+        field.help ? h('p', { class: 'sf-help' }, field.help) : null,
+        h('div', { class: 'ws', role: 'table' },
+          h('div', { class: 'ws-row ws-head', role: 'row' }, h('div', null, ''), h('div', null, 'Item'), h('div', null, 'Description'), h('div', { class: 'ws-cost' }, 'Cost Estimate')),
+          rows));
+      return { wrap, error: h('div', { hidden: true }) };
+    }
+
+    function buildField(field, compact) {
       const id = 'sf-' + (++uid);
       const error = h('div', { class: 'sf-error', hidden: true, id: id + '-err' });
       if (field.type === 'section' || field.type === 'page') {
@@ -360,8 +419,17 @@
           body = input(h('input', { id, type: 'text', placeholder: field.placeholder || null, maxlength: 10000 }), field.key, control);
       }
 
+      if (compact) {
+        // Inside a worksheet row: no label of its own, so the control carries the field's name.
+        const el = body.matches('input, select, textarea, output') ? body : body.querySelector('input, select, textarea, output');
+        if (el) el.setAttribute('aria-label', field.label || field.key);
+        control.wrap = h('span', { class: 'ws-input ws-' + field.type }, body);
+        return control;
+      }
+
       const wide = ['table', 'textarea', 'approval_chain', 'attachments'].includes(field.type);
-      control.wrap = h('div', { class: 'sf-field' + (field.width === 'half' && !wide ? ' half' : '') + (field.type === 'calculated' ? ' is-calc' : '') },
+      const stacked = wide || ['radio', 'multiselect'].includes(field.type);
+      control.wrap = h('div', { class: 'sf-field' + (field.width === 'half' && !wide ? ' half' : '') + (field.type === 'calculated' ? ' is-calc' : '') + (stacked ? ' sf-stack' : '') },
         h('label', { class: 'sf-label', for: labelFor }, field.label || field.key, ' ', required),
         body,
         field.help ? h('p', { class: 'sf-help' }, field.help) : null,

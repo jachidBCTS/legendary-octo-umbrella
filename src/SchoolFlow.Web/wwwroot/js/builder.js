@@ -32,6 +32,7 @@
     { type: 'signature', label: 'Signature', hint: 'Type your name to sign' },
     { type: 'section', label: 'Section heading', hint: 'Group fields' },
     { type: 'page', label: 'Page break', hint: 'Start a new page' },
+    { type: 'worksheet', label: 'Worksheet', hint: 'Table with fields inside its rows' },
   ];
   const COLUMN_TYPES = [['text', 'Text'], ['number', 'Number'], ['currency', 'Currency'], ['date', 'Date'], ['select', 'Dropdown'], ['checkbox', 'Yes / no'], ['calculated', 'Calculated']];
   const LOOKUP_SOURCES = [['departments', 'Freshservice departments'], ['locations', 'Freshservice locations (live)'], ['my_assets', "The person's own devices"], ['requesters', 'People (search by name)'], ['groups', 'Agent groups']];
@@ -292,7 +293,7 @@
   /** Names a formula may mention, for the "unknown name" hint. */
   function knownNames(context) {
     const names = new Set(RESERVED);
-    if (isFormTrigger()) state.def.form.fields.forEach((f) => { if (f.key && f.type !== 'section' && f.type !== 'page') names.add(f.key.toLowerCase()); });
+    if (isFormTrigger()) state.def.form.fields.forEach((f) => { if (f.key && !['section', 'page', 'worksheet'].includes(f.type)) names.add(f.key.toLowerCase()); });
     if (context === 'flow') {
       state.def.flow.nodes.forEach((n) => {
         if (n.type === 'set_variable' && n.config.name) names.add(n.config.name.trim().toLowerCase());
@@ -307,7 +308,7 @@
     if (opts.columns) opts.columns.forEach((c) => { if (c.key) items.push([c.key, 'This row: ' + (c.label || c.key)]); });
     if (isFormTrigger()) {
       for (const f of state.def.form.fields) {
-        if (!f.key || f.type === 'section' || f.type === 'page') continue;
+        if (!f.key || ['section', 'page', 'worksheet'].includes(f.type)) continue;
         if (f.type === 'table') {
           items.push(['COUNT(' + f.key + ')', 'Number of rows in ' + (f.label || f.key)]);
           (f.columns || []).forEach((c) => { if (c.key) items.push([f.key + '.' + c.key, (f.label || f.key) + ' → ' + (c.label || c.key) + ' (list)']); });
@@ -468,8 +469,9 @@
 
   function addField(type) {
     const info = FIELD_TYPES.find((t) => t.type === type);
-    const label = type === 'section' ? 'New section' : type === 'page' ? 'Next page' : 'New ' + info.label.toLowerCase();
+    const label = type === 'section' ? 'New section' : type === 'page' ? 'Next page' : type === 'worksheet' ? 'Worksheet' : 'New ' + info.label.toLowerCase();
     const field = { key: uniqueKey(slug(label), fieldKeys()), label, type };
+    if (type === 'worksheet') field.rows = [{ number: '1.', item: 'Item', description: 'Description' }];
     if (['select', 'radio', 'multiselect'].includes(type)) field.options = ['Option 1', 'Option 2'];
     if (type === 'lookup') field.source = 'departments';
     if (type === 'calculated') field.formula = '';
@@ -507,7 +509,7 @@
     fields.forEach((f, index) => {
       const info = FIELD_TYPES.find((t) => t.type === f.type) || { label: f.type };
       const card = h('div', {
-        class: 'fld-card' + (index === state.selField ? ' selected' : '') + (f.type === 'section' || f.type === 'page' ? ' section' : '') + (bad.has(f.key) ? ' invalid' : '') + (f.width === 'half' ? ' half' : ''),
+        class: 'fld-card' + (index === state.selField ? ' selected' : '') + (['section', 'page', 'worksheet'].includes(f.type) ? ' section' : '') + (bad.has(f.key) ? ' invalid' : '') + (f.width === 'half' ? ' half' : ''),
         draggable: 'true', tabindex: '0',
         onclick: () => { state.selField = index; renderAll(); },
         onkeydown: (e) => { if (e.key === 'Enter' && e.target === card) { state.selField = index; renderAll(); } },
@@ -530,7 +532,7 @@
       h('span', { class: 'fld-grip', 'aria-hidden': 'true' }, '⋮⋮'),
       h('div', { class: 'grow' },
         h('div', { class: 'fld-label' }, f.label || '(no label)'),
-        h('div', { class: 'fld-meta' }, h('span', null, info.label), f.type !== 'section' && f.type !== 'page' ? h('code', null, f.key) : null, fieldBadges(f))),
+        h('div', { class: 'fld-meta' }, h('span', null, info.label), !['section', 'page', 'worksheet'].includes(f.type) ? h('code', null, f.key) : null, fieldBadges(f))),
       h('div', { class: 'fld-tools' },
         h('button', { type: 'button', class: 'icon-btn', title: 'Move up', 'aria-label': 'Move up', disabled: index === 0, onclick: (e) => { e.stopPropagation(); moveField(index, -1); } }, '↑'),
         h('button', { type: 'button', class: 'icon-btn', title: 'Move down', 'aria-label': 'Move down', disabled: index === fields.length - 1, onclick: (e) => { e.stopPropagation(); moveField(index, 1); } }, '↓'),
@@ -593,6 +595,8 @@
       h('p', { class: 'muted small' }, 'Select a field to edit it. These settings apply to the whole form.'),
       row('Introduction', textArea(form.intro, (v) => { form.intro = clean(v); }, 4), 'Shown at the top of the form.'),
       row('Submit button text', textInput(form.submitLabel, (v) => { form.submitLabel = clean(v); }, { placeholder: 'Submit' })),
+      row('Look', select(form.style || '', [['', 'Standard'], ['paper', 'Paper form — labels beside underlined answers']], (v) => { form.style = clean(v); }),
+        'The paper look suits forms staff already know from a printed version. Start the introduction lines with • to show them as notices.'),
       h('h4', { class: 'b-section' }, 'When the form is open'),
       h('div', { class: 'b-pair' },
         row('Opens on', textInput(form.opensOn, (v) => { form.opensOn = clean(v); }, { type: 'date' })),
@@ -620,7 +624,8 @@
   function renderFieldInspector(panel, field) {
     const refresh = () => renderFieldList();
     const info = FIELD_TYPES.find((t) => t.type === field.type) || { label: field.type };
-    const isPage = field.type === 'page';
+    const isSheet = field.type === 'worksheet';
+    const isPage = field.type === 'page' || isSheet;   // layout-only: no logic settings
     const isSection = field.type === 'section' || isPage;
     const isCalc = field.type === 'calculated';
     const keyInput = textInput(field.key, (v) => { field.key = v.trim(); autoKeys.delete(field); refresh(); }, { spellcheck: 'false', class: 'mono' });
@@ -628,7 +633,7 @@
     panel.append(
       h('div', { class: 'row-between' }, h('h3', null, info.label),
         h('button', { type: 'button', class: 'btn small', onclick: () => { state.selField = -1; renderAll(); } }, 'Form settings')),
-      row(isPage ? 'Page title' : isSection ? 'Heading' : 'Label', textInput(field.label, (v) => {
+      row(isSheet ? 'Title' : isPage ? 'Page title' : isSection ? 'Heading' : 'Label', textInput(field.label, (v) => {
         field.label = v;
         if (autoKeys.has(field)) { field.key = uniqueKey(slug(v), fieldKeys(field)); keyInput.value = field.key; }
         refresh();
@@ -639,6 +644,23 @@
     if (['text', 'textarea', 'number', 'currency', 'email', 'phone', 'lookup'].includes(field.type) && field.source !== 'departments')
       panel.append(row('Placeholder', textInput(field.placeholder, (v) => { field.placeholder = clean(v); })));
 
+    if (isSheet) {
+      const toText = (rows) => (rows || []).map((r) => [r.number || '', r.item || '', r.description || '', r.cost || ''].join(' | ')).join('\n');
+      const fromText = (text) => text.split('\n').filter((l) => l.trim()).map((l) => {
+        const [number, item, description, cost] = l.split('|').map((p) => p.trim());
+        const r = {};
+        if (number) r.number = number;
+        if (item) r.item = item;
+        if (description) r.description = description;
+        if (cost) r.cost = cost;
+        return r;
+      });
+      panel.append(
+        row('Rows', textArea(toText(field.rows), (v) => { field.rows = fromText(v); refresh(); }, 12),
+          'One row per line, in four parts separated by | :  number | item | description | cost field.'),
+        h('p', { class: 'b-help' }, 'A worksheet arranges other fields of this form in a table, like the cost sheet on a paper form. Add those fields to the form as usual (number, currency, calculated…), then name them here: put a field inside the description by writing its key in braces, for example  # of nights {nights} x {rate} / night , and put the key of the field for the last column (often a calculated one) in the fourth part. Each field can be used once. A last line such as  | | Total: | total  makes a total row.'));
+      return;
+    }
     if (isPage)
       panel.append(h('p', { class: 'b-help' }, 'Everything below this starts a new page. People move between pages with Next and Back, and each page is checked before they go on. The title is shown in the step list at the top of the form.'));
     if (field.type === 'signature')

@@ -35,6 +35,8 @@ front-end dependencies.
 | Reports and export | A Reports page (counts, time to finish, approvals waiting longest) for admins, workflow owners and department approvers; any request list can be downloaded as a spreadsheet (CSV) with one column per question |
 | Print | A clean printable / save-as-PDF record of a request with its answers, approvals, history and a signature line |
 | Missed ticket events | If Freshservice is connected, requests waiting on a ticket are also checked directly every 15 minutes, so a missed webhook does not leave a request stuck |
+| Paper-style forms and worksheets | A form can use a *paper form* look (labels beside underlined answers, notices at the top) and a *Worksheet*: a table whose rows hold other fields, like the cost sheet on a printed form, with totals worked out as you type |
+| Work Related Travel template | A ready-made copy of the district's travel request (page 1 and the estimated cost worksheet). The signature blocks are approval steps: department head, central office, business office, superintendent, and the Board when the total is $150 or more. It arrives as a draft until an admin names those approvers |
 | Multi-page forms | A *Page break* splits a long form into steps with Next / Back. Each page is checked before moving on |
 | Opening and closing dates | A form can be set to open on one date and close after another (for example, field trip requests for a term). Outside those dates it says when it opens or that it has closed |
 | Version history | Every published version is kept (the latest 50). Any of them can be restored as the draft and published again |

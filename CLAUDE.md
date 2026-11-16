@@ -52,7 +52,7 @@ names differ.
 
 Browser test: start the app in Development with `Freshservice__WebhookSecret=test-secret-1234567890`
 and a **new** SQLite file, then `node tests/e2e/smoke.js <output-dir>`. It assumes the seeded
-workflow IDs (1 Purchase, 2 Repair, 3 Escalate, 4 Field Trip) — keep `SeedData` order stable.
+workflow IDs (1 Purchase, 2 Repair, 3 Escalate, 4 Field Trip, 5 Travel) — keep `SeedData` order stable.
 
 CI (`.github/workflows/build.yml`) runs the tests on Windows, publishes the win-x64 package,
 starts it under real IIS on the runner and checks it responds. The owner deploys to **Windows IIS
@@ -112,6 +112,17 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   `== Section`. A `page` field starts a new page; paging is entirely in `form-runtime.js`
   (`pageOf`, `showPage`, `nextPage`): the server still evaluates the whole form, and *Next* just
   asks the server and refuses to move while the current page has errors.
+- **Worksheet** (`FieldTypes.Worksheet`, layout-only): `FieldDef.Rows` (`WorksheetRow`: number,
+  item, description with `{field_key}` placeholders, cost field key). It only *arranges* ordinary
+  fields of the same form — values, formulas and checks stay on those fields, so `FormEvaluator`
+  is untouched. `form-runtime.js` builds held fields "compact" (`buildField(field, true)`, named by
+  `aria-label`) and `buildWorksheet` places them. `FormDefinition.Style = "paper"` is CSS only
+  (`.sf-paper`). Intro lines that all start with `•` render as a notice list.
+- **Travel template** (`SeedData.Travel`, workflow 5): the owner's paper "Request for Work Related
+  Travel" form. This is the first of the "templates needing a specific interface". Its four
+  fixed approval steps have blank approvers on a real site (so it seeds as an unpublished draft and
+  the checker reports four problems); in Development `TravelWithExamplePeople` fills them in.
+  Defaults (today, name, "1 person") are applied when the form opens, not on submit.
 - **Form opening dates** (`FormDefinition.OpensOn/ClosesOn`, `ClosedMessage`) are part of the
   definition, so they are versioned and take effect on publish. Enforced on the Start page and in
   `forms/submit`; resubmitting a sent-back request is deliberately still allowed after closing.
@@ -182,7 +193,9 @@ Waiting on the owner:
   SchoolFlow should read it live or import it. If it includes departments and their heads, use it
   to fill `Departments` (name + final approvers) instead of manual entry. Ask before designing.
 - **Admin templates needing a specific interface.** The owner will add "a few templates" that
-  "warrant a specific user interface for best adaptation by staff". Nothing is built for this yet.
+  "warrant a specific user interface for best adaptation by staff". The travel form is done (paper
+  look + worksheet); open questions on it: who the four approvers are, the mileage/meal rates,
+  and whether the Board step should be a person or a date. More templates may follow.
   Need from the owner, per template: what it collects and what should look/behave differently from
   the standard form. Likely shape: a per-workflow custom layout/renderer on top of the same
   definition and `FormEvaluator`, so logic and validation stay shared.

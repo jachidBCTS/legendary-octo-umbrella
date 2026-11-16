@@ -41,10 +41,34 @@ public static class DefinitionValidator
 
     // ---- form ------------------------------------------------------------------------
 
+    private static void ValidateWorksheets(FormDefinition form, List<Issue> issues)
+    {
+        var byKey = form.Fields.Where(f => !string.IsNullOrWhiteSpace(f.Key)).GroupBy(f => f.Key, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var sheet in form.Fields.Where(f => f.Type == FieldTypes.Worksheet))
+        {
+            var name = string.IsNullOrWhiteSpace(sheet.Label) ? sheet.Key : sheet.Label;
+            void Error(string message) => issues.Add(new Issue("error", "form", sheet.Key, $"“{name}”: {message}"));
+            if (sheet.Rows is null || sheet.Rows.Count == 0) { Error("a worksheet needs at least one row."); continue; }
+            if (sheet.Rows.Count > 60) Error("a worksheet can have at most 60 rows.");
+            foreach (var key in sheet.Rows.SelectMany(r => r.FieldKeys()))
+            {
+                if (!byKey.TryGetValue(key, out var field)) Error($"a row mentions '{key}', which is not a field on this form.");
+                else if (Array.IndexOf(FieldTypes.InWorksheet, field.Type) < 0) Error($"'{key}' cannot go inside a worksheet. Use text, number, currency, date, time, dropdown or calculated fields.");
+                else if (!used.Add(key)) Error($"'{key}' is used more than once in a worksheet. Each field can appear in one place.");
+            }
+        }
+    }
+
     private static void ValidateForm(FormDefinition form, HashSet<string> known, List<Issue> issues)
     {
         if (!CopyModes.IsValid(form.AllowCopy))
             issues.Add(new Issue("error", "form", null, $"Unknown “start from a previous request” setting '{form.AllowCopy}'."));
+
+        if (form.Style is not (null or "" or "paper"))
+            issues.Add(new Issue("error", "form", null, $"Unknown form style '{form.Style}'."));
+        ValidateWorksheets(form, issues);
 
         var hasOpens = FormDefinition.TryParseDay(form.OpensOn, out var opens);
         var hasCloses = FormDefinition.TryParseDay(form.ClosesOn, out var closes);

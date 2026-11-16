@@ -74,7 +74,7 @@ public sealed class MigrationTests : IDisposable
         using (var db = Sqlite())
         {
             DatabaseSetup.Migrate(db, NullLogger.Instance); // second start: nothing to do, nothing lost
-            Assert.Equal(4, await db.Workflows.CountAsync());
+            Assert.Equal(5, await db.Workflows.CountAsync());
             Assert.Equal(3, await db.Departments.CountAsync());
             Assert.Equal(3, await db.Locations.CountAsync());
             db.Notifications.Add(new Notification { UserEmail = "a@b.org", Title = "x", CreatedAt = DateTime.UtcNow });

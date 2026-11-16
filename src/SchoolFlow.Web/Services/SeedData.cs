@@ -34,12 +34,23 @@ public static class SeedData
         Add(db, "Device Repair Request", "Report a damaged or faulty school device and get a help desk ticket.", "Help Desk", "teal", Repair, publish: true);
         Add(db, "Escalate urgent tickets (example)", "Ticket-triggered example: adds a private note when an urgent ticket arrives. Unpublished — open it in the builder to see how it works.", "Help Desk", "rose", Escalate, publish: false);
         Add(db, "Field Trip Request", "Plan a trip, choose who signs it off, and reuse last year's request as a starting point.", "Trips", "green", FieldTrip, publish: true);
+        // The approvers of the travel form are real people the school must name. With the example
+        // people (development) it is published; otherwise it stays a draft until an admin fills them in.
+        Add(db, "Request for Work Related Travel", "Conference, workshop or meeting travel, with the estimated cost worksheet.", "Travel", "blue",
+            sampleDepartments ? TravelWithExamplePeople : Travel, publish: sampleDepartments);
         db.SaveChanges();
     }
 
+    /// <summary>The travel template with the development sign-in's example people as its approvers.</summary>
+    public static string TravelWithExamplePeople => Travel
+        .Replace("\"approvers\": \"\", \"role\": \"central\"", "\"approvers\": \"builder@example.org\", \"role\": \"central\"")
+        .Replace("\"approvers\": \"\", \"role\": \"business\"", "\"approvers\": \"admin@example.org\", \"role\": \"business\"")
+        .Replace("\"approvers\": \"\", \"role\": \"superintendent\"", "\"approvers\": \"principal@example.org\", \"role\": \"superintendent\"")
+        .Replace("\"approvers\": \"\", \"role\": \"board\"", "\"approvers\": \"admin@example.org\", \"role\": \"board\"");
+
     /// <summary>The starter definitions, exposed so tests can check they stay valid.</summary>
     public static IReadOnlyList<(string Name, string Json)> Templates =>
-        new[] { ("Purchase", Purchase), ("Repair", Repair), ("Escalate", Escalate), ("FieldTrip", FieldTrip) };
+        new[] { ("Purchase", Purchase), ("Repair", Repair), ("Escalate", Escalate), ("FieldTrip", FieldTrip), ("Travel", TravelWithExamplePeople) };
 
     private static void Add(AppDbContext db, string name, string description, string category, string color, string json, bool publish)
     {
@@ -228,6 +239,153 @@ public static class SeedData
           { "from": "signoff", "port": "approved", "to": "ticket" },
           { "from": "signoff", "port": "rejected", "to": "declined" },
           { "from": "ticket", "port": "next", "to": "tell" },
+          { "from": "tell", "port": "next", "to": "done" }
+        ]
+      }
+    }
+    """;
+
+    /// <summary>
+    /// The district's paper "Request for Work Related Travel" form (revised July 2018): page 1 and
+    /// the estimated cost worksheet. The signature blocks of the paper form are the approval steps.
+    /// </summary>
+    private const string Travel = """
+    {
+      "trigger": { "type": "form" },
+      "form": {
+        "style": "paper",
+        "allowCopy": "own",
+        "intro": "• All travel must be approved by the Superintendent of Schools\n• Travel with a cost of $150 or more must be approved by the Board of Education\n• Travel arrangements, including registrations, to be made after all approvals are received\n• Staff is expected to turnkey professional development information to other staff",
+        "submitLabel": "Submit for approval",
+        "fields": [
+          { "key": "district", "label": "District", "type": "radio", "options": ["Bergen County Technical Schools", "Bergen County Special Services"], "required": true },
+          { "key": "request_date", "label": "Date of Request", "type": "date", "default": "TODAY()", "required": true, "width": "half", "noCopy": true },
+          { "key": "budget_account", "label": "Budget Acct. #", "type": "text", "width": "half" },
+          { "key": "employee_name", "label": "Employee Name", "type": "text", "default": "submitter.name", "required": true, "width": "half" },
+          { "key": "po_number", "label": "PO #", "type": "text", "width": "half", "noCopy": true },
+          { "key": "department", "label": "School/Department", "type": "department", "required": true, "width": "half" },
+          { "key": "students", "label": "# of Students", "type": "number", "min": 0, "decimals": 0, "width": "half" },
+          { "key": "event_title", "label": "Meeting/Conference Title", "type": "text", "required": true },
+          { "key": "location", "label": "Location (full address)", "type": "textarea", "required": true },
+          { "key": "from_date", "label": "From date", "type": "date", "required": true, "width": "half", "noCopy": true },
+          { "key": "from_time", "label": "From time", "type": "time", "width": "half", "noCopy": true },
+          { "key": "to_date", "label": "To date", "type": "date", "required": true, "width": "half", "noCopy": true,
+            "rules": [ { "check": "to_date >= from_date", "message": "The return date is before the start date." } ] },
+          { "key": "to_time", "label": "To time", "type": "time", "width": "half", "noCopy": true },
+          { "key": "paid_by", "label": "Cost to be paid by", "type": "multiselect", "options": ["BOE", "Students", "Sponsor"], "required": true, "width": "half" },
+          { "key": "sponsor_name", "label": "Name of Sponsor", "type": "text", "visibleWhen": "CONTAINS(paid_by, 'Sponsor')", "required": true, "width": "half" },
+          { "key": "other_staff", "label": "1. List names of other staff attending the event", "type": "textarea",
+            "help": "Are all staff requesting the same reimbursement amount or no reimbursement? If so, complete only one travel request for all staff and list every staff member here or on an attachment. If different reimbursement amounts are being requested, complete a separate travel request for each amount." },
+          { "key": "annual_heading", "label": "2. Annual Event", "type": "section",
+            "help": "If this conference, convention, workshop, etc. is an annual event and you attended the event last year, complete the following." },
+          { "key": "last_year_date", "label": "Date of last year's event", "type": "date", "width": "half" },
+          { "key": "last_year_cost", "label": "Total Cost Last Year", "type": "currency", "min": 0, "width": "half" },
+          { "key": "reasons_heading", "label": "3. Reasons for Attending", "type": "section",
+            "help": "Objectives of and/or information to be gained at the conference. Must be completed." },
+          { "key": "reason_a", "label": "a.", "type": "text", "required": true },
+          { "key": "reason_b", "label": "b.", "type": "text" },
+          { "key": "reason_c", "label": "c.", "type": "text" },
+
+          { "key": "cost_page", "label": "Estimated Cost Worksheet", "type": "page" },
+          { "key": "worksheet", "label": "Estimated Cost Worksheet", "type": "worksheet",
+            "rows": [
+              { "number": "1.", "item": "Transportation: Personal Automobile", "description": "Estimated Mileage: {miles} miles x {mileage_rate} / mile", "cost": "mileage_cost" },
+              { "item": "Tolls", "description": "Estimated Tolls:", "cost": "tolls" },
+              { "item": "Parking", "description": "Parking Fees", "cost": "parking" },
+              { "number": "2.", "item": "Other Transportation (Air, Rail, Bus)", "description": "Economy Tickets", "cost": "tickets" },
+              { "item": "Baggage Cost", "cost": "baggage" },
+              { "number": "3.", "item": "Taxi", "description": "Estimated number of taxi rides {taxi_rides}", "cost": "taxi" },
+              { "number": "4.", "item": "Meal Allowance", "description": "1st Day of Meeting/Convention Rate: {meal_first_rate} x {meal_first_people} person(s)", "cost": "meal_first" },
+              { "description": "# of Full Meeting Days: {meal_days} x {meal_day_rate} / day x {meal_day_people} person(s)", "cost": "meal_full" },
+              { "description": "Last Day Meeting/Convention Rate: {meal_last_rate} x {meal_last_people} person(s)", "cost": "meal_last" },
+              { "number": "5.", "item": "Lodging", "description": "# of Nights at Hotel: {lodging_nights} x {lodging_rate} / night x {lodging_rooms} room(s)", "cost": "lodging" },
+              { "item": "Additional Lodging", "description": "# of Nights at Hotel: {lodging2_nights} x {lodging2_rate} / night x {lodging2_rooms} room(s)", "cost": "lodging2" },
+              { "number": "6.", "item": "Per Diem Rate", "description": "{per_diem_rate} x {per_diem_days} day(s)", "cost": "per_diem" },
+              { "number": "7.", "item": "Overnight Stipend", "description": "{stipend_rate} x {stipend_nights} night(s)", "cost": "stipend" },
+              { "number": "8.", "item": "Miscellaneous Expenses (be specific)", "description": "{misc_description}", "cost": "misc" },
+              { "number": "9.", "item": "Registration/Meeting Fee", "description": "Submit a separate purchase order with this form", "cost": "registration" },
+              { "description": "Total Estimated Expenses:", "cost": "total" }
+            ] },
+          { "key": "miles", "label": "Mileage: miles", "type": "number", "min": 0 },
+          { "key": "mileage_rate", "label": "Mileage: rate per mile", "type": "currency", "min": 0 },
+          { "key": "mileage_cost", "label": "Personal automobile", "type": "calculated", "format": "currency", "decimals": 2, "formula": "ROUND(miles * mileage_rate, 2)" },
+          { "key": "tolls", "label": "Tolls", "type": "currency", "min": 0 },
+          { "key": "parking", "label": "Parking", "type": "currency", "min": 0 },
+          { "key": "tickets", "label": "Other transportation (air, rail, bus)", "type": "currency", "min": 0 },
+          { "key": "baggage", "label": "Baggage cost", "type": "currency", "min": 0 },
+          { "key": "taxi_rides", "label": "Taxi: number of rides", "type": "number", "min": 0, "decimals": 0 },
+          { "key": "taxi", "label": "Taxi", "type": "currency", "min": 0 },
+          { "key": "meal_first_rate", "label": "Meals, first day: rate", "type": "currency", "min": 0 },
+          { "key": "meal_first_people", "label": "Meals, first day: persons", "type": "number", "min": 1, "decimals": 0, "default": "1" },
+          { "key": "meal_first", "label": "Meals, first day", "type": "calculated", "format": "currency", "decimals": 2, "formula": "ROUND(meal_first_rate * meal_first_people, 2)" },
+          { "key": "meal_days", "label": "Meals, full days: number of days", "type": "number", "min": 0, "decimals": 0 },
+          { "key": "meal_day_rate", "label": "Meals, full days: rate per day", "type": "currency", "min": 0 },
+          { "key": "meal_day_people", "label": "Meals, full days: persons", "type": "number", "min": 1, "decimals": 0, "default": "1" },
+          { "key": "meal_full", "label": "Meals, full days", "type": "calculated", "format": "currency", "decimals": 2, "formula": "ROUND(meal_days * meal_day_rate * meal_day_people, 2)" },
+          { "key": "meal_last_rate", "label": "Meals, last day: rate", "type": "currency", "min": 0 },
+          { "key": "meal_last_people", "label": "Meals, last day: persons", "type": "number", "min": 1, "decimals": 0, "default": "1" },
+          { "key": "meal_last", "label": "Meals, last day", "type": "calculated", "format": "currency", "decimals": 2, "formula": "ROUND(meal_last_rate * meal_last_people, 2)" },
+          { "key": "lodging_nights", "label": "Lodging: nights", "type": "number", "min": 0, "decimals": 0 },
+          { "key": "lodging_rate", "label": "Lodging: rate per night", "type": "currency", "min": 0 },
+          { "key": "lodging_rooms", "label": "Lodging: rooms", "type": "number", "min": 1, "decimals": 0, "default": "1" },
+          { "key": "lodging", "label": "Lodging", "type": "calculated", "format": "currency", "decimals": 2, "formula": "ROUND(lodging_nights * lodging_rate * lodging_rooms, 2)" },
+          { "key": "lodging2_nights", "label": "Additional lodging: nights", "type": "number", "min": 0, "decimals": 0 },
+          { "key": "lodging2_rate", "label": "Additional lodging: rate per night", "type": "currency", "min": 0 },
+          { "key": "lodging2_rooms", "label": "Additional lodging: rooms", "type": "number", "min": 0, "decimals": 0 },
+          { "key": "lodging2", "label": "Additional lodging", "type": "calculated", "format": "currency", "decimals": 2, "formula": "ROUND(lodging2_nights * lodging2_rate * lodging2_rooms, 2)" },
+          { "key": "per_diem_rate", "label": "Per diem: rate", "type": "currency", "min": 0 },
+          { "key": "per_diem_days", "label": "Per diem: days", "type": "number", "min": 0, "decimals": 0 },
+          { "key": "per_diem", "label": "Per diem", "type": "calculated", "format": "currency", "decimals": 2, "formula": "ROUND(per_diem_rate * per_diem_days, 2)" },
+          { "key": "stipend_rate", "label": "Overnight stipend: rate", "type": "currency", "min": 0 },
+          { "key": "stipend_nights", "label": "Overnight stipend: nights", "type": "number", "min": 0, "decimals": 0 },
+          { "key": "stipend", "label": "Overnight stipend", "type": "calculated", "format": "currency", "decimals": 2, "formula": "ROUND(stipend_rate * stipend_nights, 2)" },
+          { "key": "misc_description", "label": "Miscellaneous expenses: what for", "type": "text", "requiredWhen": "misc > 0" },
+          { "key": "misc", "label": "Miscellaneous expenses", "type": "currency", "min": 0 },
+          { "key": "registration", "label": "Registration/meeting fee", "type": "currency", "min": 0 },
+          { "key": "total", "label": "Total Estimated Expenses", "type": "calculated", "format": "currency", "decimals": 2,
+            "formula": "mileage_cost + tolls + parking + tickets + baggage + taxi + meal_first + meal_full + meal_last + lodging + lodging2 + per_diem + stipend + misc + registration" },
+          { "key": "documents", "label": "Supporting documents", "type": "attachments", "maxFiles": 10,
+            "help": "For example the event flyer or agenda, the list of staff attending, and hotel rate documentation." },
+          { "key": "notes", "label": "Notes", "type": "section",
+            "help": "Finding Federal OMB Guidelines for maximum hotel rates and the daily reimbursement breakdown for Meals and Incidentals (M&IE): 1. Go to www.gsa.gov; 2. Look top left at Travel Resources; 3. Click on Per Diem Rates; 4. Choose the state you are visiting to see a listing of its cities with lodging and M&IE rates. Each state and city has a different lodging and M&IE rate. Lodging expenses may exceed the federal per diem rate if the hotel is the site of the conference, seminar, or meeting. If the “conference hotel” is not available, lodging may be paid for similar accommodations at a rate not to exceed the “conference hotel” rate. Kindly attach documentation.\n\nUpon returning from the trip AND in order to be eligible for reimbursement, all employees must file a Professional Development Report with their reimbursement claim. Include key issues that were addressed at the event and its relevance to improving instruction or the operation of the district.\n\nStaff member must reconcile this worksheet with actual expenditures with the Business Office. The reconciled Travel Request Form must be submitted to the Business Office within 3 weeks of the travel. All expenditures must be documented with original itemized receipts to be reimbursed. The Board of Education will only reimburse expenditures up to the maximum permitted by Federal OMB Guidelines." }
+        ]
+      },
+      "flow": {
+        "nodes": [
+          { "id": "start", "type": "start", "label": "Form submitted", "x": 290, "y": 40 },
+          { "id": "program", "type": "approval_chain", "label": "Program approval: Principal/Department Head", "x": 290, "y": 150,
+            "config": { "departmentSource": "field", "departmentField": "department",
+              "instructions": "{{employee_name}} requests approval to attend “{{event_title}}”, {{TEXT(from_date, 'MMM d, yyyy')}} to {{TEXT(to_date, 'MMM d, yyyy')}}.\nLocation: {{location}}\nTotal estimated expenses: {{TEXT(total, 'C2')}} (paid by {{JOIN(paid_by, ', ')}})\n\nReasons for attending:\n{{reason_a}}\n{{reason_b}}\n{{reason_c}}" } },
+          { "id": "central", "type": "approval", "label": "Program approval: Central Office Administrator", "x": 290, "y": 300,
+            "config": { "approvers": "", "role": "central", "instructions": "{{employee_name}}: “{{event_title}}”, {{TEXT(from_date, 'MMM d, yyyy')}} to {{TEXT(to_date, 'MMM d, yyyy')}}.\nTotal estimated expenses: {{TEXT(total, 'C2')}}" } },
+          { "id": "business", "type": "approval", "label": "Business Office approval", "x": 290, "y": 450,
+            "config": { "approvers": "", "role": "business", "instructions": "{{employee_name}}: “{{event_title}}”.\nBudget account: {{budget_account}}   PO #: {{po_number}}\nTotal estimated expenses: {{TEXT(total, 'C2')}} (paid by {{JOIN(paid_by, ', ')}})" } },
+          { "id": "superintendent", "type": "approval", "label": "Superintendent approval", "x": 290, "y": 600,
+            "config": { "approvers": "", "role": "superintendent", "instructions": "{{employee_name}}: “{{event_title}}”, {{TEXT(from_date, 'MMM d, yyyy')}} to {{TEXT(to_date, 'MMM d, yyyy')}}.\nTotal estimated expenses: {{TEXT(total, 'C2')}}" } },
+          { "id": "needs_board", "type": "condition", "label": "$150 or more?", "x": 290, "y": 750, "config": { "expression": "total >= 150" } },
+          { "id": "board", "type": "approval", "label": "Board of Education approval", "x": 30, "y": 890,
+            "config": { "approvers": "", "role": "board", "remindDays": "0",
+              "instructions": "This travel costs {{TEXT(total, 'C2')}}, so it needs Board of Education approval.\nApprove here once the Board has approved it, and put the Board approval date in the comment." } },
+          { "id": "tell", "type": "notify", "label": "Tell the employee", "x": 290, "y": 1040,
+            "config": { "to": "{{submitter.email}}", "subject": "Travel approved: {{event_title}}",
+              "message": "All approvals have been received for “{{event_title}}”. Travel arrangements, including registrations, may now be made.\n\nOn your return, file a Professional Development Report with your reimbursement claim, and reconcile the cost worksheet with the Business Office within 3 weeks of the travel, with original itemized receipts." } },
+          { "id": "done", "type": "end", "label": "Travel approved", "x": 290, "y": 1180 },
+          { "id": "declined", "type": "end", "label": "Travel not approved", "x": 580, "y": 600, "config": { "outcome": "rejected" } }
+        ],
+        "edges": [
+          { "from": "start", "port": "next", "to": "program" },
+          { "from": "program", "port": "approved", "to": "central" },
+          { "from": "program", "port": "rejected", "to": "declined" },
+          { "from": "central", "port": "approved", "to": "business" },
+          { "from": "central", "port": "rejected", "to": "declined" },
+          { "from": "business", "port": "approved", "to": "superintendent" },
+          { "from": "business", "port": "rejected", "to": "declined" },
+          { "from": "superintendent", "port": "approved", "to": "needs_board" },
+          { "from": "superintendent", "port": "rejected", "to": "declined" },
+          { "from": "needs_board", "port": "true", "to": "board" },
+          { "from": "needs_board", "port": "false", "to": "tell" },
+          { "from": "board", "port": "approved", "to": "tell" },
+          { "from": "board", "port": "rejected", "to": "declined" },
           { "from": "tell", "port": "next", "to": "done" }
         ]
       }

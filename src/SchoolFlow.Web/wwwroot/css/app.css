@@ -56,7 +56,7 @@ code { background: #eff0f7; padding: 1px 5px; border-radius: 5px; }
 :focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 6px; }
 
 /* ---- form controls ---- */
-input:not([type]), input[type=text], input[type=email], input[type=search], input[type=number], input[type=date], select, textarea {
+input:not([type]), input[type=text], input[type=tel], input[type=time], input[type=email], input[type=search], input[type=number], input[type=date], select, textarea {
   width: 100%; font: inherit; color: inherit; background: #fff; border: 1px solid var(--line-2); border-radius: 9px; padding: 9px 11px; min-height: 40px;
   transition: border-color .12s, box-shadow .12s;
 }
@@ -254,7 +254,7 @@ pre.code { background: #171b3a; color: #e4e7ff; padding: 14px 16px; border-radiu
 .sf-field.half { grid-column: span 1; }
 .sf-label { display: block; font-weight: 600; margin-bottom: 6px; }
 .sf-req { color: var(--bad); font-weight: 700; }
-.sf-help { color: var(--muted); font-size: 13px; margin: 5px 0 0; }
+.sf-help { color: var(--muted); font-size: 13px; margin: 5px 0 0; white-space: pre-line; }
 .sf-error { color: var(--bad); font-size: 13.5px; margin-top: 5px; font-weight: 500; }
 .sf-field.has-error input:not([type=checkbox]):not([type=radio]), .sf-field.has-error select, .sf-field.has-error textarea { border-color: var(--bad); }
 .sf-section { border-top: 1px solid var(--line); padding-top: 18px; margin-top: 4px; }
@@ -594,3 +594,61 @@ body.wide .sim-banner { display: none; }
 .version-list { list-style: none; margin: 0 0 8px; padding: 0; }
 .version-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .version-list li:last-child { border-bottom: 0; }
+
+/* ---- worksheet: a table whose rows hold other fields of the form ---- */
+.sf-worksheet h3 { font-size: 16px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .02em; }
+.ws { border: 1px solid var(--ink-2); border-radius: 4px; overflow: hidden; }
+.ws-row { display: grid; grid-template-columns: 34px minmax(0, 190px) minmax(0, 1fr) 150px; border-top: 1px solid var(--line-2); }
+.ws-row:first-child { border-top: 0; }
+.ws-row > div { padding: 7px 9px; border-left: 1px solid var(--line-2); min-width: 0; }
+.ws-row > div:first-child { border-left: 0; }
+.ws-head { background: #f3f4f8; font-weight: 700; font-size: 13.5px; }
+.ws-item, .ws-no { font-weight: 600; }
+.ws-desc { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 7px; }
+.ws-desc .sf-error { flex-basis: 100%; margin-top: 2px; }
+.ws-cost { text-align: right; display: flex; justify-content: flex-end; align-items: center; }
+.ws-row.is-sum { border-top: 2px solid var(--ink-2); font-weight: 700; }
+.ws-row.is-sum .ws-desc { justify-content: flex-end; }
+.ws-input { display: inline-flex; align-items: center; min-width: 0; }
+.ws-input input, .ws-input select { width: 4.4em; padding: 4px 6px; min-height: 0; height: 32px; }
+.ws-input.ws-currency input { width: 5.2em; }
+.ws-input .sf-prefix { display: inline-flex; align-items: center; gap: 3px; }
+.ws-cost .ws-input, .ws-cost .sf-prefix { width: 100%; }
+.ws-cost .ws-input input { flex: 1 1 auto; width: 100%; min-width: 0; text-align: right; }
+.ws-cost .ws-input .sf-calc { margin-left: auto; }
+.ws-input.ws-text { flex: 1 1 160px; }
+.ws-input.ws-text input { width: 100%; }
+.ws-input.ws-date input { width: 9.5em; }
+.ws-input.has-error input, .ws-input.has-error select { border-color: var(--bad); }
+.ws-input .sf-calc { font-variant-numeric: tabular-nums; font-weight: 600; background: none; border: 0; padding: 0; }
+@media (max-width: 640px) {
+  .ws-head { display: none; }
+  .ws-row { grid-template-columns: 30px minmax(0, 1fr); }
+  .ws-row > div { border-left: 0; padding: 4px 9px; }
+  .ws-row > .ws-no { grid-row: span 3; padding-top: 9px; }
+  .ws-row > .ws-item { padding-top: 9px; }
+  .ws-row > .ws-item:empty, .ws-row > .ws-desc:empty { display: none; }
+  .ws-row > .ws-cost { padding-bottom: 9px; }
+  .ws-row > .ws-cost::before { content: "Cost estimate"; margin-right: auto; color: var(--muted); font-size: 13px; }
+  .ws-row.is-sum > .ws-cost::before { content: ""; }
+}
+
+/* ---- paper look: for forms staff know from a printed version ---- */
+.sf-notices { list-style: disc; padding: 12px 14px 12px 32px; }
+.sf-notices li { margin: 2px 0; }
+.sf-paper .sf-notices { background: none; padding: 0 0 0 22px; color: #c81e1e; text-transform: uppercase; font-size: 13px; font-weight: 600; letter-spacing: .01em; }
+.sf-paper .sf-grid { gap: 14px 28px; }
+.sf-paper .sf-label { font-weight: 700; }
+.sf-paper .sf-field input:not([type=checkbox]):not([type=radio]), .sf-paper .sf-field select, .sf-paper .sf-field textarea {
+  border: 0; border-bottom: 1px solid var(--ink-2); border-radius: 0; background: transparent; padding-left: 2px; padding-right: 2px; box-shadow: none; }
+.sf-paper .sf-field input:focus, .sf-paper .sf-field select:focus, .sf-paper .sf-field textarea:focus { border-bottom: 2px solid var(--brand); box-shadow: none; }
+.sf-paper .ws input, .sf-paper .ws select { border: 1px solid var(--line-2) !important; border-radius: 6px !important; background: #fff !important; padding: 4px 6px !important; }
+.sf-paper .sf-field textarea { height: 62px; }
+.sf-paper .sf-section { border-top: 0; padding-top: 6px; }
+.sf-paper .sf-section h3, .sf-paper .sf-worksheet h3 { text-decoration: underline; text-underline-offset: 3px; }
+@media (min-width: 641px) {
+  .sf-paper .sf-field:not(.sf-stack):not(.sf-section):not(.sf-worksheet) { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 10px; align-items: end; }
+  .sf-paper .sf-field:not(.sf-stack) > .sf-label { margin-bottom: 7px; white-space: nowrap; }
+  .sf-paper .sf-field:not(.sf-stack) > .sf-help, .sf-paper .sf-field:not(.sf-stack) > .sf-error { grid-column: 1 / -1; }
+}
+.form-shell:has(.sf-paper), .form-shell:has(.sf-worksheet) { max-width: 920px; }

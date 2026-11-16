@@ -38,6 +38,8 @@ public sealed class FormDefinition
     /// requests) or "everyone" (anyone's earlier requests of this form).
     /// </summary>
     public string? AllowCopy { get; set; }
+    /// <summary>How the form is drawn: blank for the standard look, "paper" for a printed-form look.</summary>
+    public string? Style { get; set; }
     /// <summary>First day the form accepts requests ("yyyy-MM-dd"); blank means it is already open.</summary>
     public string? OpensOn { get; set; }
     /// <summary>Last day the form accepts requests ("yyyy-MM-dd", inclusive); blank means no closing date.</summary>
@@ -68,16 +70,19 @@ public static class FieldTypes
         Date = "date", Select = "select", Radio = "radio", MultiSelect = "multiselect", Checkbox = "checkbox",
         Lookup = "lookup", Calculated = "calculated", Table = "table", Section = "section",
         Department = "department", ApprovalChain = "approval_chain", Location = "location", Attachments = "attachments",
-        Time = "time", Phone = "phone", Signature = "signature", Page = "page";
+        Time = "time", Phone = "phone", Signature = "signature", Page = "page", Worksheet = "worksheet";
 
     public static readonly string[] All =
     {
         Text, TextArea, Email, Number, Currency, Date, Select, Radio, MultiSelect, Checkbox, Lookup, Calculated, Table, Section,
-        Department, ApprovalChain, Location, Attachments, Time, Phone, Signature, Page,
+        Department, ApprovalChain, Location, Attachments, Time, Phone, Signature, Page, Worksheet,
     };
 
+    /// <summary>Field types that can be placed inside a worksheet row.</summary>
+    public static readonly string[] InWorksheet = { Text, Number, Currency, Calculated, Date, Time, Select };
+
     /// <summary>Headings and page breaks: they arrange the form and never hold an answer.</summary>
-    public static bool IsLayout(string type) => type is Section or Page;
+    public static bool IsLayout(string type) => type is Section or Page or Worksheet;
 
     public static readonly string[] Column = { Text, Number, Currency, Date, Select, Checkbox, Calculated };
 
@@ -123,9 +128,33 @@ public sealed class FieldDef
     public int? MaxRows { get; set; }
     /// <summary>For attachment fields: how many files may be added (default 5).</summary>
     public int? MaxFiles { get; set; }
+    /// <summary>Worksheet only: the rows of the table. Other fields of the form are drawn inside them.</summary>
+    public List<WorksheetRow>? Rows { get; set; }
 }
 
 /// <summary>An uploaded file as the form sees it. The file itself is kept by the web app.</summary>
+/// <summary>
+/// One row of a worksheet: a number, an item name, a description that can hold other fields of the
+/// form as <c>{field_key}</c>, and the field shown in the cost column. A worksheet only arranges
+/// fields; their values, formulas and checks are those of the fields themselves.
+/// </summary>
+public sealed class WorksheetRow
+{
+    public string? Number { get; set; }
+    public string? Item { get; set; }
+    public string? Description { get; set; }
+    public string? Cost { get; set; }
+
+    private static readonly System.Text.RegularExpressions.Regex Placeholder = new(@"\{([A-Za-z][A-Za-z0-9_]*)\}");
+
+    /// <summary>Field keys this row draws, in order: those in the description, then the cost field.</summary>
+    public IEnumerable<string> FieldKeys()
+    {
+        foreach (System.Text.RegularExpressions.Match m in Placeholder.Matches(Description ?? "")) yield return m.Groups[1].Value;
+        if (!string.IsNullOrWhiteSpace(Cost)) yield return Cost.Trim();
+    }
+}
+
 public sealed record AttachmentInfo(string Id, string Name, long Size);
 
 public sealed class RuleDef
