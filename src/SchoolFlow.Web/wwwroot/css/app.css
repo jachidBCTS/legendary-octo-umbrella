@@ -620,7 +620,7 @@ body.wide .sim-banner { display: none; }
 .ws-input.ws-text input { width: 100%; }
 .ws-input.ws-date input { width: 9.5em; }
 .ws-input.has-error input, .ws-input.has-error select { border-color: var(--bad); }
-.ws-input .sf-calc { font-variant-numeric: tabular-nums; font-weight: 600; background: none; border: 0; padding: 0; }
+.ws-input .sf-calc { font-variant-numeric: tabular-nums; font-weight: 600; background: none; border: 0; padding: 0; min-height: 0; display: inline; }
 @media (max-width: 640px) {
   .ws-head { display: none; }
   .ws-row { grid-template-columns: 30px minmax(0, 1fr); }
@@ -652,3 +652,7 @@ body.wide .sim-banner { display: none; }
   .sf-paper .sf-field:not(.sf-stack) > .sf-help, .sf-paper .sf-field:not(.sf-stack) > .sf-error { grid-column: 1 / -1; }
 }
 .form-shell:has(.sf-paper), .form-shell:has(.sf-worksheet) { max-width: 920px; }
+
+.rate-amount { max-width: 9em; text-align: right; }
+td.actions { white-space: nowrap; text-align: right; }
+td.actions form { display: inline-block; margin-left: 6px; }

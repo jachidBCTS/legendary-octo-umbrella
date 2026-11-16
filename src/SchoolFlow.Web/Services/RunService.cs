@@ -68,6 +68,7 @@ public sealed class RunService
         var def = Json.ParseDefinition(workflow.PublishedJson ?? "{}");
         var ambient = Values.NewDict();
         ambient["submitter"] = SubmitterRecord(email, name);
+        ambient["rates"] = await _calendar.RatesAsync(ct);
         var form = FormEvaluator.Evaluate(def.Form, input, ambient, departments: await ActiveDepartmentsAsync(ct),
             locations: await ActiveLocationsAsync(ct),
             attachments: await _attachments.PendingForAsync(email, workflow.Id, ct),
@@ -273,6 +274,7 @@ public sealed class RunService
         var def = Json.ParseDefinition(run.DefinitionJson);
         var ambient = Values.NewDict();
         ambient["submitter"] = SubmitterRecord(email, run.SubmitterName);
+        ambient["rates"] = await _calendar.RatesAsync(ct);
         var form = FormEvaluator.Evaluate(def.Form, input, ambient, departments: await ActiveDepartmentsAsync(ct), locations: await ActiveLocationsAsync(ct),
             attachments: await _attachments.UsableForRunAsync(email, run, ct), closedDays: await _calendar.ClosedDaysAsync(ct));
         if (!form.IsValid) return (form, ActionResult.Fail("Please fix the highlighted fields."));

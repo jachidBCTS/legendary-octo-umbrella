@@ -511,6 +511,42 @@ namespace SchoolFlow.Web.Migrations.Sqlite
                     b.ToTable("Notifications");
                 });
 
+            modelBuilder.Entity("SchoolFlow.Web.Data.Rate", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("Value")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Key")
+                        .IsUnique();
+
+                    b.ToTable("Rates");
+                });
+
             modelBuilder.Entity("SchoolFlow.Web.Data.RunComment", b =>
                 {
                     b.Property<int>("Id")

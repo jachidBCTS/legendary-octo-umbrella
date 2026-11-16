@@ -120,9 +120,20 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   (`.sf-paper`). Intro lines that all start with `•` render as a notice list.
 - **Travel template** (`SeedData.Travel`, workflow 5): the owner's paper "Request for Work Related
   Travel" form. This is the first of the "templates needing a specific interface". Its four
-  fixed approval steps have blank approvers on a real site (so it seeds as an unpublished draft and
-  the checker reports four problems); in Development `TravelWithExamplePeople` fills them in.
-  Defaults (today, name, "1 person") are applied when the form opens, not on submit.
+  approval steps and two business-office notifications have blank people on a real site (owner:
+  "these will be designated in the workflow"), so it seeds as an unpublished draft and the checker
+  reports six problems; in Development `TravelWithExamplePeople` fills them in. Owner's decisions:
+  the route branches on district (central office administrator and business office staff differ;
+  business administrator and superintendent are shared); Board approval is **not** a SchoolFlow
+  step — a ticket is opened for the business office and, for $150 or more, the run waits until
+  that ticket is resolved; mileage and meal rates are fixed (below).
+  Defaults (today, name, "1 room") are applied when the form opens, not on submit.
+- **Rates** (`Rates` table, Admin → Rates): admin-kept amounts exposed to *form* formulas as the
+  reserved name `rates` (`rates.mileage`), supplied with the ambient values by
+  `SchoolCalendar.RatesAsync` (cached 60 s; `InvalidateRates` on change). A fixed rate on a form is
+  a calculated field (`"formula": "rates.mileage"`), so the browser cannot set it, and a submitted
+  request keeps the amounts it was submitted with. A new site seeds the travel rates at 0 and the
+  form's rules refuse to cost anything with a 0 rate. Changes are audited.
 - **Form opening dates** (`FormDefinition.OpensOn/ClosesOn`, `ClosedMessage`) are part of the
   definition, so they are versioned and take effect on publish. Enforced on the Start page and in
   `forms/submit`; resubmitting a sent-back request is deliberately still allowed after closing.
@@ -159,7 +170,7 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   API and checks its own secret).
 - **Never trust the browser for identity or lists**: department/location names come from the
   server's tables; `submitter` is set server-side; webhook payloads cannot set reserved names.
-- **Reserved formula names**: `submitter, ticket, approval, approvals, run, event, chain` plus
+- **Reserved formula names**: `submitter, ticket, approval, approvals, run, event, chain, attachments, rates` plus
   keywords — see `DefinitionValidator.Reserved` (mirrored in `builder.js` `RESERVED`).
 - **Adding a field type**: `FieldTypes` → `FormEvaluator` normalisation → `form-runtime.js`
   control → `builder.js` palette/inspector → `Ui.Display` if it needs special display →
@@ -194,8 +205,8 @@ Waiting on the owner:
   to fill `Departments` (name + final approvers) instead of manual entry. Ask before designing.
 - **Admin templates needing a specific interface.** The owner will add "a few templates" that
   "warrant a specific user interface for best adaptation by staff". The travel form is done (paper
-  look + worksheet); open questions on it: who the four approvers are, the mileage/meal rates,
-  and whether the Board step should be a person or a date. More templates may follow.
+  look + worksheet, fixed rates, per-district route); the owner will name its people and set
+  its rates themselves. More templates may follow.
   Need from the owner, per template: what it collects and what should look/behave differently from
   the standard form. Likely shape: a per-workflow custom layout/renderer on top of the same
   definition and `FormEvaluator`, so logic and validation stay shared.

@@ -293,6 +293,17 @@ public class WorkflowVersion
     public string PublishedBy { get; set; } = "";
 }
 
+/// <summary>A fixed amount kept by admins (mileage rate, meal rates…); forms read it as <c>rates.key</c>.</summary>
+public class Rate
+{
+    public int Id { get; set; }
+    public string Key { get; set; } = "";
+    public string Label { get; set; } = "";
+    public decimal Value { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public string UpdatedBy { get; set; } = "";
+}
+
 public class ClosedDay
 {
     public int Id { get; set; }
@@ -364,6 +375,7 @@ public class AppDbContext : DbContext
     public DbSet<Delegation> Delegations => Set<Delegation>();
     public DbSet<RunComment> RunComments => Set<RunComment>();
     public DbSet<ClosedDay> ClosedDays => Set<ClosedDay>();
+    public DbSet<Rate> Rates => Set<Rate>();
     public DbSet<WorkflowVersion> WorkflowVersions => Set<WorkflowVersion>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 
@@ -454,6 +466,14 @@ public class AppDbContext : DbContext
         {
             e.Property(x => x.PublishedBy).HasMaxLength(320);
             e.HasIndex(x => new { x.WorkflowId, x.Version }).IsUnique();
+        });
+        b.Entity<Rate>(e =>
+        {
+            e.Property(x => x.Key).HasMaxLength(60);
+            e.Property(x => x.Label).HasMaxLength(200);
+            e.Property(x => x.UpdatedBy).HasMaxLength(320);
+            e.Property(x => x.Value).HasPrecision(18, 4);
+            e.HasIndex(x => x.Key).IsUnique();
         });
         b.Entity<ClosedDay>(e =>
         {

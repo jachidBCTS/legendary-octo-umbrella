@@ -756,21 +756,21 @@ public sealed class RunServiceTests : IDisposable
 
     // ---- work related travel template ------------------------------------------------------
 
-    private async Task<(int RunId, Dictionary<string, object?> Context)> SubmitTravelAsync(Action<Dictionary<string, object?>> change)
+    private async Task<(int RunId, Dictionary<string, object?> Context)> SubmitTravelAsync(string district, Action<Dictionary<string, object?>> change)
     {
         await using var db = Db();
         var workflow = await db.Workflows.SingleAsync(w => w.Name == "Request for Work Related Travel");
         var dept = await db.Departments.SingleAsync(d => d.Name == "Science");
         var input = new Dictionary<string, object?>
         {
-            // The browser sends the defaults it was given when the form opened (today, the person's name, "1 person").
-            ["request_date"] = "2027-01-15", ["employee_name"] = "T Teacher",
-            ["meal_first_people"] = 1m, ["meal_day_people"] = 1m, ["meal_last_people"] = 1m, ["lodging_rooms"] = 1m,
-            ["district"] = "Bergen County Technical Schools",
+            // The browser sends the defaults it was given when the form opened (today, the person's name, "1 room").
+            ["request_date"] = "2027-01-15", ["employee_name"] = "T Teacher", ["meal_day_people"] = 1m, ["lodging_rooms"] = 1m,
+            ["district"] = district,
             ["department"] = new Dictionary<string, object?> { ["id"] = (decimal)dept.Id, ["name"] = "Science" },
             ["event_title"] = "NJ Science Convention", ["location"] = "Princeton, NJ",
             ["from_date"] = "2027-03-10", ["to_date"] = "2027-03-12", ["from_time"] = "8:00 AM",
             ["paid_by"] = new List<object?> { "BOE" }, ["reason_a"] = "New lab standards",
+            ["mileage_rate"] = 99m, ["meal_day_rate"] = 999m,                 // a tampered browser cannot set a fixed rate
         };
         change(input);
         var (form, runId) = await Service(db).SubmitFormAsync(workflow, input, "t@school.org", "T Teacher", default);
@@ -778,81 +778,122 @@ public sealed class RunServiceTests : IDisposable
         return (runId!.Value, form.Values);
     }
 
-    [Fact]
-    public async Task TravelTemplate_AddsUpTheWorksheet_AndFollowsThePaperFormsApprovals()
+    private async Task ApproveInTurnAsync(int runId, params (string Step, string Approver)[] steps)
     {
-        var (runId, values) = await SubmitTravelAsync(input =>
-        {
-            input["miles"] = 120m; input["mileage_rate"] = 0.47m;                                  // 56.40
-            input["tolls"] = 12.5m;
-            input["meal_first_rate"] = 44.25m;                                                     // x 1 person (the default)
-            input["meal_days"] = 1m; input["meal_day_rate"] = 59m; input["meal_day_people"] = 2m;  // 118.00
-            input["lodging_nights"] = 2m; input["lodging_rate"] = 189m;                            // x 1 room (the default) = 378.00
-            input["registration"] = 250m;
-        });
-        Assert.Equal(56.40m, values["mileage_cost"]);
-        Assert.Equal(44.25m, values["meal_first"]);
-        Assert.Equal(118m, values["meal_full"]);
-        Assert.Equal(378m, values["lodging"]);
-        Assert.Equal(0m, values["lodging2"]);                                                      // an untouched row is zero, not an error
-        Assert.Equal(859.15m, values["total"]);
-        Assert.Equal("08:00", values["from_time"]);
-
-        // Principal/department head, central office, business office, superintendent, then the Board because it is $150 or more.
-        foreach (var (step, approver) in new[] { ("Final approval — Science", "principal@example.org"), ("Program approval: Central Office Administrator", "builder@example.org"),
-                     ("Business Office approval", "admin@example.org"), ("Superintendent approval", "principal@example.org"), ("Board of Education approval", "admin@example.org") })
+        foreach (var (step, approver) in steps)
         {
             await using (var db = Db())
                 Assert.Equal(step, (await db.ApprovalTasks.SingleAsync(t => t.RunId == runId && t.Status == ApprovalStatus.Pending)).Title);
             await DecideAsync(runId, approver);
         }
-        await using var done = Db();
-        Assert.Equal(RunStatus.Completed, (await done.Runs.SingleAsync(r => r.Id == runId)).Status);
-        Assert.Contains(await done.Notifications.Where(n => n.UserEmail == "t@school.org").ToListAsync(), n => n.Title.Contains("Travel approved"));
     }
 
     [Fact]
-    public async Task TravelTemplate_Under150_SkipsTheBoard_AndChecksItsOwnRules()
+    public async Task TravelTemplate_UsesTheAdminsRates_AndWaitsOnTheTicketForBoardApproval()
     {
-        var (runId, values) = await SubmitTravelAsync(input => { input["registration"] = 95m; input["parking"] = 20m; });
-        Assert.Equal(115m, values["total"]);
-        foreach (var approver in new[] { "principal@example.org", "builder@example.org", "admin@example.org", "principal@example.org" })
-            await DecideAsync(runId, approver);
+        var (runId, values) = await SubmitTravelAsync("Bergen County Technical Schools", input =>
+        {
+            input["miles"] = 120m;                                             // x 0.47 = 56.40
+            input["tolls"] = 12.5m;
+            input["meal_first_people"] = 1m;                                   // 44.25
+            input["meal_days"] = 1m; input["meal_day_people"] = 2m;            // 59 x 2 = 118.00
+            input["lodging_nights"] = 2m; input["lodging_rate"] = 189m;        // x 1 room = 378.00
+            input["registration"] = 250m;
+        });
+        Assert.Equal(0.47m, values["mileage_rate"]);
+        Assert.Equal(56.40m, values["mileage_cost"]);
+        Assert.Equal(44.25m, values["meal_first"]);
+        Assert.Equal(118m, values["meal_full"]);
+        Assert.Equal(0m, values["meal_last"]);                                 // nobody entered: nothing claimed
+        Assert.Equal(378m, values["lodging"]);
+        Assert.Equal(859.15m, values["total"]);
+        Assert.Equal("08:00", values["from_time"]);
+
+        await ApproveInTurnAsync(runId, ("Final approval — Science", "principal@example.org"), ("Central Office Administrator (Technical Schools)", "builder@example.org"),
+            ("Business Administrator approval", "admin@example.org"), ("Superintendent approval", "principal@example.org"));
+        long ticket;
         await using (var db = Db())
         {
-            Assert.Equal(RunStatus.Completed, (await db.Runs.SingleAsync(r => r.Id == runId)).Status);
-            Assert.DoesNotContain(await db.ApprovalTasks.Where(t => t.RunId == runId).ToListAsync(), t => t.Title.Contains("Board"));
+            var run = await db.Runs.SingleAsync(r => r.Id == runId);
+            Assert.Equal(RunStatus.WaitingTicket, run.Status);                 // $150 or more: the Board's approval is recorded on the ticket
+            ticket = run.TicketId!.Value;
+            var notes = await db.Notifications.OrderBy(n => n.Id).ToListAsync();
+            Assert.Contains(notes, n => n.UserEmail == "admin@example.org" && n.Title.StartsWith("Travel request to process") && n.Body.Contains("Board of Education approval is required"));
+            Assert.DoesNotContain(notes, n => n.UserEmail == "builder@example.org" && n.Title.StartsWith("Travel request to process"));   // that is the other district's office
+            Assert.Contains(notes, n => n.UserEmail == "t@school.org" && n.Title.Contains("Board approval still needed"));
+            Assert.DoesNotContain(notes, n => n.UserEmail == "t@school.org" && n.Title.StartsWith("Travel approved:"));
 
+            // A later change of rate does not alter what was submitted.
+            (await db.Rates.SingleAsync(r => r.Key == "mileage")).Value = 0.70m;
+            await db.SaveChangesAsync();
+            Assert.Contains("\"mileage_cost\":56.4", run.ContextJson);
+            await Service(db).HandleTicketEventAsync(Json.ToValues("{\"ticket\":{\"id\":" + ticket + ",\"status\":4}}"), default);
+        }
+        await using var done = Db();
+        Assert.Equal(RunStatus.Completed, (await done.Runs.SingleAsync(r => r.Id == runId)).Status);
+        Assert.Contains(await done.Notifications.Where(n => n.UserEmail == "t@school.org").ToListAsync(), n => n.Title.StartsWith("Travel approved:"));
+    }
+
+    [Fact]
+    public async Task TravelTemplate_SpecialServices_Under150_TakesItsOwnRoute_AndSkipsTheBoard()
+    {
+        var (runId, values) = await SubmitTravelAsync("Bergen County Special Services", input => { input["registration"] = 95m; input["parking"] = 20m; });
+        Assert.Equal(115m, values["total"]);
+        await ApproveInTurnAsync(runId, ("Final approval — Science", "principal@example.org"), ("Central Office Administrator (Special Services)", "admin@example.org"),
+            ("Business Administrator approval", "admin@example.org"), ("Superintendent approval", "principal@example.org"));
+        await using var db = Db();
+        var run = await db.Runs.SingleAsync(r => r.Id == runId);
+        Assert.Equal(RunStatus.Completed, run.Status);
+        Assert.NotNull(run.TicketId);                                           // the business office still gets its ticket
+        var notes = await db.Notifications.ToListAsync();
+        Assert.Contains(notes, n => n.UserEmail == "builder@example.org" && n.Title.StartsWith("Travel request to process") && n.Body.Contains("not required"));
+        Assert.Contains(notes, n => n.UserEmail == "t@school.org" && n.Title.StartsWith("Travel approved:"));
+
+        var workflow = await db.Workflows.SingleAsync(w => w.Name == "Request for Work Related Travel");
+        var (form, id) = await Service(db).SubmitFormAsync(workflow, new Dictionary<string, object?>
+        {
+            ["request_date"] = "2027-01-15", ["employee_name"] = "T Teacher",
+            ["from_date"] = "2027-03-12", ["to_date"] = "2027-03-10", ["paid_by"] = new List<object?> { "Sponsor" }, ["misc"] = 30m,
+        }, "t@school.org", "T Teacher", default);
+        Assert.Null(id);
+        Assert.Contains("before the start date", form.Fields["to_date"].Errors.Single());
+        Assert.Single(form.Fields["sponsor_name"].Errors);          // a sponsor must be named
+        Assert.Single(form.Fields["misc_description"].Errors);      // "be specific"
+        Assert.Single(form.Fields["reason_a"].Errors);
+    }
+
+    [Fact]
+    public async Task TravelTemplate_RefusesToCostAnythingWithARateThatHasNotBeenSet()
+    {
+        await using (var db = Db())
+        {
+            (await db.Rates.SingleAsync(r => r.Key == "mileage")).Value = 0m;
+            await db.SaveChangesAsync();
             var workflow = await db.Workflows.SingleAsync(w => w.Name == "Request for Work Related Travel");
-            var (form, id) = await Service(db).SubmitFormAsync(workflow, new Dictionary<string, object?>
-            {
-                ["request_date"] = "2027-01-15", ["employee_name"] = "T Teacher",
-                ["from_date"] = "2027-03-12", ["to_date"] = "2027-03-10", ["paid_by"] = new List<object?> { "Sponsor" }, ["misc"] = 30m,
-            }, "t@school.org", "T Teacher", default);
+            var (form, id) = await Service(db).SubmitFormAsync(workflow, new Dictionary<string, object?> { ["miles"] = 120m, ["meal_days"] = 2m }, "t@school.org", "T", default);
             Assert.Null(id);
-            Assert.Contains("before the start date", form.Fields["to_date"].Errors.Single());
-            Assert.Single(form.Fields["sponsor_name"].Errors);          // a sponsor must be named
-            Assert.Single(form.Fields["misc_description"].Errors);      // "be specific"
-            Assert.Single(form.Fields["reason_a"].Errors);
-            Assert.Empty(form.Fields["worksheet"].Errors);
+            Assert.Contains("mileage rate has not been set", form.Fields["miles"].Errors.Single());
+            Assert.Empty(form.Fields["meal_days"].Errors);              // that rate is set
         }
     }
 
     [Fact]
-    public void TravelTemplate_WithoutNamedApprovers_IsADraftThatTheCheckerHolds_AndWorksheetsAreChecked()
+    public void TravelTemplate_OnARealSite_IsADraftUntilItsPeopleAreNamed_AndWorksheetsAreChecked()
     {
         using var connection = new Microsoft.Data.Sqlite.SqliteConnection("DataSource=:memory:");
         connection.Open();
         using (var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options))
         {
             db.Database.EnsureCreated();
-            SeedData.EnsureStarterWorkflows(db);                      // as on a real, new site: no example people
+            SeedData.EnsureStarterWorkflows(db);                      // as on a real, new site: no example people or amounts
             var travel = db.Workflows.Single(w => w.Name == "Request for Work Related Travel");
             Assert.Null(travel.PublishedJson);
             Assert.Equal(5, travel.Id);                               // after the four existing starters
             var errors = DefinitionValidator.Validate(Json.ParseDefinition(travel.DraftJson)).Where(i => i.IsError).ToList();
-            Assert.Equal(4, errors.Count);                            // the four approval steps that need a person
+            Assert.Equal(6, errors.Count);                            // four approvers and two business offices to name
             Assert.All(errors, e => Assert.Equal("flow", e.Area));
+            Assert.Equal(4, db.Rates.Count());
+            Assert.All(db.Rates.ToList(), r => Assert.Equal(0m, r.Value));
         }
 
         var def = Json.ParseDefinition(SeedData.TravelWithExamplePeople);

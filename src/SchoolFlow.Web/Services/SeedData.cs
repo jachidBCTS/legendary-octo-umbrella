@@ -36,6 +36,17 @@ public static class SeedData
         Add(db, "Field Trip Request", "Plan a trip, choose who signs it off, and reuse last year's request as a starting point.", "Trips", "green", FieldTrip, publish: true);
         // The approvers of the travel form are real people the school must name. With the example
         // people (development) it is published; otherwise it stays a draft until an admin fills them in.
+        if (!db.Rates.Any())
+        {
+            // The travel form's fixed rates. Real amounts are the district's to set (Admin → Rates), so a
+            // new site starts them at 0 and the form refuses to cost anything with an unset rate.
+            foreach (var (key, label, example) in new[]
+                     {
+                         ("mileage", "Mileage rate (per mile)", 0.47m), ("meal_first_day", "Meal allowance: first day", 44.25m),
+                         ("meal_full_day", "Meal allowance: full day", 59m), ("meal_last_day", "Meal allowance: last day", 44.25m),
+                     })
+                db.Rates.Add(new Rate { Key = key, Label = label, Value = sampleDepartments ? example : 0m, UpdatedAt = DateTime.UtcNow });
+        }
         Add(db, "Request for Work Related Travel", "Conference, workshop or meeting travel, with the estimated cost worksheet.", "Travel", "blue",
             sampleDepartments ? TravelWithExamplePeople : Travel, publish: sampleDepartments);
         db.SaveChanges();
@@ -43,10 +54,12 @@ public static class SeedData
 
     /// <summary>The travel template with the development sign-in's example people as its approvers.</summary>
     public static string TravelWithExamplePeople => Travel
-        .Replace("\"approvers\": \"\", \"role\": \"central\"", "\"approvers\": \"builder@example.org\", \"role\": \"central\"")
+        .Replace("\"approvers\": \"\", \"role\": \"central_tech\"", "\"approvers\": \"builder@example.org\", \"role\": \"central_tech\"")
+        .Replace("\"approvers\": \"\", \"role\": \"central_special\"", "\"approvers\": \"admin@example.org\", \"role\": \"central_special\"")
         .Replace("\"approvers\": \"\", \"role\": \"business\"", "\"approvers\": \"admin@example.org\", \"role\": \"business\"")
         .Replace("\"approvers\": \"\", \"role\": \"superintendent\"", "\"approvers\": \"principal@example.org\", \"role\": \"superintendent\"")
-        .Replace("\"approvers\": \"\", \"role\": \"board\"", "\"approvers\": \"admin@example.org\", \"role\": \"board\"");
+        .Replace("\"to\": \"\", \"role\": \"office_tech\"", "\"to\": \"admin@example.org\", \"role\": \"office_tech\"")
+        .Replace("\"to\": \"\", \"role\": \"office_special\"", "\"to\": \"builder@example.org\", \"role\": \"office_special\"");
 
     /// <summary>The starter definitions, exposed so tests can check they stay valid.</summary>
     public static IReadOnlyList<(string Name, string Json)> Templates =>
@@ -289,7 +302,7 @@ public static class SeedData
           { "key": "cost_page", "label": "Estimated Cost Worksheet", "type": "page" },
           { "key": "worksheet", "label": "Estimated Cost Worksheet", "type": "worksheet",
             "rows": [
-              { "number": "1.", "item": "Transportation: Personal Automobile", "description": "Estimated Mileage: {miles} miles x {mileage_rate} / mile", "cost": "mileage_cost" },
+              { "number": "1.", "item": "Transportation: Personal Automobile", "description": "Estimated Mileage: {miles} miles x $ {mileage_rate} / mile", "cost": "mileage_cost" },
               { "item": "Tolls", "description": "Estimated Tolls:", "cost": "tolls" },
               { "item": "Parking", "description": "Parking Fees", "cost": "parking" },
               { "number": "2.", "item": "Other Transportation (Air, Rail, Bus)", "description": "Economy Tickets", "cost": "tickets" },
@@ -306,8 +319,9 @@ public static class SeedData
               { "number": "9.", "item": "Registration/Meeting Fee", "description": "Submit a separate purchase order with this form", "cost": "registration" },
               { "description": "Total Estimated Expenses:", "cost": "total" }
             ] },
-          { "key": "miles", "label": "Mileage: miles", "type": "number", "min": 0 },
-          { "key": "mileage_rate", "label": "Mileage: rate per mile", "type": "currency", "min": 0 },
+          { "key": "miles", "label": "Mileage: miles", "type": "number", "min": 0,
+            "rules": [ { "check": "miles = 0 || rates.mileage > 0", "message": "The mileage rate has not been set yet. Please ask an administrator." } ] },
+          { "key": "mileage_rate", "label": "Mileage: rate per mile", "type": "calculated", "formula": "rates.mileage" },
           { "key": "mileage_cost", "label": "Personal automobile", "type": "calculated", "format": "currency", "decimals": 2, "formula": "ROUND(miles * mileage_rate, 2)" },
           { "key": "tolls", "label": "Tolls", "type": "currency", "min": 0 },
           { "key": "parking", "label": "Parking", "type": "currency", "min": 0 },
@@ -315,15 +329,18 @@ public static class SeedData
           { "key": "baggage", "label": "Baggage cost", "type": "currency", "min": 0 },
           { "key": "taxi_rides", "label": "Taxi: number of rides", "type": "number", "min": 0, "decimals": 0 },
           { "key": "taxi", "label": "Taxi", "type": "currency", "min": 0 },
-          { "key": "meal_first_rate", "label": "Meals, first day: rate", "type": "currency", "min": 0 },
-          { "key": "meal_first_people", "label": "Meals, first day: persons", "type": "number", "min": 1, "decimals": 0, "default": "1" },
+          { "key": "meal_first_rate", "label": "Meals, first day: rate", "type": "calculated", "format": "currency", "decimals": 2, "formula": "rates.meal_first_day" },
+          { "key": "meal_first_people", "label": "Meals, first day: persons", "type": "number", "min": 0, "decimals": 0,
+            "rules": [ { "check": "meal_first_people = 0 || rates.meal_first_day > 0", "message": "The first-day meal rate has not been set yet. Please ask an administrator." } ] },
           { "key": "meal_first", "label": "Meals, first day", "type": "calculated", "format": "currency", "decimals": 2, "formula": "ROUND(meal_first_rate * meal_first_people, 2)" },
-          { "key": "meal_days", "label": "Meals, full days: number of days", "type": "number", "min": 0, "decimals": 0 },
-          { "key": "meal_day_rate", "label": "Meals, full days: rate per day", "type": "currency", "min": 0 },
+          { "key": "meal_days", "label": "Meals, full days: number of days", "type": "number", "min": 0, "decimals": 0,
+            "rules": [ { "check": "meal_days = 0 || rates.meal_full_day > 0", "message": "The full-day meal rate has not been set yet. Please ask an administrator." } ] },
+          { "key": "meal_day_rate", "label": "Meals, full days: rate per day", "type": "calculated", "format": "currency", "decimals": 2, "formula": "rates.meal_full_day" },
           { "key": "meal_day_people", "label": "Meals, full days: persons", "type": "number", "min": 1, "decimals": 0, "default": "1" },
           { "key": "meal_full", "label": "Meals, full days", "type": "calculated", "format": "currency", "decimals": 2, "formula": "ROUND(meal_days * meal_day_rate * meal_day_people, 2)" },
-          { "key": "meal_last_rate", "label": "Meals, last day: rate", "type": "currency", "min": 0 },
-          { "key": "meal_last_people", "label": "Meals, last day: persons", "type": "number", "min": 1, "decimals": 0, "default": "1" },
+          { "key": "meal_last_rate", "label": "Meals, last day: rate", "type": "calculated", "format": "currency", "decimals": 2, "formula": "rates.meal_last_day" },
+          { "key": "meal_last_people", "label": "Meals, last day: persons", "type": "number", "min": 0, "decimals": 0,
+            "rules": [ { "check": "meal_last_people = 0 || rates.meal_last_day > 0", "message": "The last-day meal rate has not been set yet. Please ask an administrator." } ] },
           { "key": "meal_last", "label": "Meals, last day", "type": "calculated", "format": "currency", "decimals": 2, "formula": "ROUND(meal_last_rate * meal_last_people, 2)" },
           { "key": "lodging_nights", "label": "Lodging: nights", "type": "number", "min": 0, "decimals": 0 },
           { "key": "lodging_rate", "label": "Lodging: rate per night", "type": "currency", "min": 0 },
@@ -356,36 +373,61 @@ public static class SeedData
           { "id": "program", "type": "approval_chain", "label": "Program approval: Principal/Department Head", "x": 290, "y": 150,
             "config": { "departmentSource": "field", "departmentField": "department",
               "instructions": "{{employee_name}} requests approval to attend “{{event_title}}”, {{TEXT(from_date, 'MMM d, yyyy')}} to {{TEXT(to_date, 'MMM d, yyyy')}}.\nLocation: {{location}}\nTotal estimated expenses: {{TEXT(total, 'C2')}} (paid by {{JOIN(paid_by, ', ')}})\n\nReasons for attending:\n{{reason_a}}\n{{reason_b}}\n{{reason_c}}" } },
-          { "id": "central", "type": "approval", "label": "Program approval: Central Office Administrator", "x": 290, "y": 300,
-            "config": { "approvers": "", "role": "central", "instructions": "{{employee_name}}: “{{event_title}}”, {{TEXT(from_date, 'MMM d, yyyy')}} to {{TEXT(to_date, 'MMM d, yyyy')}}.\nTotal estimated expenses: {{TEXT(total, 'C2')}}" } },
-          { "id": "business", "type": "approval", "label": "Business Office approval", "x": 290, "y": 450,
-            "config": { "approvers": "", "role": "business", "instructions": "{{employee_name}}: “{{event_title}}”.\nBudget account: {{budget_account}}   PO #: {{po_number}}\nTotal estimated expenses: {{TEXT(total, 'C2')}} (paid by {{JOIN(paid_by, ', ')}})" } },
-          { "id": "superintendent", "type": "approval", "label": "Superintendent approval", "x": 290, "y": 600,
-            "config": { "approvers": "", "role": "superintendent", "instructions": "{{employee_name}}: “{{event_title}}”, {{TEXT(from_date, 'MMM d, yyyy')}} to {{TEXT(to_date, 'MMM d, yyyy')}}.\nTotal estimated expenses: {{TEXT(total, 'C2')}}" } },
-          { "id": "needs_board", "type": "condition", "label": "$150 or more?", "x": 290, "y": 750, "config": { "expression": "total >= 150" } },
-          { "id": "board", "type": "approval", "label": "Board of Education approval", "x": 30, "y": 890,
-            "config": { "approvers": "", "role": "board", "remindDays": "0",
-              "instructions": "This travel costs {{TEXT(total, 'C2')}}, so it needs Board of Education approval.\nApprove here once the Board has approved it, and put the Board approval date in the comment." } },
-          { "id": "tell", "type": "notify", "label": "Tell the employee", "x": 290, "y": 1040,
+          { "id": "which_central", "type": "condition", "label": "Technical Schools?", "x": 290, "y": 300, "config": { "expression": "district == 'Bergen County Technical Schools'" } },
+          { "id": "central_tech", "type": "approval", "label": "Central Office Administrator (Technical Schools)", "x": 30, "y": 440,
+            "config": { "approvers": "", "role": "central_tech", "instructions": "{{employee_name}}: “{{event_title}}”, {{TEXT(from_date, 'MMM d, yyyy')}} to {{TEXT(to_date, 'MMM d, yyyy')}}.\nTotal estimated expenses: {{TEXT(total, 'C2')}}" } },
+          { "id": "central_special", "type": "approval", "label": "Central Office Administrator (Special Services)", "x": 550, "y": 440,
+            "config": { "approvers": "", "role": "central_special", "instructions": "{{employee_name}}: “{{event_title}}”, {{TEXT(from_date, 'MMM d, yyyy')}} to {{TEXT(to_date, 'MMM d, yyyy')}}.\nTotal estimated expenses: {{TEXT(total, 'C2')}}" } },
+          { "id": "business", "type": "approval", "label": "Business Administrator approval", "x": 290, "y": 590,
+            "config": { "approvers": "", "role": "business", "instructions": "{{employee_name}} ({{district}}): “{{event_title}}”.\nBudget account: {{budget_account}}   PO #: {{po_number}}\nTotal estimated expenses: {{TEXT(total, 'C2')}} (paid by {{JOIN(paid_by, ', ')}})" } },
+          { "id": "superintendent", "type": "approval", "label": "Superintendent approval", "x": 290, "y": 740,
+            "config": { "approvers": "", "role": "superintendent", "instructions": "{{employee_name}} ({{district}}): “{{event_title}}”, {{TEXT(from_date, 'MMM d, yyyy')}} to {{TEXT(to_date, 'MMM d, yyyy')}}.\nTotal estimated expenses: {{TEXT(total, 'C2')}}" } },
+          { "id": "ticket", "type": "fs_create_ticket", "label": "Open the business office ticket", "x": 290, "y": 890,
+            "config": {
+              "subject": "Work related travel: {{employee_name}} — {{event_title}} ({{TEXT(total, 'C2')}})",
+              "description": "Approved by the administrators in SchoolFlow.\n\nDistrict: {{district}}\nEmployee: {{employee_name}} ({{submitter.email}})\nSchool/Department: {{department.name}}\nMeeting/Conference: {{event_title}}\nLocation: {{location}}\nFrom: {{TEXT(from_date, 'ddd, MMM d, yyyy')}} {{from_time}}\nTo: {{TEXT(to_date, 'ddd, MMM d, yyyy')}} {{to_time}}\nCost to be paid by: {{JOIN(paid_by, ', ')}} {{sponsor_name}}\nOther staff attending: {{other_staff}}\nBudget Acct. #: {{budget_account}}\nPO #: {{po_number}}\n\nTotal estimated expenses: {{TEXT(total, 'C2')}}\nBoard of Education approval required: {{IF(total >= 150, 'YES — record the Board approval date on this ticket, then resolve it', 'No')}}\n\nReasons for attending:\n{{reason_a}}\n{{reason_b}}\n{{reason_c}}",
+              "priority": "2", "status": "2", "tags": "work-travel", "attachFiles": "true" } },
+          { "id": "which_office", "type": "condition", "label": "Technical Schools?", "x": 290, "y": 1040, "config": { "expression": "district == 'Bergen County Technical Schools'" } },
+          { "id": "office_tech", "type": "notify", "label": "Tell the business office (Technical Schools)", "x": 30, "y": 1180,
+            "config": { "to": "", "role": "office_tech", "subject": "Travel request to process: {{employee_name}} — {{event_title}}",
+              "message": "A work related travel request has been approved by the administrators.\nTotal estimated expenses: {{TEXT(total, 'C2')}}\nHelp desk ticket: #{{ticket.id}}\n{{IF(total >= 150, 'Board of Education approval is required. Record the approval date on the ticket and resolve it when the Board has approved.', 'Board of Education approval is not required (under $150).')}}" } },
+          { "id": "office_special", "type": "notify", "label": "Tell the business office (Special Services)", "x": 550, "y": 1180,
+            "config": { "to": "", "role": "office_special", "subject": "Travel request to process: {{employee_name}} — {{event_title}}",
+              "message": "A work related travel request has been approved by the administrators.\nTotal estimated expenses: {{TEXT(total, 'C2')}}\nHelp desk ticket: #{{ticket.id}}\n{{IF(total >= 150, 'Board of Education approval is required. Record the approval date on the ticket and resolve it when the Board has approved.', 'Board of Education approval is not required (under $150).')}}" } },
+          { "id": "needs_board", "type": "condition", "label": "$150 or more?", "x": 290, "y": 1330, "config": { "expression": "total >= 150" } },
+          { "id": "tell_pending", "type": "notify", "label": "Tell the employee: waiting for the Board", "x": 30, "y": 1470,
+            "config": { "to": "{{submitter.email}}", "subject": "Travel approved by administrators — Board approval still needed: {{event_title}}",
+              "message": "Your request has been approved by the administrators. Because it costs $150 or more it still needs Board of Education approval, which the business office is handling on help desk ticket #{{ticket.id}}.\n\nPlease do not make travel arrangements or register until you are told the Board has approved." } },
+          { "id": "wait_board", "type": "wait_ticket", "label": "Wait for Board approval (ticket resolved)", "x": 30, "y": 1620, "config": { "until": "ticket.status >= 4" } },
+          { "id": "tell", "type": "notify", "label": "Tell the employee", "x": 290, "y": 1770,
             "config": { "to": "{{submitter.email}}", "subject": "Travel approved: {{event_title}}",
               "message": "All approvals have been received for “{{event_title}}”. Travel arrangements, including registrations, may now be made.\n\nOn your return, file a Professional Development Report with your reimbursement claim, and reconcile the cost worksheet with the Business Office within 3 weeks of the travel, with original itemized receipts." } },
-          { "id": "done", "type": "end", "label": "Travel approved", "x": 290, "y": 1180 },
-          { "id": "declined", "type": "end", "label": "Travel not approved", "x": 580, "y": 600, "config": { "outcome": "rejected" } }
+          { "id": "done", "type": "end", "label": "Travel approved", "x": 290, "y": 1910 },
+          { "id": "declined", "type": "end", "label": "Travel not approved", "x": 760, "y": 740, "config": { "outcome": "rejected" } }
         ],
         "edges": [
           { "from": "start", "port": "next", "to": "program" },
-          { "from": "program", "port": "approved", "to": "central" },
+          { "from": "program", "port": "approved", "to": "which_central" },
           { "from": "program", "port": "rejected", "to": "declined" },
-          { "from": "central", "port": "approved", "to": "business" },
-          { "from": "central", "port": "rejected", "to": "declined" },
+          { "from": "which_central", "port": "true", "to": "central_tech" },
+          { "from": "which_central", "port": "false", "to": "central_special" },
+          { "from": "central_tech", "port": "approved", "to": "business" },
+          { "from": "central_tech", "port": "rejected", "to": "declined" },
+          { "from": "central_special", "port": "approved", "to": "business" },
+          { "from": "central_special", "port": "rejected", "to": "declined" },
           { "from": "business", "port": "approved", "to": "superintendent" },
           { "from": "business", "port": "rejected", "to": "declined" },
-          { "from": "superintendent", "port": "approved", "to": "needs_board" },
+          { "from": "superintendent", "port": "approved", "to": "ticket" },
           { "from": "superintendent", "port": "rejected", "to": "declined" },
-          { "from": "needs_board", "port": "true", "to": "board" },
+          { "from": "ticket", "port": "next", "to": "which_office" },
+          { "from": "which_office", "port": "true", "to": "office_tech" },
+          { "from": "which_office", "port": "false", "to": "office_special" },
+          { "from": "office_tech", "port": "next", "to": "needs_board" },
+          { "from": "office_special", "port": "next", "to": "needs_board" },
+          { "from": "needs_board", "port": "true", "to": "tell_pending" },
           { "from": "needs_board", "port": "false", "to": "tell" },
-          { "from": "board", "port": "approved", "to": "tell" },
-          { "from": "board", "port": "rejected", "to": "declined" },
+          { "from": "tell_pending", "port": "next", "to": "wait_board" },
+          { "from": "wait_board", "port": "next", "to": "tell" },
           { "from": "tell", "port": "next", "to": "done" }
         ]
       }

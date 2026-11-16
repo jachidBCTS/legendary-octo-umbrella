@@ -96,10 +96,11 @@ public sealed class FormsController : ControllerBase
         return new JsonResult(new { ok = result.Ok, runId = result.Ok ? request.RunId : (int?)null, error = result.Ok ? null : result.Error, state = Shape(form) }, Json.Options);
     }
 
-    private Dictionary<string, object?> Ambient()
+    private async Task<Dictionary<string, object?>> AmbientAsync(CancellationToken ct)
     {
         var ambient = Values.NewDict();
         ambient["submitter"] = RunService.SubmitterRecord(User.Email(), User.DisplayName());
+        ambient["rates"] = await _calendar.RatesAsync(ct);
         return ambient;
     }
 
@@ -141,7 +142,7 @@ public sealed class FormsController : ControllerBase
             if (workflow is null) return NotFound();
             form = Json.ParseDefinition(workflow.PublishedJson!).Form;
         }
-        var result = FormEvaluator.Evaluate(form, Json.ToValues(request.Values), Ambient(), applyDefaults: request.Init,
+        var result = FormEvaluator.Evaluate(form, Json.ToValues(request.Values), await AmbientAsync(ct), applyDefaults: request.Init,
             departments: await _runs.ActiveDepartmentsAsync(ct), locations: await _runs.ActiveLocationsAsync(ct),
             // In the builder's preview there is no real form to upload to, so files are taken as given.
             attachments: usableFiles ?? (request.Definition is not null ? null : await _attachments.PendingForAsync(User.Email(), request.WorkflowId, ct)),

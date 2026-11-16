@@ -186,6 +186,24 @@ public sealed class SchoolCalendar
 
     public void Invalidate() => _cache.Remove(CacheKey);
 
+    /// <summary>
+    /// The admin-kept rates as a record for formulas (<c>rates.mileage</c>). It lives here because it is
+    /// the same kind of thing as the closed days: school-wide reference data that forms calculate with.
+    /// </summary>
+    public async Task<Dictionary<string, object?>> RatesAsync(CancellationToken ct = default)
+    {
+        var rows = (await _cache.GetOrCreateAsync("rates", async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(60);
+            return await _db.Rates.AsNoTracking().Select(r => new KeyValuePair<string, decimal>(r.Key, r.Value)).ToListAsync(ct);
+        }))!;
+        var record = SchoolFlow.Core.Expressions.Values.NewDict();
+        foreach (var (key, value) in rows) record[key] = value;
+        return record;
+    }
+
+    public void InvalidateRates() => _cache.Remove("rates");
+
     /// <summary>School days that have passed going from one moment to another (the starting day is not counted).</summary>
     public async Task<int> SchoolDaysBetweenAsync(DateTime from, DateTime to, CancellationToken ct = default) =>
         SchoolDaysBetween(from, to, await ClosedDaysAsync(ct));
