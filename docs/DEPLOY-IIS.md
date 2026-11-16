@@ -172,6 +172,17 @@ icacls C:\inetpub\SchoolFlow\appsettings.Production.json /inheritance:r /grant "
 11. Review the starter workflows (Builder → Workflows). Switch off or delete the ones you do not want
     staff to see, and add owners to the ones you keep (they start with none, so only admins can
     manage them).
+12. **Work Related Travel form.** It arrives as a draft, because it needs your people and amounts:
+    - Admin → Rates: enter the mileage rate and the three meal rates (they start at 0, and the form
+      refuses to cost mileage or meals until they are set).
+    - Admin → Departments: each school/department with its Principal or Department Head as final
+      approver (step 8). That person is the first approval on a travel request.
+    - Workflows → *Request for Work Related Travel* → **Flow**: click each step the checker lists
+      (the two Central Office Administrators, the Business Administrator, the Superintendent, and
+      the two business-office notifications) and enter the email address. Then **Publish**.
+    - Submit one request of $150 or more as a test. After the approvals a ticket should appear in
+      Freshservice; resolving that ticket is what tells the employee the Board has approved, so
+      the webhook (step 9) must be working first.
 
 ### What is deleted automatically
 
