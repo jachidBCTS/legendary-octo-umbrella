@@ -140,8 +140,15 @@ On the server, copy `appsettings.Production.example.json` (in the package) to
 This file contains secrets. Restrict it to administrators and the app pool account:
 
 ```powershell
-icacls C:\inetpub\SchoolFlow\appsettings.Production.json /inheritance:r /grant "Administrators:F" "SYSTEM:F" "IIS AppPool\SchoolFlow:R"
+# Grant first and look at the output; only then remove the inherited permissions. Doing both in one
+# command can leave the file with no permissions at all if a name is not recognised, and the site
+# then fails to start with "Access to the path ... appsettings.Production.json is denied".
+icacls C:\inetpub\SchoolFlow\appsettings.Production.json /grant "Administrators:F" "SYSTEM:F" "IIS AppPool\SchoolFlow:R"
+icacls C:\inetpub\SchoolFlow\appsettings.Production.json /inheritance:r
+icacls C:\inetpub\SchoolFlow\appsettings.Production.json      # should list those three and nothing else
 ```
+
+If the site cannot read the file, `icacls <file> /reset` puts the normal inherited permissions back.
 
 ## 7. First start — check each of these in order
 
