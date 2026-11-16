@@ -39,6 +39,7 @@ front-end dependencies.
 | Opening and closing dates | A form can be set to open on one date and close after another (for example, field trip requests for a term). Outside those dates it says when it opens or that it has closed |
 | Version history | Every published version is kept (the latest 50). Any of them can be restored as the draft and published again |
 | Export / import | A workflow can be downloaded as a file and imported as a new draft — as a backup, or to share between schools |
+| Retention | Finished requests and their files are deleted automatically 7 years after their last activity; requests still in progress never are. The audit log is kept forever and records each clean-up |
 | Safety | Draft vs. published versions; a request always finishes on the version it started with; publishing is blocked while the checker finds problems |
 
 Formulas are evaluated **on the server only**. The browser sends the current answers and gets back
@@ -93,6 +94,7 @@ Settings come from `appsettings.json`, `appsettings.Production.json` or environm
 | `Email:BaseUrl` | Public address of this site, used for links in emails, e.g. `https://flow.yourschool.org` |
 | `Attachments:Path` | Folder for uploaded files. Default: `App_Data/uploads` inside the site folder |
 | `Attachments:MaxFileMb` | Largest single file, in MB (default 10, at most 25) |
+| `Retention:Years` | Years a finished request and its files are kept after its last activity (default 7; `0` keeps everything). The audit log is always kept |
 | `Freshservice:Domain` | e.g. `yourschool` or `yourschool.freshservice.com` |
 | `Freshservice:ApiKey` | API key of the Freshservice agent account SchoolFlow acts as |
 | `Freshservice:WebhookSecret` | 16+ random characters; enables the ticket-event webhook |

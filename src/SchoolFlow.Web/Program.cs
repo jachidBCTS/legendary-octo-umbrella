@@ -122,6 +122,8 @@ Directory.CreateDirectory(attachmentSettings.Folder); // fail at start-up, not o
 builder.Services.AddSingleton(attachmentSettings);
 builder.Services.AddScoped<AttachmentService>();
 builder.Services.AddHostedService<AttachmentCleanupWorker>();
+builder.Services.AddScoped<RetentionService>();
+builder.Services.AddHostedService<RetentionWorker>();
 
 builder.Services.AddScoped<RunService>();
 builder.Services.AddRazorPages(options =>

@@ -754,6 +754,73 @@ public sealed class RunServiceTests : IDisposable
         }
     }
 
+    // ---- retention -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task Retention_DeletesFinishedRequestsAfterSevenYears_ButNeverOpenOnes_OrTheAuditLog()
+    {
+        var now = new DateTime(2034, 6, 1, 3, 0, 0, DateTimeKind.Utc);
+        var oldDone = await SubmitTripAsync("Science");
+        var oldWaiting = await SubmitTripAsync("Science");
+        var recentDone = await SubmitTripAsync("Science");
+        await DecideAsync(oldDone, "principal@example.org");
+        await DecideAsync(recentDone, "principal@example.org");
+        Directory.CreateDirectory(_uploads);
+        var oldFile = Path.Combine(_uploads, "old.bin");
+        var keptFile = Path.Combine(_uploads, "kept.bin");
+        await File.WriteAllTextAsync(oldFile, "x");
+        await File.WriteAllTextAsync(keptFile, "x");
+        await using (var db = Db())
+        {
+            (await db.Runs.SingleAsync(r => r.Id == oldDone)).UpdatedAt = now.AddYears(-7).AddDays(-1);
+            (await db.Runs.SingleAsync(r => r.Id == oldWaiting)).UpdatedAt = now.AddYears(-9);     // still waiting for approval
+            (await db.Runs.SingleAsync(r => r.Id == recentDone)).UpdatedAt = now.AddYears(-7).AddDays(1);
+            db.Attachments.Add(new Attachment { PublicId = "old", StoredName = "old.bin", FileName = "a.pdf", RunId = oldDone, OwnerEmail = "t@school.org", CreatedAt = now.AddYears(-8) });
+            db.Attachments.Add(new Attachment { PublicId = "kept", StoredName = "kept.bin", FileName = "b.pdf", RunId = recentDone, OwnerEmail = "t@school.org", CreatedAt = now.AddYears(-8) });
+            db.RunComments.Add(new RunComment { RunId = oldDone, AuthorEmail = "t@school.org", AuthorName = "T", Body = "old", CreatedAt = now.AddYears(-8) });
+            foreach (var n in await db.Notifications.ToListAsync()) n.CreatedAt = now.AddYears(-8);
+            db.Notifications.Add(new Notification { UserEmail = "t@school.org", Title = "Recent", CreatedAt = now.AddDays(-3) });
+            db.FormDrafts.Add(new FormDraft { WorkflowId = 4, OwnerEmail = "t@school.org", CreatedAt = now.AddYears(-8), UpdatedAt = now.AddYears(-8) });
+            db.FormDrafts.Add(new FormDraft { WorkflowId = 4, OwnerEmail = "t@school.org", CreatedAt = now.AddYears(-8), UpdatedAt = now.AddDays(-1) });
+            db.AuditEntries.Add(new AuditEntry { At = now.AddYears(-30), Action = "role.changed", Target = "Someone" });
+            await db.SaveChangesAsync();
+        }
+        RetentionService Retention(AppDbContext db, string? years = null) => new(db, Files(db),
+            new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Retention:Years"] = years }).Build());
+
+        await using (var db = Db())
+        {
+            Assert.Equal(7, Retention(db).Years);                                   // the default is the owner's policy
+            Assert.False((await Retention(db, "0").PurgeAsync(now, default)).Any);  // 0 = keep everything
+            Assert.Equal(3, await db.Runs.CountAsync());
+
+            var result = await Retention(db).PurgeAsync(now, default);
+            Assert.Equal((1, 1, 1), (result.Requests, result.Files, result.Drafts));
+            Assert.True(result.Notifications > 0);
+        }
+        await using (var db = Db())
+        {
+            Assert.Equal(new[] { oldWaiting, recentDone }, await db.Runs.OrderBy(r => r.Id).Select(r => r.Id).ToArrayAsync());
+            Assert.Equal(0, await db.RunEvents.CountAsync(e => e.RunId == oldDone));
+            Assert.Equal(0, await db.ApprovalTasks.CountAsync(t => t.RunId == oldDone));
+            Assert.Equal(0, await db.RunComments.CountAsync());
+            Assert.True(await db.RunEvents.AnyAsync(e => e.RunId == recentDone));
+            Assert.True(await db.ApprovalTasks.AnyAsync(t => t.RunId == oldWaiting && t.Status == ApprovalStatus.Pending));
+            Assert.Equal("kept", (await db.Attachments.SingleAsync()).PublicId);
+            Assert.False(File.Exists(oldFile));
+            Assert.True(File.Exists(keptFile));
+            Assert.Equal("Recent", (await db.Notifications.SingleAsync()).Title);
+            Assert.Equal(1, await db.FormDrafts.CountAsync());
+
+            var audit = await db.AuditEntries.OrderBy(a => a.At).ToListAsync();
+            Assert.Equal(new[] { "role.changed", "retention.purged" }, audit.Select(a => a.Action).ToArray());   // 30-year-old entry is still there
+            Assert.Contains("Deleted 1 request(s) and 1 file(s)", audit[1].Detail);
+
+            Assert.False((await Retention(db).PurgeAsync(now, default)).Any);       // nothing left to do, and no empty audit entry
+            Assert.Equal(2, await db.AuditEntries.CountAsync());
+        }
+    }
+
     // ---- export --------------------------------------------------------------------------
 
     [Fact]

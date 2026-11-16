@@ -86,6 +86,22 @@
     }
 </section>
 
+<section class="panel" id="retention">
+    <h2>How long things are kept</h2>
+    @{ var keepYears = HttpContext.RequestServices.GetRequiredService<RetentionService>().Years; }
+    @if (keepYears > 0)
+    {
+        <p>Requests and their uploaded files are deleted automatically <strong>@keepYears year@(keepYears == 1 ? "" : "s")</strong> after their last activity, along with their history, approvals and discussion. Notifications and unfinished drafts of that age go too.</p>
+        <p class="muted small">A request that is still in progress is never deleted. Deletion is permanent, runs once a day, and each run is recorded in the audit log. Copies in database or server backups are not affected.</p>
+    }
+    else
+    {
+        <p>Automatic deletion is switched off: requests and files are kept until someone removes them.</p>
+    }
+    <p>The <a href="/Admin/Audit">audit log</a> is kept forever.</p>
+    <p class="muted small">The period is the <code>Retention:Years</code> setting on the server.</p>
+</section>
+
 <section class="panel" id="groups">
     <h2>Microsoft Entra groups</h2>
     <p class="muted">Register the Entra security groups SchoolFlow should know about. A group can <strong>grant a role</strong> to its members,

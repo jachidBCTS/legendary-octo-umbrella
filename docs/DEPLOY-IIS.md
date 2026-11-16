@@ -173,6 +173,14 @@ icacls C:\inetpub\SchoolFlow\appsettings.Production.json /inheritance:r /grant "
     staff to see, and add owners to the ones you keep (they start with none, so only admins can
     manage them).
 
+### What is deleted automatically
+
+Once a day SchoolFlow deletes requests that finished and have had no activity for 7 years, with
+their uploaded files, history, approvals and discussion (`Retention:Years` in the settings file;
+`0` switches it off). Requests still in progress are never deleted and the audit log is kept
+forever. This does not reach into your SQL Server or file backups: if the 7-year rule must hold
+there too, set the backup retention to match.
+
 ### Background work — keep the site running
 
 SchoolFlow sends email, approval reminders and escalations, and checks Freshservice for missed

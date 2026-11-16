@@ -228,6 +228,12 @@ public sealed class AttachmentService : IAttachmentStore
         return removed;
     }
 
+    /// <summary>Removes the stored files of attachments whose rows have already been deleted.</summary>
+    public void DeleteFiles(IEnumerable<Attachment> attachments)
+    {
+        foreach (var attachment in attachments) TryDelete(PathOf(attachment));
+    }
+
     private void TryDelete(string path)
     {
         try { File.Delete(path); }

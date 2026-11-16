@@ -119,6 +119,12 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   `POST api/builder/{id}/versions/{n}/restore` copies it into `DraftJson` only. Export/import are
   page handlers on `Pages/Builder/Index` (`?handler=Export`, `Import`); an import is always a new
   draft owned by the importer, never published.
+- **Retention** (owner's decision: requests and files 7 years, audit log forever):
+  `RetentionService.PurgeAsync`, run daily by `RetentionWorker`. Deletes runs that are
+  Completed/Rejected/Cancelled/Failed and untouched (`UpdatedAt`) for `Retention:Years` (default 7,
+  0 = off) with their events, approval tasks, comments, attachment rows and files; also
+  notifications and drafts of that age. Never deletes a run still in progress, never touches
+  `AuditEntries`, and writes a `retention.purged` audit entry. Database rows go before files.
 - **Freshservice**: `IFreshserviceClient` has a live client and `SimulatedFreshserviceClient`
   (used when no domain/API key is configured; timeline entries are prefixed `[Simulated]`).
 - **Permissions** (owner: staff only sign in; admins keep the ability to approve on someone's
@@ -193,7 +199,6 @@ Known gaps (not requested yet, worth raising):
 - The owner has Entra groups but did not have their IDs to hand; none are registered yet.
 - Reminders, escalation and the missed-ticket check run inside the web process: the IIS app pool
   must be AlwaysRunning (see the deploy guide) or they are late.
-- No retention policy (how long requests, files and the audit log are kept) — the owner must choose the periods.
 - No student/staff picker field — waiting on the SQL Server data.
 - Departments cannot be deleted (only switched off); chain templates in use by a workflow cannot
   be deleted.
