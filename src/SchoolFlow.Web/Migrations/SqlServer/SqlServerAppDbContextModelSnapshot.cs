@@ -801,6 +801,40 @@ namespace SchoolFlow.Web.Migrations.SqlServer
 
                     b.ToTable("Runs");
                 });
+
+            modelBuilder.Entity("SchoolFlow.Web.Data.WorkflowVersion", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Json")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("PublishedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PublishedBy")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int");
+
+                    b.Property<int>("WorkflowId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkflowId", "Version")
+                        .IsUnique();
+
+                    b.ToTable("WorkflowVersions");
+                });
 #pragma warning restore 612, 618
         }
     }

@@ -577,3 +577,20 @@ body.wide .sim-banner { display: none; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* ---- import, multi-page forms, signature ---- */
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.import-form { display: inline-flex; }
+.import-form:focus-within .btn { outline: 2px solid var(--brand); outline-offset: 2px; }
+.sf-off-page { display: none !important; }
+.sf-steps { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 16px; padding: 0; list-style: none; }
+.sf-steps li { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 99px; background: var(--line-2); color: var(--muted); font-size: 13.5px; font-weight: 600; }
+.sf-steps li span { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: #fff; font-size: 12px; }
+.sf-steps li.on { background: var(--brand); color: #fff; }
+.sf-steps li.on span { color: var(--brand); }
+.sf-steps li.done { color: var(--ink); }
+.sf-page-title h3 { font-size: 18px; margin: 0; }
+.sf-form input.sf-signature { font-family: "Segoe Script", "Brush Script MT", "Snell Roundhand", cursive; font-size: 20px; }
+.version-list { list-style: none; margin: 0 0 8px; padding: 0; }
+.version-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.version-list li:last-child { border-bottom: 0; }

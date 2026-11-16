@@ -11,8 +11,8 @@ public static class FormCopy
     /// <summary>Calculated fields are recomputed, headings have no value, and builders can exclude fields.</summary>
     public static bool IsCopyable(FieldDef field) =>
         field.NoCopy != true && !string.IsNullOrWhiteSpace(field.Key)
-        // Files belong to the request they were uploaded for; a copy starts without them.
-        && field.Type is not (FieldTypes.Section or FieldTypes.Calculated or FieldTypes.Attachments);
+        // Files belong to the request they were uploaded for, and a signature to the person who gave it.
+        && !FieldTypes.IsLayout(field.Type) && field.Type is not (FieldTypes.Calculated or FieldTypes.Attachments or FieldTypes.Signature);
 
     /// <summary>
     /// The answers from <paramref name="previous"/> that the current form still has and allows copying.

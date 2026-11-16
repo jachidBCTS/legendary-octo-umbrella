@@ -866,6 +866,119 @@ async function login(page, email) {
   }
   await page.setViewportSize({ width: 1360, height: 900 });
 
+  note('13c. import/export, pages, new field types, opening dates, version history');
+  await login(page, 'admin@example.org');
+  await page.goto(base + '/Builder');
+  const outing = {
+    schoolflow: 1, name: 'Staff Outing', description: 'Sign up for the staff outing', category: 'Staff', color: 'teal',
+    definition: {
+      trigger: { type: 'form' },
+      form: { fields: [
+        { key: 'event_name', label: 'Which outing?', type: 'text', required: true },
+        { key: 'p2', label: 'Timing', type: 'page' },
+        { key: 'leave', label: 'Leaving at', type: 'time', required: true },
+        { key: 'mobile', label: 'Mobile number', type: 'phone' },
+        { key: 'p3', label: 'Sign', type: 'page' },
+        { key: 'sign', label: 'Signature', type: 'signature', required: true },
+      ] },
+      flow: { nodes: [{ id: 'start', type: 'start', label: 'Form submitted', x: 150, y: 40 }, { id: 'end', type: 'end', label: 'Done', x: 150, y: 320 }], edges: [{ from: 'start', to: 'end' }] },
+    },
+  };
+  fs.writeFileSync(S + '/outing.schoolflow.json', JSON.stringify(outing));
+  fs.writeFileSync(S + '/not-a-workflow.json', JSON.stringify({ hello: 'world' }));
+  await page.setInputFiles('#import-file', S + '/not-a-workflow.json');
+  await page.waitForSelector('.flash.bad');
+  check((await page.locator('.flash.bad').textContent()).includes('not a SchoolFlow workflow file'), 'a file that is not a workflow is refused');
+  await page.setInputFiles('#import-file', S + '/outing.schoolflow.json');
+  await page.waitForURL(/Builder\/Edit\/\d+/);
+  const outingId = Number(page.url().split('/').pop());
+  await page.waitForSelector('.bld-title');
+  check((await page.locator('.bld-title').textContent()).includes('Staff Outing') && (await page.locator('.bld-title').textContent()).includes('Draft'), 'an imported workflow arrives as a draft');
+  check(await page.locator('.fld-card').count() === 6, 'the imported form has its fields, including page breaks');
+  await page.screenshot({ path: S + '/shots/41-builder-pages.png', fullPage: true });
+  const publish = (change) => page.evaluate(async ([id, patch]) => {
+    const w = await window.SF.api('GET', '/api/builder/' + id);
+    Object.assign(w.definition.form, patch);
+    return window.SF.api('POST', '/api/builder/' + id + '/publish', { name: w.name, description: w.description, category: w.category, color: w.color, definition: w.definition });
+  }, [outingId, change]);
+  const v1 = await publish({});
+  check(v1.ok === true && v1.publishedVersion === 1, 'the imported workflow passes the checker and publishes (' + JSON.stringify(v1).slice(0, 200) + ')');
+
+  await login(page, 'teacher@example.org');
+  await page.goto(base + '/Start/' + outingId);
+  await page.waitForSelector('.sf-form');
+  check(await page.locator('.sf-steps li').count() === 3, 'a form with page breaks shows three steps');
+  check(await field('Leaving at').isHidden() && await page.locator('.sf-form button[type=submit]').isHidden(), 'later pages and the submit button are hidden on page one');
+  await page.click('.sf-form button:has-text("Next")');
+  await page.waitForSelector('.sf-banner:not([hidden])');
+  check(await field('Leaving at').isHidden(), 'Next is refused while the page has a problem');
+  await field('Which outing?').locator('input').fill('Bowling night');
+  await page.click('.sf-form button:has-text("Next")');
+  await field('Leaving at').waitFor({ state: 'visible' });
+  await field('Leaving at').locator('input').fill('16:30');
+  await field('Mobile number').locator('input').fill('call me');
+  await page.click('.sf-form button:has-text("Next")');
+  await page.waitForSelector('.sf-banner:not([hidden])');
+  check((await field('Mobile number').locator('.sf-error').textContent()).includes('valid phone number'), 'a phone number is checked');
+  await field('Mobile number').locator('input').fill('(201) 555-0142');
+  await page.click('.sf-form button:has-text("Next")');
+  await field('Signature').waitFor({ state: 'visible' });
+  await page.click('.sf-form button:has-text("Back")');
+  check((await field('Leaving at').locator('input').inputValue()) === '16:30', 'Back keeps the answers');
+  await page.click('.sf-form button:has-text("Next")');
+  await field('Signature').waitFor({ state: 'visible' });
+  await page.click('.sf-form button[type=submit]');
+  await page.waitForSelector('.sf-banner:not([hidden])');
+  await field('Signature').locator('input').fill('Taylor Teacher');
+  await page.screenshot({ path: S + '/shots/42-pages-last.png', fullPage: true });
+  await page.click('.sf-form button[type=submit]');
+  await page.waitForURL(/Requests\/Detail\/\d+/);
+  const outingAnswers = await page.locator('.answers').textContent();
+  check(outingAnswers.includes('16:30') && outingAnswers.includes('(201) 555-0142') && outingAnswers.includes('Taylor Teacher') && !outingAnswers.includes('Timing'), 'time, phone and signature are stored; page breaks are not answers');
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.goto(base + '/Start/' + outingId);
+  await page.waitForSelector('.sf-steps li');
+  const pagesOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  check(pagesOverflow <= 0, 'no horizontal overflow on phone: multi-page form (' + pagesOverflow + ')');
+  await page.screenshot({ path: S + '/shots/43-mobile-pages.png', fullPage: true });
+  await page.setViewportSize({ width: 1360, height: 900 });
+  const teacherExport = await page.evaluate(async (id) => { const r = await fetch('/Builder?handler=Export&id=' + id); return r.url + ' ' + r.headers.get('content-type'); }, outingId);
+  check(teacherExport.includes('/Account/Denied') && !teacherExport.includes('json'), 'staff cannot export a workflow (' + teacherExport + ')');
+
+  await login(page, 'admin@example.org');
+  await page.goto(base + '/Builder/Edit/' + outingId);
+  await page.waitForSelector('.bld-title');
+  const v2 = await publish({ closesOn: new Date(Date.now() - 2 * 864e5).toISOString().slice(0, 10) });
+  check(v2.ok === true && v2.publishedVersion === 2, 'a closing date publishes as version 2');
+  const exported = await page.evaluate(async (id) => { const r = await fetch('/Builder?handler=Export&id=' + id); return { status: r.status, body: await r.json(), name: r.headers.get('content-disposition') }; }, outingId);
+  check(exported.status === 200 && exported.body.schoolflow === 1 && exported.body.definition.form.fields.length === 6 && /staff-outing\.schoolflow\.json/.test(exported.name), 'export downloads the workflow as a file');
+  await login(page, 'teacher@example.org');
+  check((await page.locator('.wf-card:has-text("Staff Outing")').textContent()).includes('closed on'), 'the home page says the form has closed');
+  await page.goto(base + '/Start/' + outingId);
+  check((await page.locator('.form-shell').textContent()).includes('This form closed on') && await page.locator('.sf-form').count() === 0, 'a closed form shows when it closed instead of the form');
+  const lateSubmit = await page.evaluate(async (id) => { try { await window.SF.api('POST', '/api/forms/submit', { workflowId: id, values: { event_name: 'x', leave: '10:00', sign: 'T T' } }); return 'accepted'; } catch (e) { return e.message; } }, outingId);
+  check(lateSubmit.includes('closed on'), 'a closed form refuses a submission sent anyway (' + lateSubmit + ')');
+
+  await login(page, 'admin@example.org');
+  await page.goto(base + '/Builder/Edit/' + outingId);
+  await page.waitForSelector('.bld-title');
+  await page.click('.bld-tabs button:has-text("Settings")');
+  await page.waitForSelector('.version-list li');
+  check(await page.locator('.version-list li').count() === 2 && (await page.locator('.version-list li').first().textContent()).includes('Live'), 'version history lists both versions and marks the live one');
+  await page.screenshot({ path: S + '/shots/44-versions.png', fullPage: true });
+  page.once('dialog', (d) => d.accept());
+  await page.locator('.version-list li:has-text("Version 1") button').click();
+  await page.waitForLoadState('load');
+  await page.waitForSelector('.bld-title .pill.warn');
+  check((await page.locator('.bld-title').textContent()).includes('unpublished changes'), 'restoring version 1 puts it back as a draft without changing what is live');
+  const v3 = await publish({});
+  check(v3.ok === true && v3.publishedVersion === 3, 'the restored version can be published again');
+  await page.goto(base + '/Start/' + outingId);
+  check(await page.locator('.sf-form').count() === 1, 'after rolling back, the form is open again');
+  await page.goto(base + '/Admin/Audit');
+  const audit3 = await page.locator('.table tbody').textContent();
+  check(audit3.includes('Workflow imported') && audit3.includes('Earlier version restored'), 'imports and restores are in the audit log');
+
   note('14. admin + help + mobile');
   await login(page, 'admin@example.org');
   await page.goto(base + '/Admin/Settings');

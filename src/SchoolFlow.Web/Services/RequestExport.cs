@@ -19,7 +19,7 @@ public static class RequestExport
             if (!forms.TryGetValue(run.DefinitionJson, out var form)) forms[run.DefinitionJson] = form = Json.ParseDefinition(run.DefinitionJson).Form;
             return form;
         }
-        static bool HasAnswer(FieldDef f) => f.Type != FieldTypes.Section && !string.IsNullOrWhiteSpace(f.Key);
+        static bool HasAnswer(FieldDef f) => !FieldTypes.IsLayout(f.Type) && !string.IsNullOrWhiteSpace(f.Key);
         static string Header(FieldDef f) => string.IsNullOrWhiteSpace(f.Label) ? f.Key : f.Label.Trim();
 
         var columns = new List<string>();

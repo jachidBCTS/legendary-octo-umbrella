@@ -14,7 +14,7 @@ front-end dependencies.
 
 | Area | Details |
 | --- | --- |
-| Form builder | 14 field types including repeating tables, Freshservice lookups and calculated fields; drag to reorder; half-width layout; live preview |
+| Form builder | 18 field types including time, phone number, typed signature, repeating tables, Freshservice lookups and calculated fields; drag to reorder; half-width layout; live preview |
 | Field logic | A spreadsheet-style formula language (about 60 functions) used for calculated fields, *show when*, *required when*, default values and validation rules. Formulas are checked as you type |
 | Flow builder | Drag-and-connect canvas: Decision, Approval, Create/Update ticket, Add note, Service request, Look up, Wait for ticket, Set value, End |
 | Freshservice | Creates and updates tickets, adds notes, places service catalog requests, looks up requesters/agents/departments/groups/locations/assets, and reacts to ticket events through a webhook |
@@ -35,6 +35,10 @@ front-end dependencies.
 | Reports and export | A Reports page (counts, time to finish, approvals waiting longest) for admins, workflow owners and department approvers; any request list can be downloaded as a spreadsheet (CSV) with one column per question |
 | Print | A clean printable / save-as-PDF record of a request with its answers, approvals, history and a signature line |
 | Missed ticket events | If Freshservice is connected, requests waiting on a ticket are also checked directly every 15 minutes, so a missed webhook does not leave a request stuck |
+| Multi-page forms | A *Page break* splits a long form into steps with Next / Back. Each page is checked before moving on |
+| Opening and closing dates | A form can be set to open on one date and close after another (for example, field trip requests for a term). Outside those dates it says when it opens or that it has closed |
+| Version history | Every published version is kept (the latest 50). Any of them can be restored as the draft and published again |
+| Export / import | A workflow can be downloaded as a file and imported as a new draft — as a backup, or to share between schools |
 | Safety | Draft vs. published versions; a request always finishes on the version it started with; publishing is blocked while the checker finds problems |
 
 Formulas are evaluated **on the server only**. The browser sends the current answers and gets back

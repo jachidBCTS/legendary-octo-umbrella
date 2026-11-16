@@ -28,6 +28,8 @@ public class AuditModel : PageModel
         "workflow.created" => "Workflow created",
         "workflow.published" => "Workflow published",
         "workflow.deleted" => "Workflow deleted",
+        "workflow.restored" => "Earlier version restored",
+        "workflow.imported" => "Workflow imported",
         "workflow.switched-on" => "Workflow switched on",
         "workflow.switched-off" => "Workflow switched off",
         "workflow.owners" => "Workflow owners changed",

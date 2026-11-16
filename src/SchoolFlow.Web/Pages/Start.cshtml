@@ -12,10 +12,17 @@
             @if (Model.Workflow.Description.Length > 0) { <p class="sub">@Model.Workflow.Description</p> }
         </div>
     </header>
-    <div id="draft-bar"></div>
-    <div id="copy-bar"></div>
-    <div id="form-root" data-workflow-id="@Model.Workflow.Id"></div>
-    <script type="application/json" id="form-definition">@Html.Raw(Model.FormJson)</script>
+    @if (Model.ClosedMessage is not null)
+    {
+        <div class="empty"><p><strong>@Model.ClosedMessage</strong></p><p class="muted">It is not taking requests at the moment.</p></div>
+    }
+    else
+    {
+        <div id="draft-bar"></div>
+        <div id="copy-bar"></div>
+        <div id="form-root" data-workflow-id="@Model.Workflow.Id"></div>
+        <script type="application/json" id="form-definition">@Html.Raw(Model.FormJson)</script>
+    }
 </div>
 @section Scripts {
     <script src="~/js/chain-editor.js" asp-append-version="true"></script>

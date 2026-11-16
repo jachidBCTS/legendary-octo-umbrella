@@ -107,7 +107,7 @@ public class DetailModel : PageModel
                     status, Values.ToText(step.GetValueOrDefault("rule"))));
             }
         }
-        foreach (var f in def.Form.Fields.Where(f => f.Type != FieldTypes.Section))
+        foreach (var f in def.Form.Fields.Where(f => !FieldTypes.IsLayout(f.Type)))
         {
             var value = context.GetValueOrDefault(f.Key);
             if (Values.IsBlank(value)) continue; // hidden or unanswered (an unticked box is "No", not blank)

@@ -96,10 +96,63 @@
     }
     const autosave = debounce(() => { if (draftSaved) saveDraft(true); }, 2500);
 
+    // ---- pages: a "page" field starts a new page; a form without one is a single page ----
+    const pageOf = {};
+    const pageTitles = [];
+    fields.forEach((field, i) => {
+      if (field.type === 'page' && i > 0) pageTitles.push(field.label || '');
+      else if (i === 0) pageTitles.push(field.type === 'page' ? field.label || '' : 'Start');
+      pageOf[field.key] = pageTitles.length - 1;
+    });
+    const pageCount = Math.max(1, pageTitles.length);
+    let page = 0;
+    const steps = h('ol', { class: 'sf-steps', hidden: pageCount < 2, 'aria-label': 'Pages of this form' });
+    const backButton = h('button', { type: 'button', class: 'btn lg', hidden: true, onclick: () => showPage(page - 1, true) }, 'Back');
+    const nextButton = h('button', { type: 'button', class: 'btn primary lg', hidden: true, onclick: () => nextPage() }, 'Next');
+
+    function showPage(n, scroll) {
+      page = Math.max(0, Math.min(pageCount - 1, n));
+      for (const field of fields) controls[field.key].wrap.classList.toggle('sf-off-page', pageOf[field.key] !== page);
+      if (pageCount < 2) return;
+      backButton.hidden = page === 0;
+      nextButton.hidden = page === pageCount - 1;
+      submitButton.hidden = page !== pageCount - 1;
+      steps.textContent = '';
+      pageTitles.forEach((title, i) => steps.appendChild(h('li', { class: i === page ? 'on' : i < page ? 'done' : '', 'aria-current': i === page ? 'step' : null },
+        h('span', null, String(i + 1)), title || 'Page ' + (i + 1))));
+      if (scroll) form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function firstErrorOn(onPage) {
+      for (const field of fields) {
+        if (onPage !== null && pageOf[field.key] !== onPage) continue;
+        const wrap = controls[field.key].wrap;
+        if (wrap.hidden) continue;
+        if (wrap.classList.contains('has-error') || wrap.querySelector('.sf-cell-error:not([hidden])')) return field;
+      }
+      return null;
+    }
+
+    /** Checks the current page with the server before moving on, so problems are fixed where they are. */
+    async function nextPage() {
+      fields.forEach((field) => { if (pageOf[field.key] === page) touched.add(field.key); });
+      scheduleEvaluate.cancel();
+      nextButton.disabled = true;
+      try { await evaluate(false); } finally { nextButton.disabled = false; }
+      const bad = firstErrorOn(page);
+      if (bad) {
+        setBanner('Please fix the highlighted fields before going on.');
+        controls[bad.key].wrap.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+      setBanner(null);
+      showPage(page + 1, true);
+    }
+
     const form = h('form', { class: 'sf-form', novalidate: true, onsubmit: onSubmit },
       definition.intro ? h('p', { class: 'sf-intro' }, definition.intro) : null,
-      banner, grid,
-      h('div', { class: 'sf-submit-row' }, submitButton, draftButton, busy, draftStatus,
+      steps, banner, grid,
+      h('div', { class: 'sf-submit-row' }, backButton, nextButton, submitButton, draftButton, busy, draftStatus,
         options.preview ? h('span', { class: 'muted' }, 'Preview — nothing is submitted.') : null));
     root.appendChild(form);
 
@@ -111,6 +164,7 @@
       controls[field.key] = control;
       grid.appendChild(control.wrap);
     }
+    showPage(0, false);
 
     const scheduleEvaluate = debounce(() => evaluate(false), 220);
 
@@ -165,6 +219,7 @@
     async function onSubmit(event) {
       event.preventDefault();
       if (submitting) return;
+      if (page < pageCount - 1) { nextPage(); return; } // Enter on an earlier page moves on rather than submitting
       submitting = true;
       showAllErrors = true;
       scheduleEvaluate.cancel();
@@ -182,8 +237,11 @@
           return;
         }
         setBanner('Please fix the highlighted fields and submit again.');
-        const firstError = grid.querySelector('.has-error:not([hidden]), .sf-cell-error:not([hidden])');
-        if (firstError) firstError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const bad = firstErrorOn(null);
+        if (bad) {
+          if (pageOf[bad.key] !== page) showPage(pageOf[bad.key], false);
+          controls[bad.key].wrap.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
       } catch (e) {
         setBanner(e.message);
       } finally {
@@ -197,8 +255,8 @@
     function buildField(field) {
       const id = 'sf-' + (++uid);
       const error = h('div', { class: 'sf-error', hidden: true, id: id + '-err' });
-      if (field.type === 'section') {
-        const wrap = h('div', { class: 'sf-field sf-section' },
+      if (field.type === 'section' || field.type === 'page') {
+        const wrap = h('div', { class: 'sf-field sf-section' + (field.type === 'page' ? ' sf-page-title' : '') },
           h('h3', null, field.label || ''), field.help ? h('p', { class: 'sf-help' }, field.help) : null, error);
         return { wrap, error };
       }
@@ -220,6 +278,15 @@
         }
         case 'date':
           body = input(h('input', { id, type: 'date' }), field.key, control, true);
+          break;
+        case 'time':
+          body = input(h('input', { id, type: 'time' }), field.key, control, true);
+          break;
+        case 'phone':
+          body = input(h('input', { id, type: 'tel', autocomplete: 'tel', inputmode: 'tel', maxlength: 40, placeholder: field.placeholder || null }), field.key, control);
+          break;
+        case 'signature':
+          body = input(h('input', { id, type: 'text', class: 'sf-signature', autocomplete: 'name', maxlength: 200, placeholder: 'Type your full name to sign' }), field.key, control);
           break;
         case 'email':
           body = input(h('input', { id, type: 'email', autocomplete: 'email', placeholder: field.placeholder || null }), field.key, control);

@@ -156,6 +156,8 @@ public sealed class FormsController : ControllerBase
         if (email.Length == 0) return BadRequest(new { error = "Your account has no email address, so the request cannot be submitted." });
         var workflow = await LiveFormAsync(request.WorkflowId, ct);
         if (workflow is null) return NotFound(new { error = "This form is no longer available." });
+        if (Json.ParseDefinition(workflow.PublishedJson!).Form.ClosedMessage(DateTime.Today) is string closed)
+            return BadRequest(new { error = closed + " Your answers have not been submitted." });
 
         var (form, runId) = await _runs.SubmitFormAsync(workflow, Json.ToValues(request.Values), email, User.DisplayName(), ct);
         if (runId is not null && request.DraftId is int draftId)
@@ -530,14 +532,55 @@ public sealed class BuilderController : ControllerBase
 
         if (w.PublishedJson != w.DraftJson)
         {
+            // Versions published before history was kept: save the outgoing one so it can still be restored.
+            if (w.PublishedJson is not null && !await _db.WorkflowVersions.AnyAsync(v => v.WorkflowId == w.Id && v.Version == w.PublishedVersion, ct))
+                _db.WorkflowVersions.Add(new WorkflowVersion { WorkflowId = w.Id, Version = w.PublishedVersion, Json = w.PublishedJson, PublishedAt = w.PublishedAt ?? w.UpdatedAt });
             w.PublishedJson = w.DraftJson;
             w.PublishedVersion++;
             w.PublishedAt = DateTime.UtcNow;
+            _db.WorkflowVersions.Add(new WorkflowVersion { WorkflowId = w.Id, Version = w.PublishedVersion, Json = w.DraftJson, PublishedAt = w.PublishedAt.Value, PublishedBy = User.Email() });
+            // Keep the 50 most recent versions.
+            var old = await _db.WorkflowVersions.Where(v => v.WorkflowId == w.Id).OrderByDescending(v => v.Version).Skip(49).ToListAsync(ct);
+            _db.WorkflowVersions.RemoveRange(old);
             _audit.Record(User, "workflow.published", w.Name, $"Published version {w.PublishedVersion}.");
         }
         w.TriggerType = def!.Trigger.Type;
         await _db.SaveChangesAsync(ct);
         return Ok(new { ok = true, publishedVersion = w.PublishedVersion, issues = IssueShape(issues) });
+    }
+
+    [HttpGet("{id:int}/versions")]
+    public async Task<IActionResult> Versions(int id, CancellationToken ct)
+    {
+        var w = await ManagedAsync(id, tracked: false, ct);
+        if (w is null) return NotFound();
+        var rows = await _db.WorkflowVersions.AsNoTracking().Where(v => v.WorkflowId == id).OrderByDescending(v => v.Version)
+            .Select(v => new { v.Version, v.PublishedAt, v.PublishedBy, v.Json }).ToListAsync(ct);
+        return Ok(new
+        {
+            versions = rows.Select(v => new
+            {
+                version = v.Version, publishedBy = v.PublishedBy,
+                publishedAt = Ui.Local(v.PublishedAt).ToString("MMM d, yyyy h:mm tt"),
+                isLive = v.Version == w.PublishedVersion, sameAsDraft = v.Json == w.DraftJson,
+            }),
+        });
+    }
+
+    /// <summary>Puts an earlier published version back as the draft. Nothing changes for staff until it is published.</summary>
+    [HttpPost("{id:int}/versions/{version:int}/restore")]
+    public async Task<IActionResult> Restore(int id, int version, CancellationToken ct)
+    {
+        var w = await ManagedAsync(id, tracked: true, ct);
+        if (w is null) return NotFound();
+        var row = await _db.WorkflowVersions.AsNoTracking().FirstOrDefaultAsync(v => v.WorkflowId == id && v.Version == version, ct);
+        if (row is null) return NotFound(new { error = "That version is no longer kept." });
+        w.DraftJson = row.Json;
+        w.UpdatedAt = DateTime.UtcNow;
+        w.UpdatedBy = User.Email();
+        _audit.Record(User, "workflow.restored", w.Name, $"Version {version} was put back as the draft.");
+        await _db.SaveChangesAsync(ct);
+        return Ok(new { ok = true });
     }
 
     [HttpPost("validate")]

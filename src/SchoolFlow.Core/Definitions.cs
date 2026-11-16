@@ -38,6 +38,21 @@ public sealed class FormDefinition
     /// requests) or "everyone" (anyone's earlier requests of this form).
     /// </summary>
     public string? AllowCopy { get; set; }
+    /// <summary>First day the form accepts requests ("yyyy-MM-dd"); blank means it is already open.</summary>
+    public string? OpensOn { get; set; }
+    /// <summary>Last day the form accepts requests ("yyyy-MM-dd", inclusive); blank means no closing date.</summary>
+    public string? ClosesOn { get; set; }
+
+    public static bool TryParseDay(string? text, out DateTime day) =>
+        DateTime.TryParseExact((text ?? "").Trim(), "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out day);
+
+    /// <summary>Why the form is not taking requests on <paramref name="today"/>, or null when it is open.</summary>
+    public string? ClosedMessage(DateTime today)
+    {
+        if (TryParseDay(OpensOn, out var opens) && today.Date < opens) return $"This form opens on {opens:dddd, MMMM d, yyyy}.";
+        if (TryParseDay(ClosesOn, out var closes) && today.Date > closes) return $"This form closed on {closes:dddd, MMMM d, yyyy}.";
+        return null;
+    }
 }
 
 public static class CopyModes
@@ -52,13 +67,17 @@ public static class FieldTypes
     public const string Text = "text", TextArea = "textarea", Email = "email", Number = "number", Currency = "currency",
         Date = "date", Select = "select", Radio = "radio", MultiSelect = "multiselect", Checkbox = "checkbox",
         Lookup = "lookup", Calculated = "calculated", Table = "table", Section = "section",
-        Department = "department", ApprovalChain = "approval_chain", Location = "location", Attachments = "attachments";
+        Department = "department", ApprovalChain = "approval_chain", Location = "location", Attachments = "attachments",
+        Time = "time", Phone = "phone", Signature = "signature", Page = "page";
 
     public static readonly string[] All =
     {
         Text, TextArea, Email, Number, Currency, Date, Select, Radio, MultiSelect, Checkbox, Lookup, Calculated, Table, Section,
-        Department, ApprovalChain, Location, Attachments,
+        Department, ApprovalChain, Location, Attachments, Time, Phone, Signature, Page,
     };
+
+    /// <summary>Headings and page breaks: they arrange the form and never hold an answer.</summary>
+    public static bool IsLayout(string type) => type is Section or Page;
 
     public static readonly string[] Column = { Text, Number, Currency, Date, Select, Checkbox, Calculated };
 

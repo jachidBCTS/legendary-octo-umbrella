@@ -282,6 +282,17 @@ public class RunComment
 }
 
 /// <summary>A weekday the school is closed. "School day" date maths, reminders and escalation skip these.</summary>
+/// <summary>A published version of a workflow, kept so an earlier one can be brought back.</summary>
+public class WorkflowVersion
+{
+    public int Id { get; set; }
+    public int WorkflowId { get; set; }
+    public int Version { get; set; }
+    public string Json { get; set; } = "{}";
+    public DateTime PublishedAt { get; set; }
+    public string PublishedBy { get; set; } = "";
+}
+
 public class ClosedDay
 {
     public int Id { get; set; }
@@ -353,6 +364,7 @@ public class AppDbContext : DbContext
     public DbSet<Delegation> Delegations => Set<Delegation>();
     public DbSet<RunComment> RunComments => Set<RunComment>();
     public DbSet<ClosedDay> ClosedDays => Set<ClosedDay>();
+    public DbSet<WorkflowVersion> WorkflowVersions => Set<WorkflowVersion>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 
     public DbSet<Workflow> Workflows => Set<Workflow>();
@@ -437,6 +449,11 @@ public class AppDbContext : DbContext
             e.Property(x => x.AuthorEmail).HasMaxLength(320);
             e.Property(x => x.AuthorName).HasMaxLength(300);
             e.HasIndex(x => x.RunId);
+        });
+        b.Entity<WorkflowVersion>(e =>
+        {
+            e.Property(x => x.PublishedBy).HasMaxLength(320);
+            e.HasIndex(x => new { x.WorkflowId, x.Version }).IsUnique();
         });
         b.Entity<ClosedDay>(e =>
         {

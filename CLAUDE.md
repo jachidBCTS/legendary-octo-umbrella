@@ -108,6 +108,17 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
 - **Export / reports / print**: `RequestExport.ToCsv` (cells starting with `= + - @` are prefixed
   with `'` — keep that guard), `Pages/Reports`, `Pages/Requests/Print` (inherits `DetailModel`;
   do not redeclare `OnGetAsync` there — two matching handlers crash the page).
+- **Layout fields**: `section` and `page` hold no answer — test with `FieldTypes.IsLayout`, not
+  `== Section`. A `page` field starts a new page; paging is entirely in `form-runtime.js`
+  (`pageOf`, `showPage`, `nextPage`): the server still evaluates the whole form, and *Next* just
+  asks the server and refuses to move while the current page has errors.
+- **Form opening dates** (`FormDefinition.OpensOn/ClosesOn`, `ClosedMessage`) are part of the
+  definition, so they are versioned and take effect on publish. Enforced on the Start page and in
+  `forms/submit`; resubmitting a sent-back request is deliberately still allowed after closing.
+- **Version history**: `WorkflowVersions` gets a row on every publish (latest 50 kept);
+  `POST api/builder/{id}/versions/{n}/restore` copies it into `DraftJson` only. Export/import are
+  page handlers on `Pages/Builder/Index` (`?handler=Export`, `Import`); an import is always a new
+  draft owned by the importer, never published.
 - **Freshservice**: `IFreshserviceClient` has a live client and `SimulatedFreshserviceClient`
   (used when no domain/API key is configured; timeline entries are prefixed `[Simulated]`).
 - **Permissions** (owner: staff only sign in; admins keep the ability to approve on someone's

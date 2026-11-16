@@ -65,6 +65,7 @@
                 <span class="wf-body">
                     <strong>@w.Name</strong>
                     <span>@w.Description</span>
+                    @if (SchoolFlow.Core.Json.ParseDefinition(w.PublishedJson!).Form.ClosedMessage(DateTime.Today) is string closed) { <span class="pill muted tiny">@closed.Replace("This form ", "").TrimEnd('.')</span> }
                 </span>
                 <span class="wf-go"><partial name="_Icons" model='"arrow"' /></span>
             </a>

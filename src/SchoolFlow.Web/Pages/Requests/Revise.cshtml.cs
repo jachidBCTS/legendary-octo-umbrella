@@ -36,7 +36,7 @@ public class ReviseModel : PageModel
         // Only the form's own answers go to the browser, not the request's internal record.
         var context = Json.ToValues(run.ContextJson);
         var values = new Dictionary<string, object?>();
-        foreach (var field in form.Fields.Where(f => f.Type is not (FieldTypes.Section or FieldTypes.Calculated)))
+        foreach (var field in form.Fields.Where(f => !FieldTypes.IsLayout(f.Type) && f.Type != FieldTypes.Calculated))
             if (context.TryGetValue(field.Key, out var value)) values[field.Key] = value;
         ValuesJson = Json.Serialize(values).Replace("<", "\\u003c");
         return Page();

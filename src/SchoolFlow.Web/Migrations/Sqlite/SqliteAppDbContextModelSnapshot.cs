@@ -764,6 +764,38 @@ namespace SchoolFlow.Web.Migrations.Sqlite
 
                     b.ToTable("Runs");
                 });
+
+            modelBuilder.Entity("SchoolFlow.Web.Data.WorkflowVersion", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Json")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("PublishedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PublishedBy")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("WorkflowId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkflowId", "Version")
+                        .IsUnique();
+
+                    b.ToTable("WorkflowVersions");
+                });
 #pragma warning restore 612, 618
         }
     }

@@ -13,6 +13,8 @@ public class StartModel : PageModel
 
     public Workflow Workflow { get; private set; } = null!;
     public string FormJson { get; private set; } = "{}";
+    /// <summary>Set when the form is outside its opening dates; the form is then not shown.</summary>
+    public string? ClosedMessage { get; private set; }
 
     public async Task<IActionResult> OnGetAsync(int id)
     {
@@ -22,7 +24,9 @@ public class StartModel : PageModel
         Workflow = workflow;
         // Only the form part goes to the browser; the flow (approver rules, ticket templates) stays on the server.
         // "<" is escaped so field text can never close the surrounding <script> element.
-        FormJson = Json.Serialize(Json.ParseDefinition(workflow.PublishedJson!).Form).Replace("<", "\\u003c");
+        var form = Json.ParseDefinition(workflow.PublishedJson!).Form;
+        ClosedMessage = form.ClosedMessage(DateTime.Today);
+        FormJson = Json.Serialize(form).Replace("<", "\\u003c");
         return Page();
     }
 }

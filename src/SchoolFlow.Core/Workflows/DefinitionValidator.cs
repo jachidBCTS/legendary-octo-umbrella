@@ -46,6 +46,14 @@ public static class DefinitionValidator
         if (!CopyModes.IsValid(form.AllowCopy))
             issues.Add(new Issue("error", "form", null, $"Unknown “start from a previous request” setting '{form.AllowCopy}'."));
 
+        var hasOpens = FormDefinition.TryParseDay(form.OpensOn, out var opens);
+        var hasCloses = FormDefinition.TryParseDay(form.ClosesOn, out var closes);
+        if (!string.IsNullOrWhiteSpace(form.OpensOn) && !hasOpens) issues.Add(new Issue("error", "form", null, "The form's opening date is not a valid date."));
+        if (!string.IsNullOrWhiteSpace(form.ClosesOn) && !hasCloses) issues.Add(new Issue("error", "form", null, "The form's closing date is not a valid date."));
+        if (hasOpens && hasCloses && closes < opens) issues.Add(new Issue("error", "form", null, "The form closes before it opens."));
+        if (form.Fields.Count > 0 && form.Fields[^1].Type == FieldTypes.Page)
+            issues.Add(new Issue("warning", "form", form.Fields[^1].Key, "The last page of the form is empty: a page break has nothing after it."));
+
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var f in form.Fields)
         {
@@ -56,7 +64,7 @@ public static class DefinitionValidator
                 issues.Add(new Issue("error", "form", f.Key, $"“{name}”: '{f.Key}' is a reserved name — choose a different key."));
             else if (!seen.Add(f.Key))
                 issues.Add(new Issue("error", "form", f.Key, $"Two fields share the key '{f.Key}'. Keys must be unique."));
-            else if (f.Type != FieldTypes.Section)
+            else if (!FieldTypes.IsLayout(f.Type))
                 known.Add(f.Key);
         }
 

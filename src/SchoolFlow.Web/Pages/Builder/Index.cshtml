@@ -5,7 +5,13 @@
 }
 <div class="page-head">
     <div><h1>Workflows</h1><p class="sub">Design forms, field logic and the steps that follow. @(User.IsAdmin() ? "As an admin you see every workflow." : "You see the workflows you own.")</p></div>
-    <button type="button" class="btn primary" data-open-dialog="new-dialog"><partial name="_Icons" model='"plus"' /> New workflow</button>
+    <div class="actions">
+        <form method="post" asp-page-handler="Import" enctype="multipart/form-data" class="import-form">
+            <label class="btn" for="import-file">Import</label>
+            <input id="import-file" class="visually-hidden" type="file" name="file" accept=".json,application/json" data-autosubmit aria-label="Import a workflow file" />
+        </form>
+        <button type="button" class="btn primary" data-open-dialog="new-dialog"><partial name="_Icons" model='"plus"' /> New workflow</button>
+    </div>
 </div>
 
 <div class="card-grid builder-grid">
@@ -30,6 +36,7 @@
         <div class="wf-tile-actions">
             <a class="btn small primary" href="/Builder/Edit/@w.Id">Edit</a>
             <form method="post" asp-page-handler="Duplicate"><input type="hidden" name="id" value="@w.Id" /><button class="btn small">Duplicate</button></form>
+            <a class="btn small" href="/Builder?handler=Export&id=@w.Id" download>Export</a>
             @if (w.PublishedJson is not null)
             {
                 <form method="post" asp-page-handler="Toggle"><input type="hidden" name="id" value="@w.Id" /><button class="btn small">@(w.IsEnabled ? "Switch off" : "Switch on")</button></form>

@@ -75,7 +75,7 @@ public static class FormEvaluator
             }
 
             state.Visible = EvaluateFlag(field.VisibleWhen, scope, true, state, "Show-when formula");
-            if (field.Type == FieldTypes.Section) continue;
+            if (FieldTypes.IsLayout(field.Type)) continue;
 
             object? value = null;
             if (state.Visible)
@@ -111,7 +111,7 @@ public static class FormEvaluator
         foreach (var field in fields)
         {
             var state = result.Fields[field.Key];
-            if (!state.Visible || field.Type is FieldTypes.Section or FieldTypes.Calculated) continue;
+            if (!state.Visible || FieldTypes.IsLayout(field.Type) || field.Type == FieldTypes.Calculated) continue;
 
             state.Required = field.Required || EvaluateFlag(field.RequiredWhen, scope, false, state, "Required-when formula");
             var blank = field.Type == FieldTypes.Checkbox ? state.Value is not true : Values.IsBlank(state.Value);
@@ -278,6 +278,33 @@ public static class FormEvaluator
                 return Truncate(text, 320);
             }
 
+            case FieldTypes.Time:
+            {
+                if (Values.IsBlank(raw)) return null;
+                var text = Values.ToText(raw).Trim();
+                if (DateTime.TryParseExact(text, TimeFormats, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var time))
+                    return time.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);   // sorts and compares correctly as text
+                errors.Add("Enter a time, for example 9:30 AM.");
+                return null;
+            }
+
+            case FieldTypes.Phone:
+            {
+                if (Values.IsBlank(raw)) return null;
+                var text = Values.ToText(raw).Trim();
+                var digits = text.Count(char.IsDigit);
+                if (text.Length > 40 || digits < 7 || digits > 15 || !PhonePattern.IsMatch(text)) errors.Add("Enter a valid phone number.");
+                return Truncate(text, 40);
+            }
+
+            case FieldTypes.Signature:
+            {
+                if (Values.IsBlank(raw) || raw is List<object?> or Dictionary<string, object?>) return null;
+                var text = Values.ToText(raw).Trim();
+                if (text.Length < 2 || !text.Any(char.IsLetter)) errors.Add("Type your full name to sign.");
+                return Truncate(text, 200);
+            }
+
             default: // text, textarea
             {
                 if (Values.IsBlank(raw)) return null;
@@ -289,6 +316,9 @@ public static class FormEvaluator
             }
         }
     }
+
+    private static readonly string[] TimeFormats = { "H:mm", "HH:mm", "H:mm:ss", "HH:mm:ss", "h:mm tt", "h:mmtt", "h tt", "htt" };
+    private static readonly System.Text.RegularExpressions.Regex PhonePattern = new(@"^\+?[0-9()\-. ]+( ?(x|ext\.?) ?[0-9]{1,6})?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
     public const int DefaultMaxFiles = 5;
     public const int AbsoluteMaxFiles = 20;

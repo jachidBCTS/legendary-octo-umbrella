@@ -235,4 +235,78 @@ public class FormEvaluatorTests
         Assert.Equal(result.Values["total"], again.Values["total"]);
         Assert.Equal(new DateTime(2026, 12, 1), again.Values["needed_by"]);
     }
+
+    [Theory]
+    [InlineData("time", "14:30", "14:30", null)]
+    [InlineData("time", "9:05", "09:05", null)]
+    [InlineData("time", "2:30 PM", "14:30", null)]
+    [InlineData("time", "25:00", null, "Enter a time")]
+    [InlineData("time", "soon", null, "Enter a time")]
+    [InlineData("phone", " (201) 555-0142 ", "(201) 555-0142", null)]
+    [InlineData("phone", "+44 20 7946 0958", "+44 20 7946 0958", null)]
+    [InlineData("phone", "201-555-0142 x12", "201-555-0142 x12", null)]
+    [InlineData("phone", "12345", "12345", "valid phone number")]
+    [InlineData("phone", "call me maybe", "call me maybe", "valid phone number")]
+    [InlineData("signature", "  Taylor Teacher ", "Taylor Teacher", null)]
+    [InlineData("signature", "X", "X", "Type your full name")]
+    [InlineData("signature", "1234", "1234", "Type your full name")]
+    public void TimePhoneAndSignature_AreCheckedAndTidied(string type, string input, string? expected, string? error)
+    {
+        var form = new FormDefinition { Fields = { new FieldDef { Key = "f", Label = "F", Type = type } } };
+        var result = FormEvaluator.Evaluate(form, new Dictionary<string, object?> { ["f"] = input }, now: Now);
+        Assert.Equal(expected, result.Values["f"]);
+        if (error is null) Assert.Empty(result.Fields["f"].Errors);
+        else Assert.Contains(error, result.Fields["f"].Errors.Single());
+    }
+
+    [Fact]
+    public void PageBreaks_HoldNoAnswer_TimesCompareInFormulas_AndSignaturesAreNotCopied()
+    {
+        var form = new FormDefinition
+        {
+            Fields =
+            {
+                new FieldDef { Key = "leave", Label = "Leave", Type = "time", Required = true },
+                new FieldDef { Key = "page2", Label = "Sign", Type = "page", Required = true },   // "required" on a page break means nothing
+                new FieldDef
+                {
+                    Key = "back", Label = "Back", Type = "time",
+                    Rules = new() { new RuleDef { Check = "back > leave", Message = "You must return after you leave." } },
+                },
+                new FieldDef { Key = "sign", Label = "Signature", Type = "signature", Required = true },
+            },
+        };
+        var result = FormEvaluator.Evaluate(form, new Dictionary<string, object?> { ["leave"] = "9:00", ["back"] = "08:15", ["page2"] = "x", ["sign"] = "" }, now: Now);
+        Assert.False(result.IsValid);
+        Assert.Null(result.Values.GetValueOrDefault("page2"));
+        Assert.Empty(result.Fields["page2"].Errors);
+        Assert.Equal("You must return after you leave.", result.Fields["back"].Errors.Single());
+        Assert.Single(result.Fields["sign"].Errors);
+
+        var ok = FormEvaluator.Evaluate(form, new Dictionary<string, object?> { ["leave"] = "9:00", ["back"] = "3:15 PM", ["sign"] = "Taylor Teacher" }, now: Now);
+        Assert.True(ok.IsValid);
+
+        var copied = FormCopy.Extract(form, new Dictionary<string, object?> { ["leave"] = "09:00", ["page2"] = "x", ["sign"] = "Someone Else" });
+        Assert.Equal(new[] { "leave" }, copied.Keys.ToArray());
+
+        var issues = SchoolFlow.Core.Workflows.DefinitionValidator.Validate(new WorkflowDefinition { Form = form });
+        Assert.DoesNotContain(issues, i => i.IsError && i.Area == "form");
+    }
+
+    [Fact]
+    public void OpeningAndClosingDates_DecideWhetherTheFormTakesRequests()
+    {
+        var form = new FormDefinition { OpensOn = "2026-09-01", ClosesOn = "2026-10-15" };
+        Assert.Contains("opens on Tuesday, September 1, 2026", form.ClosedMessage(new DateTime(2026, 8, 31)));
+        Assert.Null(form.ClosedMessage(new DateTime(2026, 9, 1)));
+        Assert.Null(form.ClosedMessage(new DateTime(2026, 10, 15, 23, 0, 0)));        // the closing day itself is still open
+        Assert.Contains("closed on Thursday, October 15, 2026", form.ClosedMessage(new DateTime(2026, 10, 16)));
+        Assert.Null(new FormDefinition().ClosedMessage(new DateTime(2026, 1, 1)));    // no dates: always open
+        Assert.Null(new FormDefinition { OpensOn = "garbage" }.ClosedMessage(new DateTime(2026, 1, 1)));
+
+        string Errors(FormDefinition f) => string.Join("|", SchoolFlow.Core.Workflows.DefinitionValidator.Validate(new WorkflowDefinition { Form = f }).Where(i => i.IsError).Select(i => i.Message));
+        Assert.Contains("closes before it opens", Errors(new FormDefinition { OpensOn = "2026-10-15", ClosesOn = "2026-09-01" }));
+        Assert.Contains("opening date is not a valid date", Errors(new FormDefinition { OpensOn = "next week" }));
+        Assert.DoesNotContain("date", Errors(form));
+    }
 }

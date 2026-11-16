@@ -91,6 +91,63 @@ public class IndexModel : PageModel
         return RedirectToPage();
     }
 
+    /// <summary>Downloads a workflow (its current draft) as a file that can be imported here or on another SchoolFlow site.</summary>
+    public async Task<IActionResult> OnGetExportAsync(int id)
+    {
+        var w = await ManagedAsync(id);
+        if (w is null) return NotFound();
+        var file = Json.Serialize(new Dictionary<string, object?>
+        {
+            ["schoolflow"] = 1, ["name"] = w.Name, ["description"] = w.Description, ["category"] = w.Category, ["color"] = w.Color,
+            ["definition"] = Json.ParseDefinition(w.DraftJson),
+        });
+        var safe = new string(w.Name.Select(c => char.IsLetterOrDigit(c) ? char.ToLowerInvariant(c) : '-').ToArray()).Trim('-');
+        return File(System.Text.Encoding.UTF8.GetBytes(file), "application/json", $"{(safe.Length == 0 ? "workflow" : safe.Length > 60 ? safe[..60] : safe)}.schoolflow.json");
+    }
+
+    /// <summary>Creates a new draft workflow from an exported file. It is never published automatically.</summary>
+    public async Task<IActionResult> OnPostImportAsync(IFormFile? file)
+    {
+        IActionResult Bad(string message) { TempData["Flash"] = message; TempData["FlashKind"] = "bad"; return RedirectToPage(); }
+        if (file is null || file.Length == 0) return Bad("Choose a workflow file to import.");
+        if (file.Length > 600_000) return Bad("That file is too large to be a workflow.");
+        WorkflowDefinition def;
+        string name, description, category, color;
+        try
+        {
+            using var doc = await System.Text.Json.JsonDocument.ParseAsync(file.OpenReadStream());
+            var root = doc.RootElement;
+            if (root.ValueKind != System.Text.Json.JsonValueKind.Object || !root.TryGetProperty("schoolflow", out _)
+                || !root.TryGetProperty("definition", out var definition) || definition.ValueKind != System.Text.Json.JsonValueKind.Object)
+                return Bad("That is not a SchoolFlow workflow file.");
+            string Text(string property) => root.TryGetProperty(property, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String ? v.GetString()!.Trim() : "";
+            (name, description, category, color) = (Text("name"), Text("description"), Text("category"), Text("color"));
+            def = Json.ParseDefinition(definition.GetRawText());
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return Bad("That file could not be read as a workflow.");
+        }
+        if (name.Length == 0) name = "Imported workflow";
+        string Clip(string s, int max) => s.Length > max ? s[..max] : s;
+        var workflow = new Workflow
+        {
+            Name = Clip(name, 200), Description = Clip(description, 1000), Category = Clip(category, 100),
+            Color = System.Text.RegularExpressions.Regex.IsMatch(color, "^[a-z]{1,20}$") ? color : "indigo",
+            DraftJson = Json.Serialize(def), TriggerType = def.Trigger.Type == TriggerTypes.Ticket ? TriggerTypes.Ticket : TriggerTypes.Form,
+            Owners = ApprovalTask.Pack(new[] { User.Email() }),
+            CreatedBy = User.Email(), UpdatedBy = User.Email(), CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+        };
+        _db.Workflows.Add(workflow);
+        _audit.Record(User, "workflow.imported", workflow.Name, $"From the file “{Clip(Path.GetFileName(file.FileName), 100)}”.");
+        await _db.SaveChangesAsync();
+        var problems = SchoolFlow.Core.Workflows.DefinitionValidator.Validate(def).Count(i => i.IsError);
+        TempData["Flash"] = $"Imported “{workflow.Name}” as a draft." + (problems > 0
+            ? $" The checker found {problems} thing{(problems == 1 ? "" : "s")} to fix before it can be published — often an approval chain, department or group that does not exist on this site."
+            : " Check it over, then publish it when you are ready.");
+        return Redirect($"/Builder/Edit/{workflow.Id}");
+    }
+
     public async Task<IActionResult> OnPostToggleAsync(int id)
     {
         var w = await ManagedAsync(id);
@@ -110,6 +167,7 @@ public class IndexModel : PageModel
         _db.Workflows.Remove(w);
         // Unfinished drafts of a form that no longer exists cannot be completed.
         _db.FormDrafts.RemoveRange(_db.FormDrafts.Where(d => d.WorkflowId == id));
+        _db.WorkflowVersions.RemoveRange(_db.WorkflowVersions.Where(v => v.WorkflowId == id));
         await _db.SaveChangesAsync();
         TempData["Flash"] = $"Deleted “{w.Name}”.";
         return RedirectToPage();

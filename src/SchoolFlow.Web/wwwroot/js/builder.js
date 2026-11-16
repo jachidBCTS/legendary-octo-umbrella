@@ -20,6 +20,8 @@
     { type: 'multiselect', label: 'Checkboxes', hint: 'Pick several' },
     { type: 'checkbox', label: 'Yes / no', hint: 'Single tick box' },
     { type: 'email', label: 'Email', hint: 'e.g. an approver' },
+    { type: 'time', label: 'Time', hint: 'e.g. departure time' },
+    { type: 'phone', label: 'Phone number', hint: 'Checked for digits' },
     { type: 'lookup', label: 'Freshservice lookup', hint: 'Device, location…' },
     { type: 'department', label: 'Department', hint: 'Sets the final approver' },
     { type: 'approval_chain', label: 'Approval chain', hint: 'Requester picks approvers' },
@@ -27,7 +29,9 @@
     { type: 'attachments', label: 'Attachments', hint: 'Upload files' },
     { type: 'calculated', label: 'Calculated', hint: 'Formula result' },
     { type: 'table', label: 'Table', hint: 'Repeating rows' },
+    { type: 'signature', label: 'Signature', hint: 'Type your name to sign' },
     { type: 'section', label: 'Section heading', hint: 'Group fields' },
+    { type: 'page', label: 'Page break', hint: 'Start a new page' },
   ];
   const COLUMN_TYPES = [['text', 'Text'], ['number', 'Number'], ['currency', 'Currency'], ['date', 'Date'], ['select', 'Dropdown'], ['checkbox', 'Yes / no'], ['calculated', 'Calculated']];
   const LOOKUP_SOURCES = [['departments', 'Freshservice departments'], ['locations', 'Freshservice locations (live)'], ['my_assets', "The person's own devices"], ['requesters', 'People (search by name)'], ['groups', 'Agent groups']];
@@ -288,7 +292,7 @@
   /** Names a formula may mention, for the "unknown name" hint. */
   function knownNames(context) {
     const names = new Set(RESERVED);
-    if (isFormTrigger()) state.def.form.fields.forEach((f) => { if (f.key && f.type !== 'section') names.add(f.key.toLowerCase()); });
+    if (isFormTrigger()) state.def.form.fields.forEach((f) => { if (f.key && f.type !== 'section' && f.type !== 'page') names.add(f.key.toLowerCase()); });
     if (context === 'flow') {
       state.def.flow.nodes.forEach((n) => {
         if (n.type === 'set_variable' && n.config.name) names.add(n.config.name.trim().toLowerCase());
@@ -303,7 +307,7 @@
     if (opts.columns) opts.columns.forEach((c) => { if (c.key) items.push([c.key, 'This row: ' + (c.label || c.key)]); });
     if (isFormTrigger()) {
       for (const f of state.def.form.fields) {
-        if (!f.key || f.type === 'section') continue;
+        if (!f.key || f.type === 'section' || f.type === 'page') continue;
         if (f.type === 'table') {
           items.push(['COUNT(' + f.key + ')', 'Number of rows in ' + (f.label || f.key)]);
           (f.columns || []).forEach((c) => { if (c.key) items.push([f.key + '.' + c.key, (f.label || f.key) + ' → ' + (c.label || c.key) + ' (list)']); });
@@ -464,7 +468,7 @@
 
   function addField(type) {
     const info = FIELD_TYPES.find((t) => t.type === type);
-    const label = type === 'section' ? 'New section' : 'New ' + info.label.toLowerCase();
+    const label = type === 'section' ? 'New section' : type === 'page' ? 'Next page' : 'New ' + info.label.toLowerCase();
     const field = { key: uniqueKey(slug(label), fieldKeys()), label, type };
     if (['select', 'radio', 'multiselect'].includes(type)) field.options = ['Option 1', 'Option 2'];
     if (type === 'lookup') field.source = 'departments';
@@ -503,7 +507,7 @@
     fields.forEach((f, index) => {
       const info = FIELD_TYPES.find((t) => t.type === f.type) || { label: f.type };
       const card = h('div', {
-        class: 'fld-card' + (index === state.selField ? ' selected' : '') + (f.type === 'section' ? ' section' : '') + (bad.has(f.key) ? ' invalid' : '') + (f.width === 'half' ? ' half' : ''),
+        class: 'fld-card' + (index === state.selField ? ' selected' : '') + (f.type === 'section' || f.type === 'page' ? ' section' : '') + (bad.has(f.key) ? ' invalid' : '') + (f.width === 'half' ? ' half' : ''),
         draggable: 'true', tabindex: '0',
         onclick: () => { state.selField = index; renderAll(); },
         onkeydown: (e) => { if (e.key === 'Enter' && e.target === card) { state.selField = index; renderAll(); } },
@@ -526,7 +530,7 @@
       h('span', { class: 'fld-grip', 'aria-hidden': 'true' }, '⋮⋮'),
       h('div', { class: 'grow' },
         h('div', { class: 'fld-label' }, f.label || '(no label)'),
-        h('div', { class: 'fld-meta' }, h('span', null, info.label), f.type !== 'section' ? h('code', null, f.key) : null, fieldBadges(f))),
+        h('div', { class: 'fld-meta' }, h('span', null, info.label), f.type !== 'section' && f.type !== 'page' ? h('code', null, f.key) : null, fieldBadges(f))),
       h('div', { class: 'fld-tools' },
         h('button', { type: 'button', class: 'icon-btn', title: 'Move up', 'aria-label': 'Move up', disabled: index === 0, onclick: (e) => { e.stopPropagation(); moveField(index, -1); } }, '↑'),
         h('button', { type: 'button', class: 'icon-btn', title: 'Move down', 'aria-label': 'Move down', disabled: index === fields.length - 1, onclick: (e) => { e.stopPropagation(); moveField(index, 1); } }, '↓'),
@@ -589,6 +593,11 @@
       h('p', { class: 'muted small' }, 'Select a field to edit it. These settings apply to the whole form.'),
       row('Introduction', textArea(form.intro, (v) => { form.intro = clean(v); }, 4), 'Shown at the top of the form.'),
       row('Submit button text', textInput(form.submitLabel, (v) => { form.submitLabel = clean(v); }, { placeholder: 'Submit' })),
+      h('h4', { class: 'b-section' }, 'When the form is open'),
+      h('div', { class: 'b-pair' },
+        row('Opens on', textInput(form.opensOn, (v) => { form.opensOn = clean(v); }, { type: 'date' })),
+        row('Closes after', textInput(form.closesOn, (v) => { form.closesOn = clean(v); }, { type: 'date' }))),
+      h('p', { class: 'b-help' }, 'Leave both blank for a form that is always open. Outside these dates the form stays on the home page but says when it opens or that it has closed. Requests already submitted carry on as normal.'),
       h('h4', { class: 'b-section' }, 'Start from a previous request'),
       row('Can people copy a previous request?', select(form.allowCopy || '', [
         ['', 'No — every request starts blank'],
@@ -611,14 +620,15 @@
   function renderFieldInspector(panel, field) {
     const refresh = () => renderFieldList();
     const info = FIELD_TYPES.find((t) => t.type === field.type) || { label: field.type };
-    const isSection = field.type === 'section';
+    const isPage = field.type === 'page';
+    const isSection = field.type === 'section' || isPage;
     const isCalc = field.type === 'calculated';
     const keyInput = textInput(field.key, (v) => { field.key = v.trim(); autoKeys.delete(field); refresh(); }, { spellcheck: 'false', class: 'mono' });
 
     panel.append(
       h('div', { class: 'row-between' }, h('h3', null, info.label),
         h('button', { type: 'button', class: 'btn small', onclick: () => { state.selField = -1; renderAll(); } }, 'Form settings')),
-      row(isSection ? 'Heading' : 'Label', textInput(field.label, (v) => {
+      row(isPage ? 'Page title' : isSection ? 'Heading' : 'Label', textInput(field.label, (v) => {
         field.label = v;
         if (autoKeys.has(field)) { field.key = uniqueKey(slug(v), fieldKeys(field)); keyInput.value = field.key; }
         refresh();
@@ -626,9 +636,15 @@
       row('Key', keyInput, isSection ? 'Internal name for this heading.' : 'The name formulas use for this field. Letters, digits and underscores.'),
       row('Help text', textInput(field.help, (v) => { field.help = clean(v); })));
 
-    if (['text', 'textarea', 'number', 'currency', 'email', 'lookup'].includes(field.type) && field.source !== 'departments')
+    if (['text', 'textarea', 'number', 'currency', 'email', 'phone', 'lookup'].includes(field.type) && field.source !== 'departments')
       panel.append(row('Placeholder', textInput(field.placeholder, (v) => { field.placeholder = clean(v); })));
 
+    if (isPage)
+      panel.append(h('p', { class: 'b-help' }, 'Everything below this starts a new page. People move between pages with Next and Back, and each page is checked before they go on. The title is shown in the step list at the top of the form.'));
+    if (field.type === 'signature')
+      panel.append(h('p', { class: 'b-help' }, 'The person types their full name to sign. The request already records who submitted it and when; this adds their explicit agreement. It is never copied from a previous request.'));
+    if (field.type === 'time')
+      panel.append(h('p', { class: 'b-help' }, 'Stored as 24-hour text such as 14:30, so formulas can compare times: ' + (field.key || 'field') + ' >= "08:00".'));
     if (field.type === 'department')
       panel.append(h('p', { class: 'b-help' }, 'People choose from the departments admins have set up (Admin → Departments). The request is filed under it, and an “Approval chain” flow step can add that department\'s final approver.'));
     if (field.type === 'location')
@@ -672,6 +688,7 @@
         'Worked out once when the form opens. Put plain text in quotes.'));
 
     // ---- logic ----
+    if (isPage) return;
     panel.append(h('h4', { class: 'b-section' }, 'Logic'));
     panel.append(row('Show this ' + (isSection ? 'heading' : 'field') + ' only when', formulaInput(field.visibleWhen, (v) => { field.visibleWhen = clean(v); refresh(); },
       { placeholder: 'Always shown. e.g. kind == "Software"' }), isSection ? null : 'While hidden, the field is cleared and never required.'));
@@ -1372,6 +1389,36 @@
       if (state.def.form.fields.length) panel.append(h('p', { class: 'flash warn' }, 'This workflow has form fields from when it was form-based. They are ignored while it starts from a ticket event.'));
     }
     body.append(panel);
+    body.append(versionsPanel());
+  }
+
+  function versionsPanel() {
+    const list = h('div', { class: 'muted' }, 'Loading…');
+    const panel = h('section', { class: 'bld-settings panel' },
+      h('h3', null, 'Version history'),
+      h('p', { class: 'b-help' }, 'Every time you publish, that version is kept. Restoring one puts it back as the draft — staff see no change until you publish it.'),
+      list,
+      h('h3', null, 'Move or back up'),
+      h('p', { class: 'b-help' }, 'Export downloads this workflow (the current saved draft) as a file. Import it from the Workflows page, here or on another SchoolFlow site.'),
+      h('a', { class: 'btn small', href: '/Builder?handler=Export&id=' + workflowId, download: '' }, 'Export this workflow'));
+    api('GET', '/api/builder/' + workflowId + '/versions').then((data) => {
+      list.textContent = '';
+      list.className = '';
+      if (!data.versions.length) { list.appendChild(h('p', { class: 'muted' }, state.isPublished ? 'History starts with the next version you publish.' : 'Nothing has been published yet.')); return; }
+      list.appendChild(h('ul', { class: 'version-list' }, data.versions.map((v) => h('li', null,
+        h('span', null, h('strong', null, 'Version ' + v.version), ' ', v.isLive ? h('span', { class: 'pill ok tiny' }, 'Live') : null,
+          h('div', { class: 'muted small' }, v.publishedAt + (v.publishedBy ? ' · ' + v.publishedBy : ''))),
+        v.sameAsDraft ? h('span', { class: 'muted small' }, 'Same as the draft')
+          : h('button', { type: 'button', class: 'btn small', onclick: async () => {
+            if (!window.confirm('Replace the current draft with version ' + v.version + '?' + (state.dirty ? ' Your unsaved changes will be lost.' : ' The draft as it is now will be lost unless it was published.'))) return;
+            try {
+              await api('POST', '/api/builder/' + workflowId + '/versions/' + v.version + '/restore');
+              state.dirty = false;
+              window.location.reload();
+            } catch (e) { window.alert(e.message); }
+          } }, 'Restore as draft')))));
+    }).catch((e) => { list.textContent = e.message; });
+    return panel;
   }
 
   root.textContent = '';
