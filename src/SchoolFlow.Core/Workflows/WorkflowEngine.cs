@@ -114,6 +114,22 @@ public sealed class WorkflowEngine
     /// The people a step's setting names: email addresses, and the members of any [Team name] in it.
     /// A team that does not exist, or has nobody in it, stops the step with a message an admin can act on.
     /// </summary>
+    /// <summary>District email domains people who act on a step (approvers, assignees, escalation) must use; empty for any.</summary>
+    public IReadOnlyCollection<string>? AllowedDomains { get; init; }
+
+    /// <summary>
+    /// Like <see cref="ResolvePeople(string, string)"/>, for people who must sign in to act: with
+    /// <see cref="AllowedDomains"/> set, an outside address stops the step with a message saying so,
+    /// rather than leaving the request waiting on someone who can never sign in.
+    /// </summary>
+    public List<string> ResolveActingPeople(string text, string step)
+    {
+        var people = ResolvePeople(text, step);
+        if (AllowedDomains is { Count: > 0 } domains && people.FirstOrDefault(p => !domains.Contains(p[(p.LastIndexOf('@') + 1)..])) is { } outsider)
+            throw new ExpressionException($"{step}: '{outsider}' is not a district address, so they could not sign in to act on this. Use {string.Join(" or ", domains.Select(d => "@" + d))}.");
+        return people;
+    }
+
     public List<string> ResolvePeople(string text, string step)
     {
         var people = new List<string>();
@@ -462,7 +478,7 @@ public sealed class WorkflowEngine
 
             case NodeTypes.Approval:
             {
-                var assignees = ResolvePeople(Template.Render(node.Get("approvers"), scope), Name(node));
+                var assignees = ResolveActingPeople(Template.Render(node.Get("approvers"), scope), Name(node));
                 if (assignees.Count == 0)
                     throw new ExpressionException($"{Name(node)}: no approver email could be worked out. Check the Approvers setting.");
                 var rule = ApprovalRules.Normalize(node.Get("rule"));
@@ -484,7 +500,7 @@ public sealed class WorkflowEngine
 
             case NodeTypes.Task:
             {
-                var assignees = ResolvePeople(Template.Render(node.Get("assignees"), scope), Name(node));
+                var assignees = ResolveActingPeople(Template.Render(node.Get("assignees"), scope), Name(node));
                 if (assignees.Count == 0)
                     throw new ExpressionException($"{Name(node)}: nobody to give this task to. Check the “Who does this” setting.");
                 state.PendingApproval = new PendingApproval
@@ -714,7 +730,7 @@ public sealed class WorkflowEngine
         approval.RemindDays = Days(node.Get("remindDays"), DefaultRemindDays);
         approval.EscalateDays = Days(node.Get("escalateDays"), 0);
         // People already asked are left out: escalating to someone who is ignoring it helps nobody.
-        approval.EscalateTo = ResolvePeople(Template.Render(node.Get("escalateTo"), NewScope(state)), Name(node)).Except(approval.Assignees).ToList();
+        approval.EscalateTo = ResolveActingPeople(Template.Render(node.Get("escalateTo"), NewScope(state)), Name(node)).Except(approval.Assignees).ToList();
         if (approval.EscalateTo.Count == 0) approval.EscalateDays = 0;
 
         // A due date is a reminder, not a rule: a formula that cannot be worked out is noted and skipped.

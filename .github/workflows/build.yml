@@ -61,6 +61,10 @@ jobs:
     timeout-minutes: 25
     # Windows PowerShell (5.1) is used here because the IIS administration module is built for it.
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: deploy
+
       - uses: actions/download-artifact@v4
         with:
           name: SchoolFlow-windows
@@ -153,6 +157,42 @@ jobs:
           if ($before -ne $after) { Write-Host "FAIL  keys changed across a recycle ($before -> $after)"; $failed = $true } else { Write-Host 'ok    same keys after an app-pool recycle' }
 
           if ($failed) { throw 'One or more IIS checks failed' }
+
+      - name: Update the running site with deploy/Update-SchoolFlow.ps1
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $site = 'C:\inetpub\SchoolFlow'
+          $kit = Join-Path $env:RUNNER_TEMP 'update'
+          New-Item -ItemType Directory -Force "$kit\site" | Out-Null
+          Copy-Item "$site\*" "$kit\site" -Recurse -Exclude App_Data, appsettings.Production.json
+          Copy-Item deploy\Update-SchoolFlow.ps1 $kit
+          # Settings an administrator may have put in appsettings.json must survive the update.
+          $settings = Get-Content "$site\appsettings.json" -Raw | ConvertFrom-Json
+          $settings | Add-Member -NotePropertyName CiMarker -NotePropertyValue 'kept' -Force
+          $settings | ConvertTo-Json -Depth 10 | Set-Content "$site\appsettings.json" -Encoding utf8
+          $failed = $false
+          function Check($ok, $what) { Write-Host ("{0}  {1}" -f ($(if ($ok) { 'ok  ' } else { 'FAIL' }), $what)); if (-not $ok) { $script:failed = $true } }
+
+          # 1. A file that cannot be replaced: the update must stop and leave the site offline.
+          $locked = [System.IO.File]::Open("$site\wwwroot\css\app.css", 'Open', 'Read', 'None')
+          & powershell -NoProfile -ExecutionPolicy Bypass -File "$kit\Update-SchoolFlow.ps1" -SitePath $site
+          $code = $LASTEXITCODE
+          $locked.Dispose()
+          Check ($code -ne 0) "a failed copy reports failure (exit code $code)"
+          Check (Test-Path "$site\app_offline.htm") 'a failed copy leaves the site offline'
+
+          # 2. Run again once the file is free: the update completes and the site comes back.
+          & powershell -NoProfile -ExecutionPolicy Bypass -File "$kit\Update-SchoolFlow.ps1" -SitePath $site
+          Check ($LASTEXITCODE -eq 0) 'the update succeeds when re-run'
+          Check (-not (Test-Path "$site\app_offline.htm")) 'the site is back online'
+          Check ((Get-Content "$site\appsettings.json" -Raw) -match 'CiMarker') 'an existing appsettings.json is kept'
+          Check (Test-Path "$site\appsettings.json.new") 'the new appsettings.json is saved beside it'
+          Check (Test-Path "$site\appsettings.Production.json") 'appsettings.Production.json is untouched'
+          $up = $false
+          foreach ($i in 1..30) { try { if ((Invoke-WebRequest 'http://localhost:8085/healthz' -UseBasicParsing -TimeoutSec 10).Content -eq 'ok') { $up = $true; break } } catch { Start-Sleep -Seconds 2 } }
+          Check $up 'healthz answers after the update'
+          if ($failed) { throw 'The update script did not behave as expected' }
 
       - name: Show diagnostics if anything failed
         if: failure()

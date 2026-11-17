@@ -43,7 +43,7 @@ public sealed class RunService
     /// <summary>The engine, built once per request with the school calendar as it is now.</summary>
     private async Task<WorkflowEngine> EngineAsync(CancellationToken ct) =>
         _engine ??= new WorkflowEngine(_freshservice, directory: new ApprovalDirectory(_db), files: _attachments,
-            closedDays: await _calendar.ClosedDaysAsync(ct)) { Teams = await TeamsAsync(ct) };
+            closedDays: await _calendar.ClosedDaysAsync(ct)) { Teams = await TeamsAsync(ct), AllowedDomains = _domains };
 
     /// <summary>Every team by name, for steps that name a team as [Team name].</summary>
     private async Task<IReadOnlyDictionary<string, IReadOnlyList<string>>> TeamsAsync(CancellationToken ct) =>
@@ -83,6 +83,7 @@ public sealed class RunService
             attachments: await _attachments.PendingForAsync(email, workflow.Id, ct),
             closedDays: await _calendar.ClosedDaysAsync(ct),
             students: await new AccessService(_db).StudentsForAsync(def.Form, input, email, ct), allowedDomains: _domains);
+        DistrictAddresses.Check(def, form, _domains);
         if (!form.IsValid) return (form, null);
 
         var context = Values.NewDict();
@@ -182,8 +183,10 @@ public sealed class RunService
         // earlier steps), so "required when total >= 150" works here too.
         var ambient = Json.ToValues(run.ContextJson);
         ambient["rates"] = await _calendar.RatesAsync(ct);
-        return FormEvaluator.Evaluate(TaskForm(node), input, ambient, applyDefaults: applyDefaults,
+        var result = FormEvaluator.Evaluate(TaskForm(node), input, ambient, applyDefaults: applyDefaults,
             attachments: await _attachments.UsableForRunAsync(email, run, ct), closedDays: await _calendar.ClosedDaysAsync(ct));
+        DistrictAddresses.Check(Json.ParseDefinition(run.DefinitionJson), result, _domains);
+        return result;
     }
 
     public async Task<FormResult?> EvaluateTaskAsync(int taskId, IDictionary<string, object?> input, string email, bool isAdmin, bool applyDefaults, CancellationToken ct) =>
@@ -370,6 +373,7 @@ public sealed class RunService
         var form = FormEvaluator.Evaluate(def.Form, input, ambient, departments: await ActiveDepartmentsAsync(ct), locations: await ActiveLocationsAsync(ct),
             attachments: await _attachments.UsableForRunAsync(email, run, ct), closedDays: await _calendar.ClosedDaysAsync(ct),
             students: await new AccessService(_db).StudentsForAsync(def.Form, input, email, ct), allowedDomains: _domains);
+        DistrictAddresses.Check(def, form, _domains);
         if (!form.IsValid) return (form, ActionResult.Fail("Please fix the highlighted fields."));
 
         var state = Load(run);

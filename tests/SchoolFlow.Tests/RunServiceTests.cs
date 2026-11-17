@@ -1134,6 +1134,35 @@ public sealed class RunServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task WithDistrictDomainsSet_AnApproverEmailField_MustBeADistrictAddress()
+    {
+        var domains = new DomainPolicy(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Auth:AllowedDomains:0"] = "school.org" }).Build());
+        await using var db = Db();
+        var service = new RunService(db, _freshservice, new NotificationService(db, new EmailSettings(Config), Config), Files(db),
+            new SchoolCalendar(db, new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions())),
+            NullLogger<RunService>.Instance, domains);
+        var workflow = await db.Workflows.SingleAsync(w => w.Name == "Technology Purchase Request");
+
+        var outside = PurchaseInput(600);
+        outside["approver_email"] = "boss@gmail.com";
+        var (form, id) = await service.SubmitFormAsync(workflow, outside, "t@school.org", "T Teacher", default);
+        Assert.Null(id);
+        Assert.Contains("use a district address (@school.org)", form.Fields["approver_email"].Errors.Single());
+
+        var small = PurchaseInput(100);                       // under $500 the field is hidden and not used, so it is not checked
+        small["approver_email"] = "boss@gmail.com";
+        Assert.NotNull((await service.SubmitFormAsync(workflow, small, "t@school.org", "T Teacher", default)).RunId);
+        Assert.NotNull((await service.SubmitFormAsync(workflow, PurchaseInput(600), "t@school.org", "T Teacher", default)).RunId);   // boss@school.org
+        Assert.Contains("approver_email", DistrictAddresses.KeysChoosingPeople(Json.ParseDefinition(workflow.PublishedJson!)));
+
+        // Notification steps may still email outside addresses (asked for); approvers and assignees may not.
+        var engine = new WorkflowEngine(new SimulatedFreshserviceClient()) { AllowedDomains = new[] { "school.org" } };
+        Assert.Equal(new[] { "vendor@acme.com" }, engine.ResolvePeople("vendor@acme.com", "Tell the vendor").ToArray());
+        Assert.Contains("'vendor@acme.com' is not a district address",
+            Assert.Throws<SchoolFlow.Core.Expressions.ExpressionException>(() => engine.ResolveActingPeople("lead@school.org, vendor@acme.com", "Approval")).Message);
+    }
+
+    [Fact]
     public async Task TeamCheck_ReadsOnlyTheWhoSettings_SoBracketsInMessagesAreFine()
     {
         await using var db = Db();

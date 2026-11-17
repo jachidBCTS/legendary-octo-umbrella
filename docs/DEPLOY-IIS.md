@@ -223,6 +223,16 @@ the work is picked up when it starts again — it is only late.
 
 ## 8. Upgrading to a new version
 
+The repository's `deploy/` folder has `Update-SchoolFlow.ps1`, which does the steps below for you
+(put it next to a `site` folder holding the new package and run it as administrator with
+`-SitePath`). It keeps `App_Data`, `appsettings.Production.json` and any existing
+`appsettings.json` (saving the new one as `appsettings.json.new`), and if a file cannot be replaced
+it leaves the site offline with `app_offline.htm` rather than running half-updated — re-run it once
+the file is free. `Install-SchoolFlow.ps1` (first install), `database.sql` and `reset-database.sql`
+are in the same folder. The automated check runs the update script against a real IIS site,
+including the locked-file case.
+
+
 1. **Back up the database and the `App_Data` folder** (and keep a copy of the current site folder).
 2. Put a file named `app_offline.htm` in the site folder. IIS stops the site and shows that file's
    contents to visitors, which releases the locked files.

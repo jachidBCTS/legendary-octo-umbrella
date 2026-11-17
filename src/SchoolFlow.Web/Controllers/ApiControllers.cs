@@ -137,12 +137,14 @@ public sealed class FormsController : ControllerBase
     public async Task<IActionResult> Evaluate([FromBody] EvaluateRequest request, CancellationToken ct)
     {
         FormDefinition form;
+        WorkflowDefinition? whole = null;   // for the district-address check; not for the builder's preview
         Dictionary<string, AttachmentInfo>? usableFiles = null;
         if (request.RunId is int revisingId)
         {
             var revising = await RevisableAsync(revisingId, ct);
             if (revising is null) return NotFound();
-            form = Json.ParseDefinition(revising.DefinitionJson).Form;
+            whole = Json.ParseDefinition(revising.DefinitionJson);
+            form = whole.Form;
             usableFiles = await _attachments.UsableForRunAsync(User.Email(), revising, ct);
         }
         else if (request.Definition is not null)
@@ -151,12 +153,15 @@ public sealed class FormsController : ControllerBase
             form = request.Definition;
             form.Fields ??= new List<FieldDef>();
             form.Fields.RemoveAll(f => f is null);
+            if (form.Fields.Count > DefinitionValidator.MaxFields)
+                return BadRequest(new { error = $"A form can have at most {DefinitionValidator.MaxFields} fields." });
         }
         else
         {
             var workflow = await LiveFormAsync(request.WorkflowId, ct);
             if (workflow is null) return NotFound();
-            form = Json.ParseDefinition(workflow.PublishedJson!).Form;
+            whole = Json.ParseDefinition(workflow.PublishedJson!);
+            form = whole.Form;
         }
         var result = FormEvaluator.Evaluate(form, Json.ToValues(request.Values), await AmbientAsync(ct), applyDefaults: request.Init,
             departments: await _runs.ActiveDepartmentsAsync(ct), locations: await _runs.ActiveLocationsAsync(ct),
@@ -166,6 +171,7 @@ public sealed class FormsController : ControllerBase
             // The builder's preview is not checked against the roster (and cannot search it without access).
             students: request.Definition is not null ? null : await new AccessService(_db).StudentsForAsync(form, Json.ToValues(request.Values), User.Email(), ct),
             allowedDomains: _domains.Domains);
+        if (whole is not null) DistrictAddresses.Check(whole, result, _domains.Domains);
         return new JsonResult(Shape(result), Json.Options);
     }
 

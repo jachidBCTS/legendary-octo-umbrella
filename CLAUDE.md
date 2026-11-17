@@ -140,7 +140,14 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   limit of 1200 `/api` calls a minute (limiter runs **after** authentication — school networks share
   one address); 1 MB cap on answer bodies; 250-field cap; sign-out is a POST page; `/Builder` refused
   to people who neither build nor own a workflow. Not done, by decision: limiting builders'
-  notification recipients to district domains (outside notifications were requested).
+  notification recipients to district domains (outside notifications were requested). Follow-up:
+  people who must sign in to act (approvers, task assignees, escalation) must be district addresses
+  when `AllowedDomains` is set — `WorkflowEngine.ResolveActingPeople` fails the step otherwise, and
+  `DistrictAddresses.Check` flags the form answer that chose them; "Send notification" and
+  overdue-notice recipients are deliberately not limited.
+- **Server scripts** live in `deploy/` (Install, Update, database, reset). The CI IIS job runs
+  `Update-SchoolFlow.ps1` against the live test site, including a locked file (must exit non-zero
+  and leave `app_offline.htm`) and a re-run (must keep `appsettings.json` and come back up).
 - **Owner's direction (Nov 17, 2026): everything stays in house.** Business office staff have no
   Freshservice accounts and will not get them. Only technology-type workflows go to the help desk,
   and those are built **only by administrators**: `WorkflowDefinition.UsesHelpDesk()` (ticket
