@@ -698,3 +698,10 @@ html.a11y .sf-steps li { background: #fff; border: 2px solid var(--line-2); colo
 html.a11y .sf-steps li.on { background: var(--brand); border-color: var(--brand); color: #fff; }
 html.a11y .sf-paper .sf-field input:not([type=checkbox]):not([type=radio]), html.a11y .sf-paper .sf-field select, html.a11y .sf-paper .sf-field textarea {
   border: 2px solid var(--line-2); border-radius: 8px; padding-left: 10px; padding-right: 10px; background: #fff; }
+
+/* ---- tasks on a request ---- */
+.task-box .sf-form { padding: 6px 0 0; }
+dl.answers dt.answers-head { grid-column: 1 / -1; font-weight: 700; color: var(--ink); border-top: 1px solid var(--line); padding-top: 12px; margin-top: 6px; }
+dl.answers dd.answers-head { grid-column: 1 / -1; margin-top: -4px; }
+.b-task-field { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-bottom: 10px; background: #fafbfe; }
+.b-people { display: grid; gap: 6px; }

@@ -32,6 +32,12 @@ public sealed class ResubmitRequest
     public JsonElement Values { get; set; }
 }
 
+public sealed class TaskRequest
+{
+    public JsonElement Values { get; set; }
+    public bool Init { get; set; }
+}
+
 public sealed class SubmitRequest
 {
     public int WorkflowId { get; set; }
@@ -176,18 +182,45 @@ public sealed class FormsController : ControllerBase
         return new JsonResult(new { ok = runId is not null, runId, state = Shape(form) }, Json.Options);
     }
 
+    // ---- task steps -----------------------------------------------------------------------
+
+    /// <summary>Live checking of a task's fields while its assignee fills them in.</summary>
+    [HttpPost("tasks/{id:int}/evaluate")]
+    public async Task<IActionResult> EvaluateTask(int id, [FromBody] TaskRequest request, CancellationToken ct)
+    {
+        var result = await _runs.EvaluateTaskAsync(id, Json.ToValues(request.Values), User.Email(), User.IsAdmin(), request.Init, ct);
+        return result is null ? NotFound(new { error = "This task is no longer waiting for you." }) : new JsonResult(Shape(result), Json.Options);
+    }
+
+    [HttpPost("tasks/{id:int}/complete")]
+    public async Task<IActionResult> CompleteTask(int id, [FromBody] TaskRequest request, CancellationToken ct)
+    {
+        var (form, result) = await _runs.CompleteTaskAsync(id, Json.ToValues(request.Values), User.Email(), User.DisplayName(), User.IsAdmin(), ct);
+        if (form is null) return NotFound(new { error = result.Error });
+        if (!result.Ok && form.IsValid) return Conflict(new { error = result.Error });
+        return new JsonResult(new { ok = result.Ok, runId = result.RunId, state = Shape(form) }, Json.Options);
+    }
+
     // ---- uploaded files --------------------------------------------------------------------
 
     /// <summary>Uploads one file for an Attachments field of a live form. The file stays private to the uploader until submitted.</summary>
     [HttpPost("attachments")]
     [RequestSizeLimit(27_000_000)] // above the largest configurable file size, so our own message is shown rather than a bare 413
     [RequestFormLimits(MultipartBodyLengthLimit = 27_000_000)]
-    public async Task<IActionResult> Upload([FromForm] int workflowId, [FromForm] string? field, [FromForm] int? runId, IFormFile? file, CancellationToken ct)
+    public async Task<IActionResult> Upload([FromForm] int workflowId, [FromForm] string? field, [FromForm] int? runId, [FromForm] int? taskId, IFormFile? file, CancellationToken ct)
     {
         var email = User.Email();
         if (email.Length == 0) return BadRequest(new { error = "Your account has no email address, so files cannot be uploaded." });
         FormDefinition form;
-        if (runId is int revisingId)
+        if (taskId is int workingOn)
+        {
+            // Adding a file while completing a task on a request: the task's own fields decide.
+            var target = await _runs.TaskUploadTargetAsync(workingOn, email, User.IsAdmin(), ct);
+            if (target is null) return NotFound(new { error = "This task is no longer waiting for you." });
+            form = target.Value.Form;
+            workflowId = target.Value.Run.WorkflowId;
+        }
+        else if (runId is int revisingId)
         {
             // Adding a file while editing a request that was sent back: use that request's own form.
             var revising = await RevisableAsync(revisingId, ct);
@@ -434,6 +467,8 @@ public sealed class BuilderController : ControllerBase
             definition = Json.ParseDefinition(w.DraftJson),
             publishedVersion = w.PublishedVersion, isPublished = w.PublishedJson is not null,
             hasUnpublishedChanges = w.HasUnpublishedChanges, isEnabled = w.IsEnabled,
+            isAdmin = User.IsAdmin(),
+            teams = await _db.Teams.AsNoTracking().OrderBy(t => t.Name).Select(t => t.Name).ToListAsync(ct),
         }, Json.Options);
     }
 
@@ -500,6 +535,11 @@ public sealed class BuilderController : ControllerBase
         return null;
     }
 
+    /// <summary>Workflows that reach into the help desk are built by administrators only.</summary>
+    private string? HelpDeskRule(WorkflowDefinition def) => !User.IsAdmin() && def.UsesHelpDesk() ? HelpDeskMessage : null;
+
+    public const string HelpDeskMessage = "Only an administrator can save a workflow that uses the help desk (Freshservice steps, a Freshservice lookup field, or starting from a ticket). Ask an administrator to add those parts.";
+
     private static string Clip(string? s, int max)
     {
         s = (s ?? "").Trim();
@@ -511,7 +551,7 @@ public sealed class BuilderController : ControllerBase
     {
         var w = await ManagedAsync(id, tracked: true, ct);
         if (w is null) return NotFound();
-        var error = Apply(w, request, User.Email(), out var def) ?? await ApplyAccessAsync(w, request);
+        var error = Apply(w, request, User.Email(), out var def) ?? HelpDeskRule(def!) ?? await ApplyAccessAsync(w, request);
         if (error is not null) return BadRequest(new { error });
         await _db.SaveChangesAsync(ct);
         return Ok(new { ok = true, hasUnpublishedChanges = w.HasUnpublishedChanges, issues = IssueShape(DefinitionValidator.Validate(def!)) });
@@ -522,7 +562,7 @@ public sealed class BuilderController : ControllerBase
     {
         var w = await ManagedAsync(id, tracked: true, ct);
         if (w is null) return NotFound();
-        var error = Apply(w, request, User.Email(), out var def) ?? await ApplyAccessAsync(w, request);
+        var error = Apply(w, request, User.Email(), out var def) ?? HelpDeskRule(def!) ?? await ApplyAccessAsync(w, request);
         if (error is not null) return BadRequest(new { error });
 
         var issues = DefinitionValidator.Validate(def!);

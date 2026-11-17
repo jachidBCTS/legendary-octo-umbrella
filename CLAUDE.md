@@ -118,16 +118,35 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   is untouched. `form-runtime.js` builds held fields "compact" (`buildField(field, true)`, named by
   `aria-label`) and `buildWorksheet` places them. `FormDefinition.Style = "paper"` is CSS only
   (`.sf-paper`). Intro lines that all start with `•` render as a notice list.
+- **Owner's direction (Nov 17, 2026): everything stays in house.** Business office staff have no
+  Freshservice accounts and will not get them. Only technology-type workflows go to the help desk,
+  and those are built **only by administrators**: `WorkflowDefinition.UsesHelpDesk()` (ticket
+  trigger, `fs_*`/`wait_ticket` steps, `lookup` fields) is refused for non-admins on save, publish,
+  create, duplicate and import (`BuilderController.HelpDeskRule`), and the builder hides those
+  parts from them. Do not route a non-IT process through Freshservice.
+- **Task step** (`NodeTypes.Task`): someone fills in fields part-way through. `NodeDef.Fields` are
+  ordinary `FieldDef`s (types in `FieldTypes.InTask`) evaluated by `FormEvaluator` with the run
+  context as ambient values, so their formulas can use the request's answers. The run waits in
+  `RunStatus.WaitingTask` (use `RunStatus.IsWaitingOnPeople` wherever approvals and tasks are
+  treated alike) with an `ApprovalTask` of `Kind = "task"`, so inbox, reminders, escalation,
+  stand-ins and admin-on-behalf (audited) all apply. `RunService.CompleteTaskAsync` →
+  `WorkflowEngine.ResumeWithTaskAsync` copies **only the step's own field keys** into the context
+  (keys must be unique across the form and all tasks; `task` is reserved). Files uploaded in a task
+  go through `/api/attachments` with `taskId`. Browser: `task.js` mounts the same `form-runtime.js`.
+- **Teams** (`Teams` table, Admin → Teams): steps name a team as `[Team name]` in any "who"
+  setting (approvers, task assignees, notify to, escalate to); `WorkflowEngine.ResolvePeople`
+  expands it when the step is reached, so waiting items keep the people they were sent to. A
+  missing or empty team fails the run with a message that says where to fix it (retry afterwards).
 - **Travel template** (`SeedData.Travel`, workflow 5): the owner's paper "Request for Work Related
-  Travel" form. This is the first of the "templates needing a specific interface". Its four
-  approval steps and two business-office notifications have blank people on a real site (owner:
-  "these will be designated in the workflow"), so it seeds as an unpublished draft and the checker
-  reports six problems; in Development `TravelWithExamplePeople` fills them in. Owner's decisions:
-  the route branches on district (central office administrator and business office staff differ;
-  business administrator and superintendent are shared); Board approval is **not** a SchoolFlow
-  step — a ticket is opened for the business office and, for $150 or more, the run waits until
-  that ticket is resolved; mileage and meal rates are fixed (below).
-  Defaults (today, name, "1 room") are applied when the form opens, not on submit.
+  Travel" form, the first of the "templates needing a specific interface". No Freshservice.
+  Route: department head (approval chain) → central office administrator (team chosen by district)
+  → Business Administrator → Superintendent → business office task (budget account, PO, and for
+  $150 or more the Board's decision and date; team chosen by district) → employee told → employee's
+  "After the trip" task (actual cost, receipts, PD report; no reminders) → business office
+  reconciles → done. Board "Not approved" ends it as rejected. On a real site the six teams
+  (`SeedData.TravelTeams`) are empty and the rates are 0, so it seeds as an unpublished draft; in
+  Development they hold the example people. Defaults (today, name, "1 room") are applied when the
+  form opens, not on submit.
 - **Rates** (`Rates` table, Admin → Rates): admin-kept amounts exposed to *form* formulas as the
   reserved name `rates` (`rates.mileage`), supplied with the ambient values by
   `SchoolCalendar.RatesAsync` (cached 60 s; `InvalidateRates` on change). A fixed rate on a form is
@@ -229,8 +248,8 @@ Waiting on the owner:
   to fill `Departments` (name + final approvers) instead of manual entry. Ask before designing.
 - **Admin templates needing a specific interface.** The owner will add "a few templates" that
   "warrant a specific user interface for best adaptation by staff". The travel form is done (paper
-  look + worksheet, fixed rates, per-district route); the owner will name its people and set
-  its rates themselves. More templates may follow.
+  look + worksheet, fixed rates, per-district route, fully in-app); the owner fills in its
+  teams and rates themselves. More templates may follow.
   Need from the owner, per template: what it collects and what should look/behave differently from
   the standard form. Likely shape: a per-workflow custom layout/renderer on top of the same
   definition and `FormEvaluator`, so logic and validation stay shared.

@@ -47,6 +47,12 @@ public class IndexModel : PageModel
             return RedirectToPage();
         }
         var isTicket = trigger == TriggerTypes.Ticket;
+        if (isTicket && !User.IsAdmin())
+        {
+            TempData["Flash"] = SchoolFlow.Web.Controllers.BuilderController.HelpDeskMessage;
+            TempData["FlashKind"] = "bad";
+            return RedirectToPage();
+        }
         var def = new WorkflowDefinition
         {
             Trigger = { Type = isTicket ? TriggerTypes.Ticket : TriggerTypes.Form },
@@ -76,6 +82,12 @@ public class IndexModel : PageModel
     {
         var source = await ManagedAsync(id);
         if (source is null) return NotFound();
+        if (!User.IsAdmin() && Json.ParseDefinition(source.DraftJson).UsesHelpDesk())
+        {
+            TempData["Flash"] = SchoolFlow.Web.Controllers.BuilderController.HelpDeskMessage;
+            TempData["FlashKind"] = "bad";
+            return RedirectToPage();
+        }
         var name = "Copy of " + source.Name;
         var copy = new Workflow
         {
@@ -128,6 +140,7 @@ public class IndexModel : PageModel
         {
             return Bad("That file could not be read as a workflow.");
         }
+        if (!User.IsAdmin() && def.UsesHelpDesk()) return Bad(SchoolFlow.Web.Controllers.BuilderController.HelpDeskMessage);
         if (name.Length == 0) name = "Imported workflow";
         string Clip(string s, int max) => s.Length > max ? s[..max] : s;
         var workflow = new Workflow

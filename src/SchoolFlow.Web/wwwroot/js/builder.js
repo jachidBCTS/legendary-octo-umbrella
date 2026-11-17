@@ -41,6 +41,7 @@
     { type: 'condition', label: 'Decision', hint: 'Yes / No branch from a formula', tone: 'amber' },
     { type: 'approval', label: 'Approval', hint: 'Wait for someone to approve', tone: 'violet' },
     { type: 'approval_chain', label: 'Approval chain', hint: 'Several approvers in order, then the department', tone: 'violet' },
+    { type: 'task', label: 'Task', hint: 'Someone fills in details or adds documents', tone: 'violet' },
     { type: 'notify', label: 'Send notification', hint: 'In the app and by email', tone: 'rose' },
     { type: 'fs_create_ticket', label: 'Create ticket', hint: 'Open a Freshservice ticket', tone: 'teal' },
     { type: 'fs_update_ticket', label: 'Update ticket', hint: 'Status, priority, group, fields', tone: 'teal' },
@@ -52,6 +53,9 @@
     { type: 'end', label: 'End', hint: 'Finish the request', tone: 'green' },
   ];
   const NODE_INFO = Object.fromEntries(NODE_TYPES.map((n) => [n.type, n]));
+  // Steps and fields that reach into the Freshservice help desk: administrators only.
+  const HELP_DESK_STEPS = ['fs_create_ticket', 'fs_update_ticket', 'fs_add_note', 'fs_service_request', 'fs_lookup', 'wait_ticket'];
+  const TASK_FIELD_TYPES = [['text', 'Text'], ['textarea', 'Paragraph'], ['number', 'Number'], ['currency', 'Currency'], ['date', 'Date'], ['time', 'Time'], ['select', 'Dropdown'], ['radio', 'Choice buttons'], ['checkbox', 'Yes / no'], ['attachments', 'Attachments'], ['calculated', 'Calculated']];
   NODE_INFO.start = { type: 'start', label: 'Start', hint: '', tone: 'indigo' };
   const APPROVAL_PORTS = [['approved', 'Approved'], ['rejected', 'Rejected']];
   const PORTS = { condition: [['true', 'Yes'], ['false', 'No']], approval: APPROVAL_PORTS, approval_chain: APPROVAL_PORTS, end: [] };
@@ -73,6 +77,8 @@
     publishedVersion: 0,
     isPublished: false,
     hasUnpublishedChanges: false,
+    isAdmin: false,
+    teams: [],
   };
   const autoKeys = new WeakSet(); // fields whose key still follows the label
   let preview = null;
@@ -85,7 +91,7 @@
     if (/^[0-9]/.test(s)) s = 'f_' + s;
     return s;
   };
-  const RESERVED = ['submitter', 'ticket', 'approval', 'approvals', 'run', 'event', 'chain', 'attachments', 'rates', 'true', 'false', 'null', 'blank', 'and', 'or', 'not'];
+  const RESERVED = ['submitter', 'ticket', 'approval', 'approvals', 'run', 'event', 'chain', 'attachments', 'rates', 'task', 'true', 'false', 'null', 'blank', 'and', 'or', 'not'];
   function uniqueKey(base, taken) {
     let key = RESERVED.includes(base) ? base + '_field' : base;
     let n = 2;
@@ -108,6 +114,8 @@
       state.meta = { name: data.name, description: data.description || '', category: data.category || '', color: data.color || 'indigo',
         owners: data.owners || [], audienceGroups: data.audienceGroups || [] };
       state.groups = data.groups || [];
+      state.isAdmin = !!data.isAdmin;
+      state.teams = data.teams || [];
       state.def = normalise(data.definition);
       state.publishedVersion = data.publishedVersion;
       state.isPublished = data.isPublished;
@@ -306,6 +314,7 @@
     if (isFormTrigger()) state.def.form.fields.forEach((f) => { if (f.key && !['section', 'page', 'worksheet'].includes(f.type)) names.add(f.key.toLowerCase()); });
     if (context === 'flow') {
       state.def.flow.nodes.forEach((n) => {
+        if (n.type === 'task') (n.fields || []).forEach((f) => { if (f.key) names.add(f.key.toLowerCase()); });
         if (n.type === 'set_variable' && n.config.name) names.add(n.config.name.trim().toLowerCase());
         if (n.type === 'fs_lookup' && n.config.saveAs) names.add(n.config.saveAs.trim().toLowerCase());
       });
@@ -584,7 +593,7 @@
 
   function renderFormTab() {
     const palette = h('aside', { class: 'bld-palette' }, h('h3', null, 'Add a field'),
-      FIELD_TYPES.map((t) => h('button', { type: 'button', class: 'pal-item', onclick: () => addField(t.type) },
+      FIELD_TYPES.filter((t) => state.isAdmin || t.type !== 'lookup').map((t) => h('button', { type: 'button', class: 'pal-item', onclick: () => addField(t.type) },
         h('strong', null, t.label), h('small', null, t.hint))));
     fieldList = h('div', { class: 'fld-list' });
     const center = h('section', { class: 'bld-center' },
@@ -832,6 +841,7 @@
     const node = { id: newNodeId(type), type, label: info.label, x, y, config: {}, customFields: {} };
     if (type === 'fs_create_ticket') Object.assign(node.config, { subject: '', priority: '2', status: '2', attachFiles: 'true' });
     if (type === 'fs_add_note') node.config.visibility = 'private';
+    if (type === 'task') node.fields = [];
     if (type === 'fs_lookup') Object.assign(node.config, { kind: 'requester', saveAs: 'person' });
     if (type === 'wait_ticket') node.config.until = 'IN(ticket.status, 4, 5)';
     if (type === 'end') node.label = 'Done';
@@ -887,6 +897,7 @@
         if (c.departmentSource === 'field' || c.departmentSource === 'fixed') parts.push('the department\'s final approver');
         return parts.length ? 'Runs ' + parts.join(', then ') : 'Nobody to approve yet';
       }
+      case 'task': return (c.assignees ? c.assignees + ' ' : 'Nobody yet — ') + ((n.fields || []).length ? 'fills in ' + n.fields.map((f) => f.label || f.key).join(', ') : 'marks it done');
       case 'notify': return c.to ? 'To ' + c.to + (c.subject ? ': ' + c.subject : '') : 'No recipients yet';
       case 'fs_create_ticket': return c.subject || 'No subject yet';
       case 'fs_update_ticket': return 'Change ' + (['status', 'priority', 'priorityFormula', 'groupId', 'responderId'].filter((k) => c[k]).map((k) => k.replace('Formula', '').replace('Id', '')).concat(Object.keys(n.customFields || {})).join(', ') || 'nothing yet');
@@ -902,8 +913,9 @@
 
   function renderFlowTab() {
     const palette = h('aside', { class: 'bld-palette' }, h('h3', null, 'Add a step'),
-      NODE_TYPES.map((t) => h('button', { type: 'button', class: 'pal-item tone-' + t.tone, onclick: () => addNode(t.type) },
+      NODE_TYPES.filter((t) => state.isAdmin || !HELP_DESK_STEPS.includes(t.type)).map((t) => h('button', { type: 'button', class: 'pal-item tone-' + t.tone, onclick: () => addNode(t.type) },
         h('strong', null, t.label), h('small', null, t.hint))),
+      state.isAdmin ? null : h('p', { class: 'b-help' }, 'Help desk (Freshservice) steps are added by administrators.'),
       h('p', { class: 'b-help' }, 'Drag from a dot under a step to another step to connect them. Select a step or line and press Delete to remove it.'));
     svg = document.createElementNS(SVG_NS, 'svg');
     svg.setAttribute('class', 'fl-edges');
@@ -1211,6 +1223,20 @@
         row('Escalate after (school days)', textInput(c.escalateDays, set('escalateDays'), { inputmode: 'numeric', placeholder: 'never' }))),
       row('Escalate to', tpl('escalateTo', 1, 'e.g. principal@school.org'), 'After that long with no decision, these people can also decide the step. Leave both blank for no escalation.'),
     ];
+    /** A "who" setting: emails, {{formulas}}, or a team picked from the list (written as [Team name]). */
+    const people = (key, placeholder) => {
+      const input = tpl(key, 1, placeholder);
+      if (!state.teams.length) return input;
+      const pick = select('', [['', 'Add a team…']].concat(state.teams.map((t) => [t, t])), (v) => {
+        if (!v) return;
+        const current = (c[key] || '').trim();
+        set(key)(current ? current + ', [' + v + ']' : '[' + v + ']');
+        renderAll();
+      });
+      pick.setAttribute('aria-label', 'Add a team');
+      return h('div', { class: 'b-people' }, input, pick);
+    };
+    const WHO_HELP = 'Emails separated by commas, or a team from Admin → Teams (written as [Team name]). Any one of them can act.';
     const ticketRow = () => row('Which ticket', tpl('ticketId', 1, '{{ticket.id}}'), 'Leave blank to use the ticket this request created or was started by.');
 
     panel.append(
@@ -1229,7 +1255,7 @@
         break;
       case 'approval':
         panel.append(
-          row('Approvers', tpl('approvers', 1, 'e.g. {{approver_email}} or principal@school.org'), 'One or more emails separated by commas.'),
+          row('Approvers', people('approvers', 'e.g. {{approver_email}} or principal@school.org'), 'Emails separated by commas, or a team from Admin → Teams (written as [Team name]).'),
           row('If there is more than one', select(c.rule || 'any', [['any', 'Any one of them can decide'], ['all', 'All of them must approve']], (v) => { set('rule')(v === 'any' ? '' : v); })),
           row('Instructions for the approver', tpl('instructions', 4, 'What should they check? e.g. Total: {{TEXT(total, "C2")}}')),
           h('p', { class: 'b-help' }, 'For several approvers in sequence, or a department\'s final approver, use an “Approval chain” step instead.'),
@@ -1267,9 +1293,69 @@
           followUp());
         break;
       }
+      case 'task': {
+        node.fields = node.fields || [];
+        const taken = (except) => {
+          const keys = new Set(state.def.form.fields.map((f) => f.key));
+          state.def.flow.nodes.forEach((n) => (n.fields || []).forEach((f) => { if (f !== except) keys.add(f.key); }));
+          return [...keys];
+        };
+        const list = h('div');
+        const renderFields = () => {
+          list.textContent = '';
+          node.fields.forEach((f, i) => {
+            const keyInput = textInput(f.key, (v) => { f.key = v.trim(); autoKeys.delete(f); refreshNode(); }, { spellcheck: 'false', class: 'mono' });
+            const box = h('div', { class: 'b-task-field' },
+              h('div', { class: 'row-between' }, h('span', { class: 'b-label' }, 'Field ' + (i + 1)),
+                h('button', { type: 'button', class: 'icon-btn danger', 'aria-label': 'Remove field ' + (i + 1), onclick: () => { node.fields.splice(i, 1); markDirty(); renderFields(); refreshNode(); } }, '×')),
+              row('Label', textInput(f.label, (v) => {
+                f.label = v;
+                if (autoKeys.has(f)) { f.key = uniqueKey(slug(v), taken(f)); keyInput.value = f.key; }
+                refreshNode();
+              })),
+              row('Key', keyInput, 'The name later steps and messages use, e.g. {{' + (f.key || 'key') + '}}.'),
+              row('Type', select(f.type, TASK_FIELD_TYPES, (v) => {
+                f.type = v;
+                if (['select', 'radio'].includes(v)) f.options = f.options || ['Option 1', 'Option 2']; else delete f.options;
+                if (v !== 'calculated') delete f.formula;
+                renderFields();
+              })));
+            if (['select', 'radio'].includes(f.type))
+              box.append(row('Options', textArea((f.options || []).join('\n'), (v) => { f.options = v.split('\n').map((o) => o.trim()).filter(Boolean); }, 3), 'One option per line.'));
+            if (f.type === 'calculated')
+              box.append(row('Formula', formulaInput(f.formula, (v) => { f.formula = v; }, { context: 'flow', placeholder: 'e.g. total - actual_total' })));
+            else
+              box.append(
+                toggle('Required', f.required, (v) => { f.required = v; }),
+                row('Required when', formulaInput(f.requiredWhen, (v) => { f.requiredWhen = clean(v); }, { context: 'flow', placeholder: 'e.g. total >= 150' })));
+            box.append(row('Show only when', formulaInput(f.visibleWhen, (v) => { f.visibleWhen = clean(v); }, { context: 'flow', placeholder: 'Always shown' })));
+            if (!['calculated', 'attachments', 'checkbox'].includes(f.type))
+              box.append(row('Starts as (formula)', formulaInput(f.default, (v) => { f.default = clean(v); }, { context: 'flow', placeholder: 'e.g. budget_account' }), 'Filled in when the task opens. Can use the request\'s answers.'));
+            box.append(row('Help text', textInput(f.help, (v) => { f.help = clean(v); })));
+            list.appendChild(box);
+          });
+          list.appendChild(h('button', { type: 'button', class: 'btn small', onclick: () => {
+            const field = { key: uniqueKey('answer', taken()), label: 'New field', type: 'text' };
+            autoKeys.add(field);
+            node.fields.push(field);
+            markDirty();
+            renderFields();
+            refreshNode();
+          } }, '+ Add a field'));
+        };
+        renderFields();
+        panel.append(
+          row('Who does this', people('assignees', 'e.g. {{submitter.email}} or a team'), WHO_HELP),
+          row('Instructions', tpl('instructions', 4, 'What should they do? e.g. Record the purchase order number.')),
+          h('h4', { class: 'b-section' }, 'What they fill in'),
+          h('p', { class: 'b-help' }, 'The request waits here until one of these people completes the task. What they enter is added to the request and can be used by later steps. With no fields, the task is simply marked as done.'),
+          list,
+          followUp());
+        break;
+      }
       case 'notify':
         panel.append(
-          row('Send to', tpl('to', 1, 'e.g. {{submitter.email}}, office@school.org'), 'Emails separated by commas. Staff also see it in their Notifications; outside addresses only get the email.'),
+          row('Send to', people('to', 'e.g. {{submitter.email}}, office@school.org'), 'Emails separated by commas, or a team. Staff also see it in their Notifications; outside addresses only get the email.'),
           row('Subject', tpl('subject', 1, 'e.g. Your trip to {{destination}} is approved')),
           row('Message', tpl('message', 5, 'Plain text. Use {{field}} placeholders.')),
           h('p', { class: 'b-help' }, 'Approvers and requesters are notified automatically (approval needed, completed, not approved). Use this step for anything extra.'));
@@ -1431,7 +1517,7 @@
       trigger.type === 'ticket' ? null : audienceEditor(),
       h('h3', null, 'How it starts'),
       triggerChoice('form', 'Someone fills in a form', 'Appears on the home page for everyone who signs in.'),
-      triggerChoice('ticket', 'A Freshservice ticket event', 'Starts when Freshservice sends a ticket to the SchoolFlow webhook. Runs once per ticket.'));
+      state.isAdmin || trigger.type === 'ticket' ? triggerChoice('ticket', 'A Freshservice ticket event', 'Starts when Freshservice sends a ticket to the SchoolFlow webhook. Runs once per ticket.') : null);
     if (trigger.type === 'ticket') {
       panel.append(row('Only start when', formulaInput(trigger.condition, (v) => { trigger.condition = clean(v); }, { context: 'flow', placeholder: 'e.g. ticket.priority >= 3' }),
         'Leave blank to start for every ticket event. Uses the ticket\'s API values: status 2 Open … 5 Closed, priority 1 Low … 4 Urgent.'));

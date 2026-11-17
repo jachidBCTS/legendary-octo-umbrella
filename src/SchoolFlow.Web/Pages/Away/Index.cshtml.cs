@@ -59,7 +59,7 @@ public class IndexModel : PageModel
             var runs = await _db.Runs.AsNoTracking().Where(r => runIds.Contains(r.Id)).ToDictionaryAsync(r => r.Id, ct);
             foreach (var task in waiting)
             {
-                if (!runs.TryGetValue(task.RunId, out var run) || run.Status != RunStatus.WaitingApproval) continue;
+                if (!runs.TryGetValue(task.RunId, out var run) || !RunStatus.IsWaitingOnPeople(run.Status)) continue;
                 if (run.SubmitterEmail == to || task.CanBeDecidedBy(to) || task.HasApproved(email)) continue;
                 task.StandIns = (task.StandIns.Length == 0 ? ";" : task.StandIns) + $"{to}={email};";
                 task.RebuildExtra();

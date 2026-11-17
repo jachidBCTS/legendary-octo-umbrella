@@ -28,7 +28,7 @@
     <input type="hidden" name="scope" value="@Model.Scope" />
     <select name="status" data-autosubmit aria-label="Filter by status">
         <option value="">Any status</option>
-        @foreach (var s in new[] { RunStatus.WaitingApproval, RunStatus.ChangesRequested, RunStatus.WaitingTicket, RunStatus.Completed, RunStatus.Rejected, RunStatus.Failed, RunStatus.Cancelled })
+        @foreach (var s in new[] { RunStatus.WaitingApproval, RunStatus.WaitingTask, RunStatus.ChangesRequested, RunStatus.WaitingTicket, RunStatus.Completed, RunStatus.Rejected, RunStatus.Failed, RunStatus.Cancelled })
         {
             <option value="@s" selected="@(Model.Status == s)">@Ui.Status(s).Label</option>
         }

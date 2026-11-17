@@ -181,23 +181,19 @@ If the site cannot read the file, `icacls <file> /reset` puts the normal inherit
 11. Review the starter workflows (Builder → Workflows). Switch off or delete the ones you do not want
     staff to see, and add owners to the ones you keep (they start with none, so only admins can
     manage them).
-12. **Work Related Travel form.** It arrives as a draft, because it needs your people and amounts:
+12. **Work Related Travel form.** It does not use Freshservice. It arrives as a draft, because it
+    needs your people and amounts:
     - Admin → Rates: enter the mileage rate and the three meal rates (they start at 0, and the form
       refuses to cost mileage or meals until they are set).
     - Admin → Departments: each school/department with its Principal or Department Head as final
       approver (step 8). That person is the first approval on a travel request.
-    - Workflows → *Request for Work Related Travel* → **Flow**: click each step the checker lists
-      (the two Central Office Administrators, the Business Administrator, the Superintendent, and
-      the two business-office notifications) and enter the email address. Then **Publish**.
-    - Optional: to keep these tickets in your own Freshservice status (for example *Travel Pending*),
-      open the *Open the business office ticket* step, choose *A status you added in Freshservice…*
-      and enter that status's number. The request is released only when the ticket becomes
-      **Resolved**; a ticket that is **Closed** without being resolved tells the employee the travel
-      was not approved. Any other status, including your custom one, keeps it waiting.
-    - Submit one request of $150 or more as a test. After the approvals a ticket should appear in
-      Freshservice; resolving that ticket is what tells the employee the Board has approved, so
-      the webhook (step 9) must be working first.
-
+    - Admin → Teams: put people in the six teams the form uses — the two Central Office
+      Administrators, the Business Administrator, the Superintendent and the two Business Offices.
+      A request that reaches a team with nobody in it stops with an error until you add someone.
+    - Workflows → *Request for Work Related Travel* → **Publish**.
+    - Submit one request of $150 or more as a test and take it all the way through: the four
+      approvals, the business office task (budget account, PO, Board decision), the employee's
+      "After the trip" task with a receipt attached, and the business office's reconciliation.
 13. **Student information**, if any form will use a *Student* field: Admin → Student access. Import
     the roster as a CSV file with the headings Student ID, First Name, Last Name, School, Grade,
     Academy (other columns are ignored), then add the staff who may look students up. Nobody has

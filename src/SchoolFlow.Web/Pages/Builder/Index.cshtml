@@ -60,7 +60,10 @@
         <input id="new-name" name="name" required maxlength="200" placeholder="e.g. Field Trip Request" />
         <label class="lbl">How does it start?</label>
         <label class="choice"><input type="radio" name="trigger" value="form" checked /> <span><strong>Someone fills in a form</strong><small>Staff or students submit a request.</small></span></label>
-        <label class="choice"><input type="radio" name="trigger" value="ticket" /> <span><strong>A Freshservice ticket event</strong><small>Freshservice notifies SchoolFlow when a ticket is created or updated.</small></span></label>
+        @if (User.IsAdmin())
+        {
+            <label class="choice"><input type="radio" name="trigger" value="ticket" /> <span><strong>A Freshservice ticket event</strong><small>Freshservice notifies SchoolFlow when a ticket is created or updated.</small></span></label>
+        }
         <div data-show-when-trigger="form">
             <label class="lbl" for="new-copy">Can people start from a previous request?</label>
             <select id="new-copy" name="allowCopy">

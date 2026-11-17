@@ -34,6 +34,11 @@
     <dl class="answers">
         @foreach (var f in Model.Fields)
         {
+            @if (f.Heading)
+            {
+                <dt class="answers-head">@f.Label</dt><dd class="answers-head">@f.Value</dd>
+                continue;
+            }
             <dt>@f.Label</dt>
             @if (f.Files is not null) { <dd>@string.Join(", ", f.Files.Select(x => $"{x.Name} ({x.Size})"))</dd> }
             else if (f.Rows is not null)

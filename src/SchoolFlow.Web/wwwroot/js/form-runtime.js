@@ -587,6 +587,7 @@
         const data = new FormData();
         data.append('workflowId', String(options.workflowId || 0));
         if (options.runId) data.append('runId', String(options.runId));
+        if (options.taskId) data.append('taskId', String(options.taskId));
         data.append('field', field.key);
         data.append('file', file);
         let response;

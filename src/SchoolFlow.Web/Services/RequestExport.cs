@@ -17,7 +17,13 @@ public static class RequestExport
         var forms = new Dictionary<string, FormDefinition>();
         FormDefinition FormOf(WorkflowRun run)
         {
-            if (!forms.TryGetValue(run.DefinitionJson, out var form)) forms[run.DefinitionJson] = form = Json.ParseDefinition(run.DefinitionJson).Form;
+            if (!forms.TryGetValue(run.DefinitionJson, out var form))
+            {
+                // The form's questions, then what Task steps collect along the way.
+                var def = Json.ParseDefinition(run.DefinitionJson);
+                form = new FormDefinition { Fields = def.Form.Fields.Concat(def.Flow.Nodes.Where(n => n.Type == NodeTypes.Task).SelectMany(n => n.Fields ?? new List<FieldDef>())).ToList() };
+                forms[run.DefinitionJson] = form;
+            }
             return form;
         }
         static bool HasAnswer(FieldDef f) => !FieldTypes.IsLayout(f.Type) && !string.IsNullOrWhiteSpace(f.Key);

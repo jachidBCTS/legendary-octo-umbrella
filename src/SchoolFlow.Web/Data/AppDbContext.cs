@@ -87,6 +87,8 @@ public class ApprovalTask
     public int Id { get; set; }
     public int RunId { get; set; }
     public string NodeId { get; set; } = "";
+    /// <summary>"approval" (approve / reject / send back) or "task" (fill in the step's fields).</summary>
+    public string Kind { get; set; } = TaskKinds.Approval;
     public string Title { get; set; } = "";
     public string Instructions { get; set; } = "";
     /// <summary>Lower-case emails wrapped in semicolons (";a@x.org;b@x.org;") so one can be matched exactly.</summary>
@@ -149,7 +151,31 @@ public static class ApprovalStatus
 {
     public const string Pending = "Pending", Approved = "Approved", Rejected = "Rejected", Cancelled = "Cancelled",
         /// <summary>The approver sent the request back to the requester for changes.</summary>
-        Returned = "Returned";
+        Returned = "Returned",
+        /// <summary>A Task step was completed (its fields filled in).</summary>
+        Done = "Done";
+}
+
+/// <summary>What a pending item asks its assignee to do.</summary>
+public static class TaskKinds
+{
+    public const string Approval = "approval", Task = "task";
+}
+
+/// <summary>
+/// A named group of staff (for example "Business Office – Technical Schools") that workflow steps
+/// can name as [Team name] instead of listing people, so a change of staff is made in one place.
+/// </summary>
+public class Team
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+    /// <summary>Lower-case emails packed like ";a@x.org;b@x.org;".</summary>
+    public string Members { get; set; } = "";
+    public DateTime UpdatedAt { get; set; }
+    public string UpdatedBy { get; set; } = "";
+
+    public IEnumerable<string> MemberList => Members.Split(';', StringSplitOptions.RemoveEmptyEntries);
 }
 
 public class AppUser
@@ -392,6 +418,7 @@ public class AppDbContext : DbContext
     public DbSet<RunComment> RunComments => Set<RunComment>();
     public DbSet<ClosedDay> ClosedDays => Set<ClosedDay>();
     public DbSet<Rate> Rates => Set<Rate>();
+    public DbSet<Team> Teams => Set<Team>();
     public DbSet<Student> Students => Set<Student>();
     public DbSet<WorkflowVersion> WorkflowVersions => Set<WorkflowVersion>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
@@ -495,6 +522,13 @@ public class AppDbContext : DbContext
             e.HasIndex(x => x.StudentId).IsUnique();
             e.HasIndex(x => x.LastName);
         });
+        b.Entity<Team>(e =>
+        {
+            e.Property(x => x.Name).HasMaxLength(200);
+            e.Property(x => x.UpdatedBy).HasMaxLength(320);
+            e.HasIndex(x => x.Name).IsUnique();
+        });
+        b.Entity<ApprovalTask>().Property(x => x.Kind).HasMaxLength(20).HasDefaultValue(TaskKinds.Approval);
         b.Entity<Rate>(e =>
         {
             e.Property(x => x.Key).HasMaxLength(60);

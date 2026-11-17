@@ -17,7 +17,7 @@ public static class DefinitionValidator
     /// <summary>Names formulas can always read, so fields and variables may not reuse them.</summary>
     public static readonly HashSet<string> Reserved = new(StringComparer.OrdinalIgnoreCase)
     {
-        "submitter", "ticket", "approval", "approvals", "run", "event", "chain", "attachments", "rates",
+        "submitter", "ticket", "approval", "approvals", "run", "event", "chain", "attachments", "rates", "task",
         "true", "false", "null", "blank", "and", "or", "not",
     };
 
@@ -220,6 +220,33 @@ public static class DefinitionValidator
             if (n.Type == NodeTypes.SetVariable && IsValidKey(n.Get("name").Trim())) known.Add(n.Get("name").Trim());
             if (n.Type == NodeTypes.Lookup && IsValidKey(n.Get("saveAs").Trim())) known.Add(n.Get("saveAs").Trim());
         }
+        // What a Task step collects joins the request under the field's key, so each key must be new.
+        var taskFields = new List<(NodeDef Node, FieldDef Field)>();
+        foreach (var n in flow.Nodes.Where(n => n.Type == NodeTypes.Task))
+        {
+            foreach (var f in n.Fields ?? new List<FieldDef>())
+            {
+                var label = string.IsNullOrWhiteSpace(f.Label) ? f.Key : f.Label;
+                if (Array.IndexOf(FieldTypes.InTask, f.Type) < 0) { Error(n.Id, $"“{Name(n)}”: “{label}” is a kind of field a task cannot ask for."); continue; }
+                if (string.IsNullOrWhiteSpace(f.Label)) Error(n.Id, $"“{Name(n)}”: a field needs a label.");
+                if (!IsValidKey(f.Key)) Error(n.Id, $"“{Name(n)}”: “{label}” needs a key that starts with a letter and uses only letters, digits and underscores.");
+                else if (FieldTypes.IsLayout(f.Type)) continue;
+                else if (!known.Add(f.Key)) Error(n.Id, $"“{Name(n)}”: the key '{f.Key}' is already used by the form, another step or a reserved name. Choose a different key.");
+                else taskFields.Add((n, f));
+            }
+        }
+        foreach (var (n, f) in taskFields)
+        {
+            var label = string.IsNullOrWhiteSpace(f.Label) ? f.Key : f.Label;
+            if (FieldTypes.HasOptions(f.Type)) CheckOptions(f.Options, message => Error(n.Id, $"“{Name(n)}”, “{label}”: {message}"));
+            if (f.Type == FieldTypes.Calculated)
+            {
+                if (string.IsNullOrWhiteSpace(f.Formula)) Error(n.Id, $"“{Name(n)}”, “{label}”: needs a formula.");
+                else CheckFormula(f.Formula, "flow", n.Id, $"“{label}” formula", known, issues);
+            }
+            foreach (var (source, what) in new[] { (f.VisibleWhen, "show-when"), (f.RequiredWhen, "required-when"), (f.Default, "default value") })
+                if (!string.IsNullOrWhiteSpace(source)) CheckFormula(source, "flow", n.Id, $"“{label}” {what}", known, issues);
+        }
 
         var producesTicket = !isForm || flow.Nodes.Any(n =>
             n.Type is NodeTypes.CreateTicket or NodeTypes.ServiceRequest ||
@@ -272,6 +299,12 @@ public static class DefinitionValidator
                     CheckFollowUp(n, name, Text, Error);
                     if (!flow.Edges.Any(e => e.From == n.Id && e.Port == "approved"))
                         Warn(n.Id, $"“{name}”: the Approved branch is not connected, so nothing happens after approval.");
+                    break;
+                case NodeTypes.Task:
+                    Text("assignees", "“Who does this”", true);
+                    Text("instructions", "instructions", false);
+                    CheckFollowUp(n, name, Text, Error);
+                    if (!flow.Edges.Any(e => e.From == n.Id)) Warn(n.Id, $"“{name}”: nothing is connected after this task.");
                     break;
                 case NodeTypes.ApprovalChain:
                 {

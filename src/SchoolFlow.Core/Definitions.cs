@@ -11,6 +11,15 @@ public sealed class WorkflowDefinition
     public TriggerDefinition Trigger { get; set; } = new();
     public FormDefinition Form { get; set; } = new();
     public FlowDefinition Flow { get; set; } = new();
+
+    /// <summary>
+    /// Whether the workflow depends on the Freshservice help desk: it starts from a ticket, has a
+    /// help desk step, or looks something up there. Only administrators build these.
+    /// </summary>
+    public bool UsesHelpDesk() =>
+        Trigger.Type == TriggerTypes.Ticket
+        || Flow.Nodes.Any(n => NodeTypes.IsHelpDesk(n.Type))
+        || Form.Fields.Any(f => f.Type == FieldTypes.Lookup);
 }
 
 public sealed class TriggerDefinition
@@ -76,6 +85,12 @@ public static class FieldTypes
     {
         Text, TextArea, Email, Number, Currency, Date, Select, Radio, MultiSelect, Checkbox, Lookup, Calculated, Table, Section,
         Department, ApprovalChain, Location, Attachments, Time, Phone, Signature, Page, Worksheet, Student,
+    };
+
+    /// <summary>Field types a Task step can ask its assignee for.</summary>
+    public static readonly string[] InTask =
+    {
+        Text, TextArea, Email, Number, Currency, Date, Time, Phone, Select, Radio, MultiSelect, Checkbox, Calculated, Attachments, Section,
     };
 
     /// <summary>Field types that can be placed inside a worksheet row.</summary>
@@ -207,12 +222,15 @@ public static class NodeTypes
     public const string Start = "start", Condition = "condition", Approval = "approval", SetVariable = "set_variable",
         CreateTicket = "fs_create_ticket", ServiceRequest = "fs_service_request", UpdateTicket = "fs_update_ticket",
         AddNote = "fs_add_note", Lookup = "fs_lookup", WaitTicket = "wait_ticket", End = "end",
-        ApprovalChain = "approval_chain", Notify = "notify";
+        ApprovalChain = "approval_chain", Notify = "notify", Task = "task";
 
     public static readonly string[] All =
     {
-        Start, Condition, Approval, ApprovalChain, Notify, SetVariable, CreateTicket, ServiceRequest, UpdateTicket, AddNote, Lookup, WaitTicket, End,
+        Start, Condition, Approval, ApprovalChain, Task, Notify, SetVariable, CreateTicket, ServiceRequest, UpdateTicket, AddNote, Lookup, WaitTicket, End,
     };
+
+    /// <summary>Steps that talk to the Freshservice help desk.</summary>
+    public static bool IsHelpDesk(string type) => type is CreateTicket or ServiceRequest or UpdateTicket or AddNote or Lookup or WaitTicket;
 
     /// <summary>Output ports for each node type.</summary>
     public static string[] Ports(string type) => type switch
@@ -235,6 +253,8 @@ public sealed class NodeDef
     public Dictionary<string, string> Config { get; set; } = new();
     /// <summary>Freshservice custom field name → value template.</summary>
     public Dictionary<string, string> CustomFields { get; set; } = new();
+    /// <summary>Task steps only: what the assignee fills in. Their answers join the request under these keys.</summary>
+    public List<FieldDef>? Fields { get; set; }
 
     public string Get(string key) => Config.TryGetValue(key, out var v) ? v ?? "" : "";
 }

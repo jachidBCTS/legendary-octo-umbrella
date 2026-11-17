@@ -34,7 +34,10 @@ public class DetailModel : PageModel
     public List<ChainStepView> Chain { get; private set; } = new();
 
     public sealed record FileLink(string Name, string Size, string Url);
-    public sealed record Answer(string Label, string Value, List<string>? Columns = null, List<List<string>>? Rows = null, List<FileLink>? Files = null);
+    public sealed record Answer(string Label, string Value, List<string>? Columns = null, List<List<string>>? Rows = null, List<FileLink>? Files = null, bool Heading = false);
+    /// <summary>Tasks (fill-in steps) waiting for this person on this request.</summary>
+    public List<ApprovalTask> MyWork { get; private set; } = new();
+    public string TaskFormJson { get; private set; } = "{}";
 
     public WorkflowRun Run { get; private set; } = null!;
     public List<RunEventRow> Events { get; private set; } = new();
@@ -69,7 +72,9 @@ public class DetailModel : PageModel
         Run = run;
         var pending = tasks.Where(t => t.Status == ApprovalStatus.Pending).ToList();
         // Someone who has already approved an "all must approve" step has nothing left to do.
-        MyTasks = pending.Where(t => (t.CanBeDecidedBy(email) && !t.IsDoneFor(email)) || (User.IsAdmin() && !t.CanBeDecidedBy(email))).ToList();
+        var mine = pending.Where(t => (t.CanBeDecidedBy(email) && !t.IsDoneFor(email)) || (User.IsAdmin() && !t.CanBeDecidedBy(email))).ToList();
+        MyTasks = mine.Where(t => t.Kind != TaskKinds.Task).ToList();
+        MyWork = mine.Where(t => t.Kind == TaskKinds.Task).ToList();
         PendingAssignees = pending.SelectMany(t => t.AssigneeList.Where(a => !t.HasApproved(a)).Concat(t.StandInPairs.Select(p => p.StandIn)).Concat(t.EscalatedList)).Distinct().ToList();
         Comments = await _db.RunComments.AsNoTracking().Where(c => c.RunId == id).OrderBy(c => c.Id).ToListAsync();
         Decisions = tasks.Where(t => t.Status is ApprovalStatus.Approved or ApprovalStatus.Rejected or ApprovalStatus.Returned).OrderBy(t => t.Id).ToList();
@@ -107,8 +112,23 @@ public class DetailModel : PageModel
                     status, Values.ToText(step.GetValueOrDefault("rule"))));
             }
         }
+        if (MyWork.FirstOrDefault() is { } work && def.Flow.Nodes.FirstOrDefault(n => n.Id == work.NodeId) is { } workNode)
+            TaskFormJson = Json.Serialize(new FormDefinition { Fields = workNode.Fields ?? new List<FieldDef>(), SubmitLabel = "Complete task" }).Replace("<", "\\u003c");
+
         var seesStudents = def.Form.Fields.Any(f => f.Type == FieldTypes.Student) && await _access.CanViewStudentsAsync(User);
-        foreach (var f in def.Form.Fields.Where(f => !FieldTypes.IsLayout(f.Type)))
+        AddAnswers(def.Form.Fields);
+        // What was added along the way by completed tasks (the latest time each task was done).
+        foreach (var done in tasks.Where(t => t.Kind == TaskKinds.Task && t.Status == ApprovalStatus.Done).GroupBy(t => t.NodeId).Select(g => g.OrderBy(t => t.Id).Last()).OrderBy(t => t.Id))
+        {
+            if (def.Flow.Nodes.FirstOrDefault(n => n.Id == done.NodeId)?.Fields is not { Count: > 0 } taskFields) continue;
+            Fields.Add(new Answer(done.Title, $"Completed by {done.DecidedBy}{(done.DecidedAt is DateTime at ? " · " + Ui.Local(at).ToString("MMM d, yyyy h:mm tt") : "")}", Heading: true));
+            AddAnswers(taskFields);
+        }
+        return true;
+
+        void AddAnswers(IEnumerable<FieldDef> answered)
+        {
+        foreach (var f in answered.Where(f => !FieldTypes.IsLayout(f.Type)))
         {
             var value = context.GetValueOrDefault(f.Key);
             if (Values.IsBlank(value)) continue; // hidden or unanswered (an unticked box is "No", not blank)
@@ -136,7 +156,7 @@ public class DetailModel : PageModel
                 Fields.Add(new Answer(f.Label, Ui.Display(value, f.Type, f.Format, f.Decimals)));
             }
         }
-        return true;
+        }
     }
 
     public async Task<IActionResult> OnGetAsync(int id) => await LoadAsync(id) ? Page() : NotFound();

@@ -1062,6 +1062,93 @@ async function login(page, email) {
   check((await page.locator('.bld-inspector textarea').first().inputValue()).includes('| Lodging |'), 'a builder can edit the worksheet rows');
   await page.screenshot({ path: S + '/shots/47-builder-worksheet.png' });
 
+  note('13d-2. travel stays in the app: teams, business office task, after-the-trip task, reconciliation');
+  const approveAs = async (who) => { await login(page, who); await page.goto(travelUrl); await page.click('button[name=decision][value=approve]'); await page.waitForSelector('.flash.ok'); };
+  await approveAs('principal@example.org');   // department head
+  await approveAs('builder@example.org');     // central office administrator (Technical Schools team)
+  await approveAs('admin@example.org');       // business administrator
+  await approveAs('principal@example.org');   // superintendent
+  check((await page.locator('.page-head .pill').textContent()) === 'Waiting on a task', 'after the approvals the request waits on the business office, not on a help desk ticket');
+  check(await page.locator('.task-box').count() === 0 && (await page.locator('.timeline').textContent()).includes('waiting for admin@example.org'), 'someone outside the team sees who it is waiting on, not the task');
+  check(!(await page.locator('.timeline').textContent()).includes('Freshservice'), 'no ticket is created for travel');
+
+  await login(page, 'admin@example.org');
+  check((await page.locator('.sidebar a[href="/Approvals"] .badge').count()) === 1, 'the business office member sees the task in their inbox count');
+  await page.goto(travelUrl);
+  await page.waitForSelector('.task-box .sf-form');
+  check((await page.locator('.task-box').textContent()).includes('needs Board of Education approval'), 'the task explains that Board approval is needed');
+  await page.click('.task-box button[type=submit]');
+  await page.waitForSelector('.task-box .sf-banner:not([hidden])');
+  check(await field('Board of Education approval date').isHidden(), 'the Board date is only asked once the Board has approved');
+  await field('Confirmed Budget Acct. #').locator('input').fill('11-000-223');
+  await field('PO # issued').locator('input').fill('PO-7781');
+  await page.locator('.task-box .sf-option').first().click();
+  await field('Board of Education approval date').waitFor({ state: 'visible' });
+  await field('Board of Education approval date').locator('input').fill('2027-02-20');
+  await page.screenshot({ path: S + '/shots/52-office-task.png', fullPage: true });
+  await page.click('.task-box button[type=submit]');
+  await page.waitForFunction(() => /After the trip/.test(document.querySelector('.timeline')?.textContent || ''), null, { timeout: 10000 });
+  const afterOffice = await page.locator('.answers').textContent();
+  check(afterOffice.includes('PO-7781') && afterOffice.includes('Feb 20, 2027') && afterOffice.includes('Completed by admin@example.org'), 'what the business office recorded is on the request');
+
+  await login(page, 'teacher@example.org');
+  await page.goto(base + '/Notifications');
+  check((await page.locator('body').textContent()).includes('Travel approved: NJ Science Convention'), 'the employee is told the travel is approved');
+  await page.goto(travelUrl);
+  await page.waitForSelector('.task-box .sf-form');
+  check((await page.locator('.task-box h2').textContent()).includes('After the trip'), 'the employee gets the after-the-trip task on the same request');
+  fs.writeFileSync(S + '/receipt.txt', 'Hotel receipt: $378.00\n');
+  fs.writeFileSync(S + '/pd-report.txt', 'Professional development report\n');
+  await field('Actual total cost').locator('input').fill('690.25');
+  await page.locator('.task-box input[type=file]').nth(0).setInputFiles(S + '/receipt.txt');
+  await page.waitForFunction(() => document.querySelectorAll('.task-box .sf-attach li, .task-box .sf-file').length >= 1 || /receipt\.txt/.test(document.querySelector('.task-box').textContent));
+  await page.click('.task-box button[type=submit]');
+  await page.waitForSelector('.task-box .sf-banner:not([hidden])');
+  check((await field('Professional Development Report').locator('.sf-error:not([hidden])').first().textContent()).includes('required'), 'the report is required before the task can be completed');
+  await page.locator('.task-box input[type=file]').nth(1).setInputFiles(S + '/pd-report.txt');
+  await page.waitForFunction(() => /pd-report\.txt/.test(document.querySelector('.task-box').textContent));
+  await page.click('.task-box button[type=submit]');
+  await page.waitForFunction(() => !document.querySelector('.task-box'), null, { timeout: 10000 });
+  check((await page.locator('.answers a:has-text("receipt.txt")').count()) === 1 && (await page.locator('.answers').textContent()).includes('$690.25'), 'receipts and actual cost are added to the request');
+
+  await login(page, 'admin@example.org');
+  await page.goto(travelUrl);
+  await page.waitForSelector('.task-box .sf-form');
+  check((await page.locator('.task-box').textContent()).includes('Actual: $690.25'), 'the business office is asked to reconcile, with estimate and actual');
+  await field('Amount to reimburse').locator('input').fill('690.25');
+  await page.click('.task-box button[type=submit]');
+  await page.waitForFunction(() => document.querySelector('.page-head .pill')?.textContent === 'Completed', null, { timeout: 10000 });
+  check(true, 'reconciliation completes the request');
+  await page.screenshot({ path: S + '/shots/53-travel-complete.png', fullPage: true });
+
+  await page.goto(base + '/Admin/Teams');
+  check(await page.locator('main section.panel h2').count() === 7 && (await page.locator('body').textContent()).includes('used by Request for Work Related Travel'), 'admins manage the six travel teams in one place');
+  const superTeam = page.locator('section.panel:has(h2:has-text("Superintendent"))');
+  await superTeam.locator('textarea').fill('not-an-email');
+  await superTeam.locator('button:has-text("Save")').click();
+  await page.waitForSelector('.flash.bad');
+  page.once('dialog', (d) => d.accept());
+  await page.locator('section.panel:has(h2:has-text("Superintendent")) button:has-text("Remove")').click();
+  await page.waitForSelector('.flash.bad');
+  check((await page.locator('.flash.bad').textContent()).includes('Request for Work Related Travel'), 'a team a workflow uses cannot be removed');
+  await page.screenshot({ path: S + '/shots/54-teams.png', fullPage: true });
+
+  await login(page, 'builder@example.org');
+  await page.goto(base + '/Builder');
+  await page.locator('.wf-tile a.btn.primary').first().click();
+  await page.waitForSelector('.bld-title');
+  await page.click('.bld-tabs button:has-text("Flow")');
+  await page.waitForSelector('.pal-item');
+  check(await page.locator('.pal-item:has-text("Create ticket")').count() === 0 && await page.locator('.pal-item:has-text("Task")').count() === 1, 'a builder who is not an admin gets the Task step but no help desk steps');
+  const builderId = Number(page.url().split('/').pop());
+  const refused = await page.evaluate(async (id) => {
+    const w = await window.SF.api('GET', '/api/builder/' + id);
+    w.definition.flow.nodes.push({ id: 'sneak', type: 'fs_create_ticket', label: 'Ticket', x: 0, y: 0, config: { subject: 'x' } });
+    try { await window.SF.api('PUT', '/api/builder/' + id, { name: w.name, description: w.description, category: w.category, color: w.color, definition: w.definition }); return 'saved'; }
+    catch (e) { return e.message; }
+  }, builderId);
+  check(refused.includes('Only an administrator'), 'the server refuses help desk steps from a non-admin (' + refused.slice(0, 60) + ')');
+
   note('13e. student access, roster, student field, accessibility mode');
   await login(page, 'admin@example.org');
   await page.goto(base + '/Admin/StudentAccess');

@@ -47,23 +47,32 @@ public static class SeedData
                      })
                 db.Rates.Add(new Rate { Key = key, Label = label, Value = sampleDepartments ? example : 0m, UpdatedAt = DateTime.UtcNow });
         }
+        if (!db.Teams.Any())
+        {
+            // The people behind the travel form's steps. Real names are the district's to enter (Admin →
+            // Teams), so a new site starts with empty teams and the travel form stays a draft until then.
+            foreach (var (name, example) in TravelTeams)
+                db.Teams.Add(new Team { Name = name, Members = sampleDepartments ? ApprovalTask.Pack(new[] { example }) : "", UpdatedAt = DateTime.UtcNow });
+        }
         Add(db, "Request for Work Related Travel", "Conference, workshop or meeting travel, with the estimated cost worksheet.", "Travel", "blue",
-            sampleDepartments ? TravelWithExamplePeople : Travel, publish: sampleDepartments);
+            Travel, publish: sampleDepartments);
         db.SaveChanges();
     }
 
-    /// <summary>The travel template with the development sign-in's example people as its approvers.</summary>
-    public static string TravelWithExamplePeople => Travel
-        .Replace("\"approvers\": \"\", \"role\": \"central_tech\"", "\"approvers\": \"builder@example.org\", \"role\": \"central_tech\"")
-        .Replace("\"approvers\": \"\", \"role\": \"central_special\"", "\"approvers\": \"admin@example.org\", \"role\": \"central_special\"")
-        .Replace("\"approvers\": \"\", \"role\": \"business\"", "\"approvers\": \"admin@example.org\", \"role\": \"business\"")
-        .Replace("\"approvers\": \"\", \"role\": \"superintendent\"", "\"approvers\": \"principal@example.org\", \"role\": \"superintendent\"")
-        .Replace("\"to\": \"\", \"role\": \"office_tech\"", "\"to\": \"admin@example.org\", \"role\": \"office_tech\"")
-        .Replace("\"to\": \"\", \"role\": \"office_special\"", "\"to\": \"builder@example.org\", \"role\": \"office_special\"");
+    /// <summary>The teams the travel template names, with the development sign-in's example person for each.</summary>
+    public static readonly (string Name, string Example)[] TravelTeams =
+    {
+        ("Central Office Administrator (Technical Schools)", "builder@example.org"),
+        ("Central Office Administrator (Special Services)", "admin@example.org"),
+        ("Business Administrator", "admin@example.org"),
+        ("Superintendent", "principal@example.org"),
+        ("Business Office (Technical Schools)", "admin@example.org"),
+        ("Business Office (Special Services)", "builder@example.org"),
+    };
 
     /// <summary>The starter definitions, exposed so tests can check they stay valid.</summary>
     public static IReadOnlyList<(string Name, string Json)> Templates =>
-        new[] { ("Purchase", Purchase), ("Repair", Repair), ("Escalate", Escalate), ("FieldTrip", FieldTrip), ("Travel", TravelWithExamplePeople) };
+        new[] { ("Purchase", Purchase), ("Repair", Repair), ("Escalate", Escalate), ("FieldTrip", FieldTrip), ("Travel", Travel) };
 
     private static void Add(AppDbContext db, string name, string description, string category, string color, string json, bool publish)
     {
@@ -373,69 +382,70 @@ public static class SeedData
           { "id": "program", "type": "approval_chain", "label": "Program approval: Principal/Department Head", "x": 290, "y": 150,
             "config": { "departmentSource": "field", "departmentField": "department",
               "instructions": "{{employee_name}} requests approval to attend “{{event_title}}”, {{TEXT(from_date, 'MMM d, yyyy')}} to {{TEXT(to_date, 'MMM d, yyyy')}}.\nLocation: {{location}}\nTotal estimated expenses: {{TEXT(total, 'C2')}} (paid by {{JOIN(paid_by, ', ')}})\n\nReasons for attending:\n{{reason_a}}\n{{reason_b}}\n{{reason_c}}" } },
-          { "id": "which_central", "type": "condition", "label": "Technical Schools?", "x": 290, "y": 300, "config": { "expression": "district == 'Bergen County Technical Schools'" } },
-          { "id": "central_tech", "type": "approval", "label": "Central Office Administrator (Technical Schools)", "x": 30, "y": 440,
-            "config": { "approvers": "", "role": "central_tech", "instructions": "{{employee_name}}: “{{event_title}}”, {{TEXT(from_date, 'MMM d, yyyy')}} to {{TEXT(to_date, 'MMM d, yyyy')}}.\nTotal estimated expenses: {{TEXT(total, 'C2')}}" } },
-          { "id": "central_special", "type": "approval", "label": "Central Office Administrator (Special Services)", "x": 550, "y": 440,
-            "config": { "approvers": "", "role": "central_special", "instructions": "{{employee_name}}: “{{event_title}}”, {{TEXT(from_date, 'MMM d, yyyy')}} to {{TEXT(to_date, 'MMM d, yyyy')}}.\nTotal estimated expenses: {{TEXT(total, 'C2')}}" } },
-          { "id": "business", "type": "approval", "label": "Business Administrator approval", "x": 290, "y": 590,
-            "config": { "approvers": "", "role": "business", "instructions": "{{employee_name}} ({{district}}): “{{event_title}}”.\nBudget account: {{budget_account}}   PO #: {{po_number}}\nTotal estimated expenses: {{TEXT(total, 'C2')}} (paid by {{JOIN(paid_by, ', ')}})" } },
-          { "id": "superintendent", "type": "approval", "label": "Superintendent approval", "x": 290, "y": 740,
-            "config": { "approvers": "", "role": "superintendent", "instructions": "{{employee_name}} ({{district}}): “{{event_title}}”, {{TEXT(from_date, 'MMM d, yyyy')}} to {{TEXT(to_date, 'MMM d, yyyy')}}.\nTotal estimated expenses: {{TEXT(total, 'C2')}}" } },
-          { "id": "ticket", "type": "fs_create_ticket", "label": "Open the business office ticket", "x": 290, "y": 890,
-            "config": {
-              "subject": "Work related travel: {{employee_name}} — {{event_title}} ({{TEXT(total, 'C2')}})",
-              "description": "Approved by the administrators in SchoolFlow.\n\nDistrict: {{district}}\nEmployee: {{employee_name}} ({{submitter.email}})\nSchool/Department: {{department.name}}\nMeeting/Conference: {{event_title}}\nLocation: {{location}}\nFrom: {{TEXT(from_date, 'ddd, MMM d, yyyy')}} {{from_time}}\nTo: {{TEXT(to_date, 'ddd, MMM d, yyyy')}} {{to_time}}\nCost to be paid by: {{JOIN(paid_by, ', ')}} {{sponsor_name}}\nOther staff attending: {{other_staff}}\nBudget Acct. #: {{budget_account}}\nPO #: {{po_number}}\n\nTotal estimated expenses: {{TEXT(total, 'C2')}}\nBoard of Education approval required: {{IF(total >= 150, 'YES — record the Board approval date on this ticket, then set it to Resolved. The employee is told to go ahead only when the ticket is Resolved; closing it any other way tells them the travel is not approved', 'No')}}\n\nReasons for attending:\n{{reason_a}}\n{{reason_b}}\n{{reason_c}}",
-              "priority": "2", "status": "2", "tags": "work-travel", "attachFiles": "true" } },
-          { "id": "which_office", "type": "condition", "label": "Technical Schools?", "x": 290, "y": 1040, "config": { "expression": "district == 'Bergen County Technical Schools'" } },
-          { "id": "office_tech", "type": "notify", "label": "Tell the business office (Technical Schools)", "x": 30, "y": 1180,
-            "config": { "to": "", "role": "office_tech", "subject": "Travel request to process: {{employee_name}} — {{event_title}}",
-              "message": "A work related travel request has been approved by the administrators.\nTotal estimated expenses: {{TEXT(total, 'C2')}}\nHelp desk ticket: #{{ticket.id}}\n{{IF(total >= 150, 'Board of Education approval is required. Record the approval date on the ticket and set it to Resolved when the Board has approved. Closing the ticket without resolving it tells the employee the travel is not approved.', 'Board of Education approval is not required (under $150).')}}" } },
-          { "id": "office_special", "type": "notify", "label": "Tell the business office (Special Services)", "x": 550, "y": 1180,
-            "config": { "to": "", "role": "office_special", "subject": "Travel request to process: {{employee_name}} — {{event_title}}",
-              "message": "A work related travel request has been approved by the administrators.\nTotal estimated expenses: {{TEXT(total, 'C2')}}\nHelp desk ticket: #{{ticket.id}}\n{{IF(total >= 150, 'Board of Education approval is required. Record the approval date on the ticket and set it to Resolved when the Board has approved. Closing the ticket without resolving it tells the employee the travel is not approved.', 'Board of Education approval is not required (under $150).')}}" } },
-          { "id": "needs_board", "type": "condition", "label": "$150 or more?", "x": 290, "y": 1330, "config": { "expression": "total >= 150" } },
-          { "id": "tell_pending", "type": "notify", "label": "Tell the employee: waiting for the Board", "x": 30, "y": 1470,
-            "config": { "to": "{{submitter.email}}", "subject": "Travel approved by administrators — Board approval still needed: {{event_title}}",
-              "message": "Your request has been approved by the administrators. Because it costs $150 or more it still needs Board of Education approval, which the business office is handling on help desk ticket #{{ticket.id}}.\n\nPlease do not make travel arrangements or register until you are told the Board has approved." } },
-          { "id": "wait_board", "type": "wait_ticket", "label": "Wait for Board approval (ticket resolved)", "x": 30, "y": 1620, "config": { "until": "IN(ticket.status, 4, 5)" } },
-          { "id": "board_ok", "type": "condition", "label": "Ticket resolved (Board approved)?", "x": 30, "y": 1770, "config": { "expression": "ticket.status == 4" } },
-          { "id": "tell_no_board", "type": "notify", "label": "Tell the employee: not approved", "x": 30, "y": 1920,
-            "config": { "to": "{{submitter.email}}", "subject": "Travel not approved: {{event_title}}",
-              "message": "Help desk ticket #{{ticket.id}} for this travel request was closed without Board of Education approval being recorded, so the travel is not approved. Please do not make travel arrangements. Contact the business office if you think this is a mistake." } },
-          { "id": "tell", "type": "notify", "label": "Tell the employee", "x": 290, "y": 1770,
+          { "id": "central", "type": "approval", "label": "Central Office Administrator approval", "x": 290, "y": 300,
+            "config": { "approvers": "{{IF(district == 'Bergen County Technical Schools', '[Central Office Administrator (Technical Schools)]', '[Central Office Administrator (Special Services)]')}}",
+              "instructions": "{{employee_name}} ({{district}}): “{{event_title}}”, {{TEXT(from_date, 'MMM d, yyyy')}} to {{TEXT(to_date, 'MMM d, yyyy')}}.\nTotal estimated expenses: {{TEXT(total, 'C2')}}" } },
+          { "id": "business", "type": "approval", "label": "Business Administrator approval", "x": 290, "y": 450,
+            "config": { "approvers": "[Business Administrator]", "instructions": "{{employee_name}} ({{district}}): “{{event_title}}”.\nBudget account: {{budget_account}}   PO #: {{po_number}}\nTotal estimated expenses: {{TEXT(total, 'C2')}} (paid by {{JOIN(paid_by, ', ')}})" } },
+          { "id": "superintendent", "type": "approval", "label": "Superintendent approval", "x": 290, "y": 600,
+            "config": { "approvers": "[Superintendent]", "instructions": "{{employee_name}} ({{district}}): “{{event_title}}”, {{TEXT(from_date, 'MMM d, yyyy')}} to {{TEXT(to_date, 'MMM d, yyyy')}}.\nTotal estimated expenses: {{TEXT(total, 'C2')}}" } },
+          { "id": "office", "type": "task", "label": "Business office: budget, PO and Board approval", "x": 290, "y": 750,
+            "config": { "assignees": "{{IF(district == 'Bergen County Technical Schools', '[Business Office (Technical Schools)]', '[Business Office (Special Services)]')}}",
+              "instructions": "{{employee_name}}'s travel to “{{event_title}}” has been approved by the administrators.\nTotal estimated expenses: {{TEXT(total, 'C2')}} (paid by {{JOIN(paid_by, ', ')}})\n{{IF(total >= 150, 'This is $150 or more, so it needs Board of Education approval. Complete this task once the Board has decided.', 'This is under $150, so Board of Education approval is not required.')}}" },
+            "fields": [
+              { "key": "office_budget", "label": "Confirmed Budget Acct. #", "type": "text", "required": true, "default": "budget_account" },
+              { "key": "office_po", "label": "PO # issued", "type": "text", "default": "po_number" },
+              { "key": "board_decision", "label": "Board of Education decision", "type": "radio", "options": ["Approved", "Not approved"], "visibleWhen": "total >= 150", "required": true },
+              { "key": "board_date", "label": "Board of Education approval date", "type": "date", "visibleWhen": "board_decision == 'Approved'", "required": true },
+              { "key": "office_notes", "label": "Notes", "type": "textarea" }
+            ] },
+          { "id": "board_ok", "type": "condition", "label": "Cleared to travel?", "x": 290, "y": 900, "config": { "expression": "total < 150 || board_decision == 'Approved'" } },
+          { "id": "tell", "type": "notify", "label": "Tell the employee: approved", "x": 290, "y": 1040,
             "config": { "to": "{{submitter.email}}", "subject": "Travel approved: {{event_title}}",
-              "message": "All approvals have been received for “{{event_title}}”. Travel arrangements, including registrations, may now be made.\n\nOn your return, file a Professional Development Report with your reimbursement claim, and reconcile the cost worksheet with the Business Office within 3 weeks of the travel, with original itemized receipts." } },
-          { "id": "done", "type": "end", "label": "Travel approved", "x": 290, "y": 1910 },
-          { "id": "declined", "type": "end", "label": "Travel not approved", "x": 760, "y": 740, "config": { "outcome": "rejected" } }
+              "message": "All approvals have been received for “{{event_title}}”. Travel arrangements, including registrations, may now be made.\nPO #: {{office_po}}\n\nAfter the trip, open this request and complete “After the trip”: your actual costs, original itemized receipts and your Professional Development Report. This must be done within 3 weeks of the travel to be eligible for reimbursement." } },
+          { "id": "after_trip", "type": "task", "label": "After the trip: actual costs and receipts", "x": 290, "y": 1190,
+            "config": { "assignees": "{{submitter.email}}", "remindDays": "0",
+              "instructions": "Complete this within 3 weeks of returning from “{{event_title}}” ({{TEXT(to_date, 'MMM d, yyyy')}}).\nYour estimate was {{TEXT(total, 'C2')}}. All expenditures must be documented with original itemized receipts to be reimbursed." },
+            "fields": [
+              { "key": "actual_total", "label": "Actual total cost", "type": "currency", "required": true, "min": 0 },
+              { "key": "receipts", "label": "Original itemized receipts", "type": "attachments", "maxFiles": 20, "requiredWhen": "actual_total > 0" },
+              { "key": "pd_report", "label": "Professional Development Report", "type": "attachments", "maxFiles": 5, "required": true },
+              { "key": "trip_notes", "label": "Anything the business office should know", "type": "textarea" }
+            ] },
+          { "id": "reconcile", "type": "task", "label": "Business office: reconcile travel costs", "x": 290, "y": 1340,
+            "config": { "assignees": "{{IF(district == 'Bergen County Technical Schools', '[Business Office (Technical Schools)]', '[Business Office (Special Services)]')}}",
+              "instructions": "{{employee_name}} has filed actual costs for “{{event_title}}”.\nEstimated: {{TEXT(total, 'C2')}}   Actual: {{TEXT(actual_total, 'C2')}}\nThe receipts and Professional Development Report are on the request. {{trip_notes}}" },
+            "fields": [
+              { "key": "reimbursement", "label": "Amount to reimburse", "type": "currency", "required": true, "min": 0 },
+              { "key": "reconcile_notes", "label": "Notes for the employee", "type": "textarea" }
+            ] },
+          { "id": "tell_done", "type": "notify", "label": "Tell the employee: reconciled", "x": 290, "y": 1490,
+            "config": { "to": "{{submitter.email}}", "subject": "Travel reconciled: {{event_title}}",
+              "message": "The business office has reconciled your travel costs.\nAmount to reimburse: {{TEXT(reimbursement, 'C2')}}\n{{reconcile_notes}}" } },
+          { "id": "done", "type": "end", "label": "Travel completed", "x": 290, "y": 1630 },
+          { "id": "tell_no", "type": "notify", "label": "Tell the employee: not approved", "x": 580, "y": 1040,
+            "config": { "to": "{{submitter.email}}", "subject": "Travel not approved: {{event_title}}",
+              "message": "The Board of Education did not approve this travel request, so the travel is not approved. Please do not make travel arrangements.\n{{office_notes}}" } },
+          { "id": "declined", "type": "end", "label": "Travel not approved", "x": 580, "y": 1190, "config": { "outcome": "rejected" } }
         ],
         "edges": [
           { "from": "start", "port": "next", "to": "program" },
-          { "from": "program", "port": "approved", "to": "which_central" },
+          { "from": "program", "port": "approved", "to": "central" },
           { "from": "program", "port": "rejected", "to": "declined" },
-          { "from": "which_central", "port": "true", "to": "central_tech" },
-          { "from": "which_central", "port": "false", "to": "central_special" },
-          { "from": "central_tech", "port": "approved", "to": "business" },
-          { "from": "central_tech", "port": "rejected", "to": "declined" },
-          { "from": "central_special", "port": "approved", "to": "business" },
-          { "from": "central_special", "port": "rejected", "to": "declined" },
+          { "from": "central", "port": "approved", "to": "business" },
+          { "from": "central", "port": "rejected", "to": "declined" },
           { "from": "business", "port": "approved", "to": "superintendent" },
           { "from": "business", "port": "rejected", "to": "declined" },
-          { "from": "superintendent", "port": "approved", "to": "ticket" },
+          { "from": "superintendent", "port": "approved", "to": "office" },
           { "from": "superintendent", "port": "rejected", "to": "declined" },
-          { "from": "ticket", "port": "next", "to": "which_office" },
-          { "from": "which_office", "port": "true", "to": "office_tech" },
-          { "from": "which_office", "port": "false", "to": "office_special" },
-          { "from": "office_tech", "port": "next", "to": "needs_board" },
-          { "from": "office_special", "port": "next", "to": "needs_board" },
-          { "from": "needs_board", "port": "true", "to": "tell_pending" },
-          { "from": "needs_board", "port": "false", "to": "tell" },
-          { "from": "tell_pending", "port": "next", "to": "wait_board" },
-          { "from": "wait_board", "port": "next", "to": "board_ok" },
+          { "from": "office", "port": "next", "to": "board_ok" },
           { "from": "board_ok", "port": "true", "to": "tell" },
-          { "from": "board_ok", "port": "false", "to": "tell_no_board" },
-          { "from": "tell_no_board", "port": "next", "to": "declined" },
-          { "from": "tell", "port": "next", "to": "done" }
+          { "from": "board_ok", "port": "false", "to": "tell_no" },
+          { "from": "tell", "port": "next", "to": "after_trip" },
+          { "from": "after_trip", "port": "next", "to": "reconcile" },
+          { "from": "reconcile", "port": "next", "to": "tell_done" },
+          { "from": "tell_done", "port": "next", "to": "done" },
+          { "from": "tell_no", "port": "next", "to": "declined" }
         ]
       }
     }

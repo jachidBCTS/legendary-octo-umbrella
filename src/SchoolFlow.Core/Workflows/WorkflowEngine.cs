@@ -12,7 +12,11 @@ public static class RunStatus
         ChangesRequested = "ChangesRequested";
 
     public static bool IsFinished(string status) => status is Completed or Rejected or Cancelled;
-    public static bool IsWaiting(string status) => status is WaitingApproval or WaitingTicket;
+    /// <summary>Waiting for someone to complete a Task step (fill in details, upload documents).</summary>
+    public const string WaitingTask = "WaitingTask";
+    public static bool IsWaiting(string status) => status is WaitingApproval or WaitingTask or WaitingTicket;
+    /// <summary>Waiting on a person: an approval or a task.</summary>
+    public static bool IsWaitingOnPeople(string status) => status is WaitingApproval or WaitingTask;
 }
 
 public sealed record RunEvent(DateTime At, string? NodeId, string Kind, string Message);
@@ -20,6 +24,8 @@ public sealed record RunEvent(DateTime At, string? NodeId, string Kind, string M
 public sealed class PendingApproval
 {
     public string NodeId { get; set; } = "";
+    /// <summary>"approval" (approve / reject) or "task" (fill in the step's fields).</summary>
+    public string Kind { get; set; } = "approval";
     public string Title { get; set; } = "";
     public string Instructions { get; set; } = "";
     public List<string> Assignees { get; set; } = new();
@@ -84,6 +90,58 @@ public sealed class WorkflowEngine
         _directory = directory;
         _files = files;
         _now = now ?? (() => DateTime.Now);
+    }
+
+    /// <summary>Teams by name (case-insensitive) → member emails. Steps name a team as [Team name].</summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<string>>? Teams { get; init; }
+
+    private static readonly System.Text.RegularExpressions.Regex TeamReference = new(@"\[([^\[\]]{1,200})\]");
+
+    /// <summary>
+    /// The people a step's setting names: email addresses, and the members of any [Team name] in it.
+    /// A team that does not exist, or has nobody in it, stops the step with a message an admin can act on.
+    /// </summary>
+    public List<string> ResolvePeople(string text, string step)
+    {
+        var people = new List<string>();
+        var rest = TeamReference.Replace(text ?? "", match =>
+        {
+            var name = match.Groups[1].Value.Trim();
+            if (Teams is null || !Teams.TryGetValue(name, out var members))
+                throw new ExpressionException($"{step}: there is no team called “{name}”. An admin can add it under Admin → Teams.");
+            if (members.Count == 0)
+                throw new ExpressionException($"{step}: the team “{name}” has nobody in it yet. An admin can add people under Admin → Teams.");
+            people.AddRange(members.Select(m => m.Trim().ToLowerInvariant()));
+            return " ";
+        });
+        people.AddRange(ParseEmails(rest));
+        return people.Where(p => p.Contains('@')).Distinct().ToList();
+    }
+
+    /// <summary>Resumes a run whose Task step has been completed: its answers join the request.</summary>
+    public Task ResumeWithTaskAsync(FlowDefinition flow, RunState state, string by, IDictionary<string, object?> answers, CancellationToken ct = default)
+    {
+        if (state.Status != RunStatus.WaitingTask)
+            throw new InvalidOperationException("This request is not waiting for a task.");
+        var node = FindNode(flow, state.CurrentNodeId);
+        if (node is null || node.Type != NodeTypes.Task)
+        {
+            Fail(state, state.CurrentNodeId, "The task step no longer exists in this workflow version.");
+            return Task.CompletedTask;
+        }
+        // Only the step's own fields are taken: a completed task can never overwrite another answer.
+        foreach (var field in (node.Fields ?? new List<FieldDef>()).Where(f => !FieldTypes.IsLayout(f.Type) && !string.IsNullOrWhiteSpace(f.Key)))
+            state.Context[field.Key] = answers.TryGetValue(field.Key, out var value) ? value : null;
+        var record = Values.NewDict();
+        record["step"] = node.Label ?? "";
+        record["by"] = by;
+        record["at"] = _now();
+        state.Context["task"] = record;
+        Log(state, node.Id, "approved", $"{Name(node)}: completed by {by}");
+        state.PendingApproval = null;
+        state.Status = RunStatus.Running;
+        Follow(flow, state, node, "next");
+        return AdvanceAsync(flow, state, ct);
     }
 
     public Task StartAsync(FlowDefinition flow, RunState state, CancellationToken ct = default)
@@ -391,7 +449,7 @@ public sealed class WorkflowEngine
 
             case NodeTypes.Approval:
             {
-                var assignees = ParseEmails(Template.Render(node.Get("approvers"), scope));
+                var assignees = ResolvePeople(Template.Render(node.Get("approvers"), scope), Name(node));
                 if (assignees.Count == 0)
                     throw new ExpressionException($"{Name(node)}: no approver email could be worked out. Check the Approvers setting.");
                 var rule = ApprovalRules.Normalize(node.Get("rule"));
@@ -408,6 +466,26 @@ public sealed class WorkflowEngine
                 Log(state, node.Id, "waiting", rule == ApprovalRules.All && assignees.Count > 1
                     ? $"Waiting for approval from all of: {string.Join(", ", assignees)}"
                     : $"Waiting for approval from {string.Join(", ", assignees)}");
+                break;
+            }
+
+            case NodeTypes.Task:
+            {
+                var assignees = ResolvePeople(Template.Render(node.Get("assignees"), scope), Name(node));
+                if (assignees.Count == 0)
+                    throw new ExpressionException($"{Name(node)}: nobody to give this task to. Check the “Who does this” setting.");
+                state.PendingApproval = new PendingApproval
+                {
+                    NodeId = node.Id,
+                    Kind = "task",
+                    Title = Name(node),
+                    Instructions = Template.Render(node.Get("instructions"), scope),
+                    Assignees = assignees,
+                    Rule = ApprovalRules.Any,
+                };
+                ApplyFollowUp(node, state.PendingApproval, state);
+                state.Status = RunStatus.WaitingTask;
+                Log(state, node.Id, "waiting", $"{Name(node)}: waiting for {string.Join(", ", assignees)}");
                 break;
             }
 
@@ -433,7 +511,7 @@ public sealed class WorkflowEngine
 
             case NodeTypes.Notify:
             {
-                var recipients = ParseEmails(Template.Render(node.Get("to"), scope));
+                var recipients = ResolvePeople(Template.Render(node.Get("to"), scope), Name(node));
                 var title = Template.Render(node.Get("subject"), scope).Trim();
                 var message = Template.Render(node.Get("message"), scope).Trim();
                 if (title.Length == 0) throw new ExpressionException($"{Name(node)}: the notification has no subject.");
@@ -623,7 +701,7 @@ public sealed class WorkflowEngine
         approval.RemindDays = Days(node.Get("remindDays"), DefaultRemindDays);
         approval.EscalateDays = Days(node.Get("escalateDays"), 0);
         // People already asked are left out: escalating to someone who is ignoring it helps nobody.
-        approval.EscalateTo = ParseEmails(Template.Render(node.Get("escalateTo"), NewScope(state))).Except(approval.Assignees).ToList();
+        approval.EscalateTo = ResolvePeople(Template.Render(node.Get("escalateTo"), NewScope(state)), Name(node)).Except(approval.Assignees).ToList();
         if (approval.EscalateTo.Count == 0) approval.EscalateDays = 0;
     }
 

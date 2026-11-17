@@ -62,7 +62,7 @@ public class IndexModel : PageModel
         var runs = await query.Select(r => new { r.Id, r.WorkflowId, r.WorkflowName, r.Status, r.DepartmentId, r.DepartmentName, r.CreatedAt, r.UpdatedAt }).ToListAsync();
 
         var closed = await _calendar.ClosedDaysAsync();
-        static bool IsOpen(string s) => s is RunStatus.Running or RunStatus.WaitingApproval or RunStatus.WaitingTicket or RunStatus.ChangesRequested;
+        static bool IsOpen(string s) => s is RunStatus.Running or RunStatus.WaitingApproval or RunStatus.WaitingTask or RunStatus.WaitingTicket or RunStatus.ChangesRequested;
         double? Average(IEnumerable<(DateTime Created, DateTime Updated)> finished)
         {
             var days = finished.Select(f => SchoolCalendar.SchoolDaysBetween(Ui.Local(f.Created), Ui.Local(f.Updated), closed)).ToList();
@@ -82,7 +82,7 @@ public class IndexModel : PageModel
         ByDepartment = runs.Where(r => r.DepartmentId != null).GroupBy(r => r.DepartmentId!.Value).Select(g => new Row((int)g.Key, g.First().DepartmentName, g.Count(),
             g.Count(r => IsOpen(r.Status)), g.Count(r => r.Status == RunStatus.Completed), g.Count(r => r.Status == RunStatus.Rejected), null)).OrderByDescending(r => r.Count).ToList();
 
-        var waitingIds = runs.Where(r => r.Status == RunStatus.WaitingApproval).Select(r => r.Id).ToList();
+        var waitingIds = runs.Where(r => RunStatus.IsWaitingOnPeople(r.Status)).Select(r => r.Id).ToList();
         var names = runs.ToDictionary(r => r.Id, r => r.WorkflowName);
         var tasks = await _db.ApprovalTasks.AsNoTracking().Where(t => t.Status == ApprovalStatus.Pending && waitingIds.Contains(t.RunId)).ToListAsync();
         var now = DateTime.Now;

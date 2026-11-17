@@ -39,7 +39,12 @@ public sealed class RunService
     /// <summary>The engine, built once per request with the school calendar as it is now.</summary>
     private async Task<WorkflowEngine> EngineAsync(CancellationToken ct) =>
         _engine ??= new WorkflowEngine(_freshservice, directory: new ApprovalDirectory(_db), files: _attachments,
-            closedDays: await _calendar.ClosedDaysAsync(ct));
+            closedDays: await _calendar.ClosedDaysAsync(ct)) { Teams = await TeamsAsync(ct) };
+
+    /// <summary>Every team by name, for steps that name a team as [Team name].</summary>
+    private async Task<IReadOnlyDictionary<string, IReadOnlyList<string>>> TeamsAsync(CancellationToken ct) =>
+        (await _db.Teams.AsNoTracking().ToListAsync(ct))
+        .ToDictionary(t => t.Name, t => (IReadOnlyList<string>)t.MemberList.ToList(), StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Active departments (id → name), the list a Department field accepts.</summary>
     public async Task<Dictionary<long, string>> ActiveDepartmentsAsync(CancellationToken ct) =>
@@ -147,6 +152,87 @@ public sealed class RunService
     public Task<ActionResult> DecideAsync(int taskId, string email, string name, bool isAdmin, bool approved, string? comment, CancellationToken ct) =>
         DecideAsync(taskId, email, name, isAdmin, approved ? ApprovalAction.Approve : ApprovalAction.Reject, comment, ct);
 
+    // ---- task steps ------------------------------------------------------------------------
+
+    /// <summary>The pending task, its request and its fields, if this person may work on it.</summary>
+    private async Task<(ApprovalTask Task, WorkflowRun Run, NodeDef Node, bool OnBehalf)?> OpenTaskAsync(int taskId, string email, bool isAdmin, CancellationToken ct)
+    {
+        var task = await _db.ApprovalTasks.FirstOrDefaultAsync(t => t.Id == taskId && t.Kind == TaskKinds.Task, ct);
+        if (task is null || task.Status != ApprovalStatus.Pending) return null;
+        if (!task.CanBeDecidedBy(email) && !isAdmin) return null;
+        var run = await _db.Runs.FirstOrDefaultAsync(r => r.Id == task.RunId, ct);
+        if (run is null || run.Status != RunStatus.WaitingTask || run.CurrentNodeId != task.NodeId) return null;
+        var node = Json.ParseDefinition(run.DefinitionJson).Flow.Nodes.FirstOrDefault(n => n.Id == task.NodeId && n.Type == NodeTypes.Task);
+        return node is null ? null : (task, run, node, !task.CanBeDecidedBy(email));
+    }
+
+    /// <summary>The fields a task asks for, as a form. Null when the task is not this person's to do.</summary>
+    public async Task<FormDefinition?> TaskFormAsync(int taskId, string email, bool isAdmin, CancellationToken ct) =>
+        await OpenTaskAsync(taskId, email, isAdmin, ct) is { } open ? TaskForm(open.Node) : null;
+
+    private static FormDefinition TaskForm(NodeDef node) => new() { Fields = node.Fields ?? new List<FieldDef>(), SubmitLabel = "Complete task" };
+
+    private async Task<FormResult> EvaluateTaskAsync(WorkflowRun run, NodeDef node, IDictionary<string, object?> input, string email, bool applyDefaults, CancellationToken ct)
+    {
+        // Formulas in the task's fields can use everything already on the request (the form's answers,
+        // earlier steps), so "required when total >= 150" works here too.
+        var ambient = Json.ToValues(run.ContextJson);
+        ambient["rates"] = await _calendar.RatesAsync(ct);
+        return FormEvaluator.Evaluate(TaskForm(node), input, ambient, applyDefaults: applyDefaults,
+            attachments: await _attachments.UsableForRunAsync(email, run, ct), closedDays: await _calendar.ClosedDaysAsync(ct));
+    }
+
+    public async Task<FormResult?> EvaluateTaskAsync(int taskId, IDictionary<string, object?> input, string email, bool isAdmin, bool applyDefaults, CancellationToken ct) =>
+        await OpenTaskAsync(taskId, email, isAdmin, ct) is { } open ? await EvaluateTaskAsync(open.Run, open.Node, input, email, applyDefaults, ct) : null;
+
+    /// <summary>The request a pending task belongs to, if this person may upload a file to it.</summary>
+    public async Task<(WorkflowRun Run, FormDefinition Form)?> TaskUploadTargetAsync(int taskId, string email, bool isAdmin, CancellationToken ct) =>
+        await OpenTaskAsync(taskId, email, isAdmin, ct) is { } open ? (open.Run, TaskForm(open.Node)) : null;
+
+    /// <summary>Completes a task: checks its fields, adds the answers (and any files) to the request, and moves on.</summary>
+    public async Task<(FormResult? Form, ActionResult Result)> CompleteTaskAsync(int taskId, IDictionary<string, object?> input, string email, string name, bool isAdmin, CancellationToken ct)
+    {
+        if (await OpenTaskAsync(taskId, email, isAdmin, ct) is not { } open)
+            return (null, ActionResult.Fail("This task is no longer waiting for you. Refresh to see the latest."));
+        var (task, run, node, onBehalf) = open;
+        var form = await EvaluateTaskAsync(run, node, input, email, applyDefaults: false, ct);
+        if (!form.IsValid) return (form, ActionResult.Fail("Please fix the highlighted fields."));
+
+        var who = string.IsNullOrWhiteSpace(name) ? email : $"{name} ({email})";
+        if (task.StandsInFor(email) is { } original) who += $", standing in for {original}";
+        else if (task.IsEscalatedTo(email)) who += ", after the step was escalated";
+        else if (onBehalf)
+        {
+            who += ", an admin acting on behalf of " + string.Join(", ", task.AssigneeList);
+            _db.AuditEntries.Add(new AuditEntry
+            {
+                At = DateTime.UtcNow, ActorEmail = email, ActorName = name, Action = "task.override-completed",
+                Target = $"{run.WorkflowName} #{run.Id}", Detail = $"Task “{task.Title}”, on behalf of {string.Join(", ", task.AssigneeList)}.",
+            });
+        }
+        task.Status = ApprovalStatus.Done;
+        task.DecidedBy = email;
+        task.DecidedAt = DateTime.UtcNow;
+
+        var def = Json.ParseDefinition(run.DefinitionJson);
+        var state = Load(run);
+        // Files uploaded for this task now belong to the request, like the ones sent with the form.
+        var files = CollectFiles(TaskForm(node), form.Values);
+        var fileIds = files.OfType<Dictionary<string, object?>>().Select(f => Values.ToText(f.GetValueOrDefault("id"))).ToList();
+        foreach (var attachment in await _db.Attachments.Where(a => fileIds.Contains(a.PublicId) && a.OwnerEmail == email && a.RunId == null).ToListAsync(ct))
+            attachment.RunId = run.Id;
+        if (files.Count > 0)
+        {
+            var all = state.Context.GetValueOrDefault("attachments") as List<object?> ?? new List<object?>();
+            all.AddRange(files);
+            state.Context["attachments"] = all;
+        }
+        await (await EngineAsync(ct)).ResumeWithTaskAsync(def.Flow, state, who, form.Values, ct);
+        return await TrySaveAsync(run, state, ct)
+            ? (form, new ActionResult(true, RunId: run.Id))
+            : (form, ActionResult.Fail("Someone else acted on this request at the same moment. Refresh to see the latest."));
+    }
+
     /// <summary>
     /// Records an approver's decision. The person may be one of the step's approvers, someone standing
     /// in for one, someone the step was escalated to, or an admin acting on their behalf.
@@ -156,6 +242,7 @@ public sealed class RunService
         const string Raced = "Someone else acted on this request at the same moment. Refresh to see the latest.";
         var task = await _db.ApprovalTasks.FirstOrDefaultAsync(t => t.Id == taskId, ct);
         if (task is null) return ActionResult.Fail("That approval no longer exists.");
+        if (task.Kind == TaskKinds.Task) return ActionResult.Fail("This is a task to complete, not an approval.");
         if (!task.CanBeDecidedBy(email) && !isAdmin) return ActionResult.Fail("This approval is not assigned to you.");
         if (task.Status != ApprovalStatus.Pending) return ActionResult.Fail($"This was already {task.Status.ToLowerInvariant()} by {task.DecidedBy}.");
 
@@ -380,7 +467,7 @@ public sealed class RunService
 
         foreach (var task in tasks)
         {
-            if (!runs.TryGetValue(task.RunId, out var run) || run.Status != RunStatus.WaitingApproval) continue;
+            if (!runs.TryGetValue(task.RunId, out var run) || !RunStatus.IsWaitingOnPeople(run.Status)) continue;
             var link = $"/Requests/Detail/{run.Id}";
             var label = $"{run.WorkflowName} #{run.Id}";
             var waitingDays = await _calendar.SchoolDaysBetweenAsync(Ui.Local(task.CreatedAt), Ui.Local(nowUtc), ct);
@@ -417,8 +504,9 @@ public sealed class RunService
                         .Concat(task.EscalatedList).Distinct().ToList();
                     task.LastReminderAt = nowUtc;
                     task.ReminderCount++;
-                    await _notifications.NotifyAsync(owing, $"Reminder: approval needed — {label}",
-                        $"{(string.IsNullOrEmpty(run.SubmitterName) ? "A request" : run.SubmitterName + "’s request")} has been waiting {waitingDays} school day{(waitingDays == 1 ? "" : "s")} for your decision: {task.Title}.", link, ct);
+                    var isTask = task.Kind == TaskKinds.Task;
+                    await _notifications.NotifyAsync(owing, isTask ? $"Reminder: task waiting — {label}" : $"Reminder: approval needed — {label}",
+                        $"{(string.IsNullOrEmpty(run.SubmitterName) ? "A request" : run.SubmitterName + "’s request")} has been waiting {waitingDays} school day{(waitingDays == 1 ? "" : "s")} for {(isTask ? "you to complete" : "your decision")}: {task.Title}.", link, ct);
                     reminded++;
                 }
             }
@@ -653,14 +741,16 @@ public sealed class RunService
         // The database filter can return a tracked task that was just decided in memory, so filter again.
         var pending = (await _db.ApprovalTasks.Where(t => t.RunId == run.Id && t.Status == ApprovalStatus.Pending).ToListAsync(ct))
             .Where(t => t.Status == ApprovalStatus.Pending).ToList();
-        if (state.Status == RunStatus.WaitingApproval && state.PendingApproval is { } approval)
+        if (RunStatus.IsWaitingOnPeople(state.Status) && state.PendingApproval is { } approval)
         {
+            var isTask = approval.Kind == TaskKinds.Task;
             if (!pending.Any(t => t.NodeId == approval.NodeId))
             {
                 var created = new ApprovalTask
                 {
                     RunId = run.Id,
                     NodeId = approval.NodeId,
+                    Kind = isTask ? TaskKinds.Task : TaskKinds.Approval,
                     Title = approval.Title.Length > 300 ? approval.Title[..300] : approval.Title,
                     Instructions = approval.Instructions,
                     Assignees = ApprovalTask.Pack(approval.Assignees),
@@ -683,12 +773,12 @@ public sealed class RunService
                 _db.ApprovalTasks.Add(created);
                 var standInEmails = standIns.Select(p => p.StandIn).ToList();
                 var from = string.IsNullOrEmpty(run.SubmitterName) ? "A request" : run.SubmitterName + "’s request";
-                await _notifications.NotifyAsync(approval.Assignees.Concat(standInEmails), $"Approval needed: {label}",
-                    $"{from} is waiting for your decision: {approval.Title}{(approval.Position.Length > 0 ? $" ({approval.Position.ToLowerInvariant()})" : "")}." +
+                await _notifications.NotifyAsync(approval.Assignees.Concat(standInEmails), isTask ? $"Task for you: {label}" : $"Approval needed: {label}",
+                    $"{from} is waiting for {(isTask ? "you to complete" : "your decision")}: {approval.Title}{(approval.Position.Length > 0 ? $" ({approval.Position.ToLowerInvariant()})" : "")}." +
                     (approval.Instructions.Length > 0 ? "\n\n" + approval.Instructions : ""), link, ct);
             }
         }
-        else if (state.Status != RunStatus.WaitingApproval)
+        else if (!RunStatus.IsWaitingOnPeople(state.Status))
         {
             // The run moved on (cancelled, failed elsewhere…): nothing should stay in anyone's inbox.
             foreach (var t in pending) t.Status = ApprovalStatus.Cancelled;
