@@ -73,8 +73,25 @@ public sealed class AccessService
         return new SchoolFlow.Core.StudentDirectory(true, known);
     }
 
+    /// <summary>
+    /// Admins, and the people an admin named as the workflow's owners. Owners can change the flow
+    /// (steps, approvers, tasks, notifications) and publish it; the form itself is admin-only
+    /// (see <see cref="CanEditForm"/>).
+    /// </summary>
     public static bool CanManage(ClaimsPrincipal user, Workflow workflow) =>
-        user.IsAdmin() || (user.IsBuilder() && workflow.IsOwnedBy(user.Email()));
+        user.IsAdmin() || workflow.IsOwnedBy(user.Email());
+
+    /// <summary>Creating forms and changing their questions, name, owners or audience: administrators only.</summary>
+    public static bool CanEditForm(ClaimsPrincipal user) => user.IsAdmin();
+
+    /// <summary>Whether this person looks after at least one workflow (for the Build menu).</summary>
+    public async Task<bool> OwnsAnyWorkflowAsync(ClaimsPrincipal user, CancellationToken ct = default)
+    {
+        var email = user.Email();
+        if (email.Length == 0) return false;
+        var needle = ";" + email + ";";
+        return await _db.Workflows.AsNoTracking().AnyAsync(w => w.Owners.Contains(needle), ct);
+    }
 
     public static bool CanSubmit(ClaimsPrincipal user, Workflow workflow)
     {
@@ -100,7 +117,7 @@ public sealed class AccessService
     {
         if (user.IsAdmin()) return null;
         var email = user.Email();
-        if (!user.IsBuilder() || email.Length == 0) return new List<int>();
+        if (email.Length == 0) return new List<int>();
         var needle = ";" + email + ";";
         return await _db.Workflows.AsNoTracking().Where(w => w.Owners.Contains(needle)).Select(w => w.Id).ToListAsync(ct);
     }
@@ -108,7 +125,6 @@ public sealed class AccessService
     public async Task<bool> CanManageRunAsync(ClaimsPrincipal user, WorkflowRun run, CancellationToken ct = default)
     {
         if (user.IsAdmin()) return true;
-        if (!user.IsBuilder()) return false;
         var workflow = await _db.Workflows.AsNoTracking().FirstOrDefaultAsync(w => w.Id == run.WorkflowId, ct);
         return workflow is not null && workflow.IsOwnedBy(user.Email());
     }

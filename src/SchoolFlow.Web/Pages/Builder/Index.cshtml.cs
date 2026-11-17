@@ -37,8 +37,16 @@ public class IndexModel : PageModel
             .ToDictionaryAsync(x => x.Key, x => x.Count);
     }
 
+    private IActionResult AdminsOnly()
+    {
+        TempData["Flash"] = "Only an administrator can create, copy, import or delete forms.";
+        TempData["FlashKind"] = "bad";
+        return RedirectToPage();
+    }
+
     public async Task<IActionResult> OnPostCreateAsync(string? name, string? trigger, string? allowCopy)
     {
+        if (!AccessService.CanEditForm(User)) return AdminsOnly();
         name = (name ?? "").Trim();
         if (name.Length == 0 || name.Length > 200)
         {
@@ -82,6 +90,7 @@ public class IndexModel : PageModel
     {
         var source = await ManagedAsync(id);
         if (source is null) return NotFound();
+        if (!AccessService.CanEditForm(User)) return AdminsOnly();
         if (!User.IsAdmin() && Json.ParseDefinition(source.DraftJson).UsesHelpDesk())
         {
             TempData["Flash"] = SchoolFlow.Web.Controllers.BuilderController.HelpDeskMessage;
@@ -121,6 +130,7 @@ public class IndexModel : PageModel
     public async Task<IActionResult> OnPostImportAsync(IFormFile? file)
     {
         IActionResult Bad(string message) { TempData["Flash"] = message; TempData["FlashKind"] = "bad"; return RedirectToPage(); }
+        if (!AccessService.CanEditForm(User)) return AdminsOnly();
         if (file is null || file.Length == 0) return Bad("Choose a workflow file to import.");
         if (file.Length > 600_000) return Bad("That file is too large to be a workflow.");
         WorkflowDefinition def;
@@ -176,6 +186,7 @@ public class IndexModel : PageModel
     {
         var w = await ManagedAsync(id);
         if (w is null) return NotFound();
+        if (!AccessService.CanEditForm(User)) return AdminsOnly();
         _audit.Record(User, "workflow.deleted", w.Name, $"Had {await _db.Runs.CountAsync(r => r.WorkflowId == id)} request(s), which are kept.");
         _db.Workflows.Remove(w);
         // Unfinished drafts of a form that no longer exists cannot be completed.

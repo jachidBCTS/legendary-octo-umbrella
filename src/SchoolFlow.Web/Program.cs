@@ -128,7 +128,8 @@ builder.Services.AddHostedService<RetentionWorker>();
 builder.Services.AddScoped<RunService>();
 builder.Services.AddRazorPages(options =>
 {
-    options.Conventions.AuthorizeFolder("/Builder", "Builder");
+    // Workflow owners need not hold the Builder role: each page and API call checks ownership itself.
+    options.Conventions.AuthorizeFolder("/Builder");
     options.Conventions.AuthorizeFolder("/Admin", "Admin");
     options.Conventions.AllowAnonymousToPage("/Account/DevLogin");
     options.Conventions.AllowAnonymousToPage("/Account/Denied");

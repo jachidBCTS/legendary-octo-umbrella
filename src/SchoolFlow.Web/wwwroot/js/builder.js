@@ -78,6 +78,7 @@
     isPublished: false,
     hasUnpublishedChanges: false,
     isAdmin: false,
+    canEditForm: true,
     teams: [],
   };
   const autoKeys = new WeakSet(); // fields whose key still follows the label
@@ -115,12 +116,13 @@
         owners: data.owners || [], audienceGroups: data.audienceGroups || [] };
       state.groups = data.groups || [];
       state.isAdmin = !!data.isAdmin;
+      state.canEditForm = data.canEditForm !== false;
       state.teams = data.teams || [];
       state.def = normalise(data.definition);
       state.publishedVersion = data.publishedVersion;
       state.isPublished = data.isPublished;
       state.hasUnpublishedChanges = data.hasUnpublishedChanges;
-      if (!isFormTrigger()) state.tab = 'flow';
+      if (!isFormTrigger() || !state.canEditForm) state.tab = 'flow';
       renderAll();
     } catch (e) {
       root.textContent = '';
@@ -424,7 +426,9 @@
       : state.hasUnpublishedChanges || state.dirty ? h('span', { class: 'pill warn' }, 'Live v' + state.publishedVersion + ' · unpublished changes')
         : h('span', { class: 'pill ok' }, 'Live · v' + state.publishedVersion);
     const tabs = [['form', 'Form'], ['flow', 'Flow'], ['preview', 'Preview'], ['settings', 'Settings']]
-      .filter(([id]) => isFormTrigger() || (id !== 'form' && id !== 'preview'));
+      .filter(([id]) => isFormTrigger() || (id !== 'form' && id !== 'preview'))
+      // Owners who are not admins change the flow only; the form is the administrators'.
+      .filter(([id]) => state.canEditForm || id !== 'form');
     top.textContent = '';
     top.append(
       h('div', { class: 'bld-title' },
@@ -1493,6 +1497,17 @@
   }
 
   function renderSettingsTab() {
+    if (!state.canEditForm) {
+      body.append(h('section', { class: 'bld-settings panel' },
+        h('h3', null, 'About this workflow'),
+        h('p', null, h('strong', null, state.meta.name)),
+        state.meta.description ? h('p', { class: 'muted' }, state.meta.description) : null,
+        h('p', { class: 'b-help' }, 'You are an owner of this workflow: you can change its steps on the Flow tab and publish them. The form — its questions, name, who can submit it and who looks after it — is changed by an administrator.'),
+        h('h3', null, 'Owners'),
+        h('p', null, (state.meta.owners || []).join(', ') || '—')));
+      body.append(versionsPanel());
+      return;
+    }
     const trigger = state.def.trigger;
     const swatches = h('div', { class: 'swatches' }, COLORS.map((color) =>
       h('button', { type: 'button', class: 'swatch tone-' + color + (state.meta.color === color ? ' on' : ''), title: color, 'aria-label': color,
@@ -1535,7 +1550,9 @@
     const list = h('div', { class: 'muted' }, 'Loading…');
     const panel = h('section', { class: 'bld-settings panel' },
       h('h3', null, 'Version history'),
-      h('p', { class: 'b-help' }, 'Every time you publish, that version is kept. Restoring one puts it back as the draft — staff see no change until you publish it.'),
+      h('p', { class: 'b-help' }, state.canEditForm
+        ? 'Every time you publish, that version is kept. Restoring one puts it back as the draft — staff see no change until you publish it.'
+        : 'Every time the workflow is published, that version is kept. Restoring one puts its steps back into the draft (the form is not changed) — staff see no change until you publish it.'),
       list,
       h('h3', null, 'Move or back up'),
       h('p', { class: 'b-help' }, 'Export downloads this workflow (the current saved draft) as a file. Import it from the Workflows page, here or on another SchoolFlow site.'),

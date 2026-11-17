@@ -33,10 +33,10 @@ async function login(page, email) {
   await page.screenshot({ path: S + '/shots/01-home.png' });
   check(await page.locator('.wf-card').count() === 4, 'four live forms on home (ticket-triggered draft hidden)');
   check(await page.locator('a[href="/Builder"]').count() === 0, 'staff do not see builder nav');
-  const denied = await page.goto(base + '/Builder');
-  check(page.url().includes('/Account/Denied'), 'staff are refused the builder (' + page.url() + ')');
+  await page.goto(base + '/Builder');
+  check(await page.locator('.wf-tile').count() === 0 && await page.locator('[data-open-dialog="new-dialog"]').count() === 0, 'staff who own no workflow see none, and cannot create one');
   const api = await page.evaluate(async () => (await fetch('/api/builder/1')).status);
-  check(api === 403, 'staff are refused the builder API (status ' + api + ')');
+  check(api === 404, 'staff cannot load a workflow in the builder API (status ' + api + ')');
 
   note('2. purchase form');
   await page.goto(base + '/');
@@ -633,6 +633,19 @@ async function login(page, email) {
   check((await page.goto(base + '/Admin/Audit')).url().includes('/Account/Denied'), 'the audit log is admin-only');
 
   await page.goto(base + '/Builder');
+  check(await page.locator('[data-open-dialog="new-dialog"]').count() === 0 && await page.locator('#import-file').count() === 0, 'a builder who is not an admin cannot create or import forms');
+  const created = await page.evaluate(async () => {
+    const token = document.querySelector('meta[name=csrf-token]').content;
+    const body = new URLSearchParams({ name: 'Sneaky form', trigger: 'form', __RequestVerificationToken: token });
+    const r = await fetch('/Builder?handler=Create', { method: 'POST', body, redirect: 'follow' });
+    return r.url;
+  });
+  await page.goto(base + '/Builder');
+  check(!created.includes('/Builder/Edit/') && (await page.locator('.wf-tile').count()) === 0, 'and the server refuses a create sent anyway');
+
+  // An admin creates the form and makes the builder its owner.
+  await login(page, 'admin@example.org');
+  await page.goto(base + '/Builder');
   await page.click('[data-open-dialog]');
   await page.fill('#new-name', 'Lab Booking');
   await page.click('dialog button.primary');
@@ -644,17 +657,46 @@ async function login(page, email) {
   await page.locator('.fl-node:has-text("Form submitted")').click();
   await page.click('.bld-palette .pal-item:has(strong:text-is("End"))'); // connects Start to a finishing step
   await page.click('.bld-tabs button:has-text("Settings")');
-  check((await page.locator('.bld-settings textarea').nth(1).inputValue()).includes('builder@example.org'), 'the creator is the owner');
+  check((await page.locator('.bld-settings textarea').nth(1).inputValue()).includes('admin@example.org'), 'the creator is the owner');
+  await page.locator('.bld-settings textarea').nth(1).fill('admin@example.org\nbuilder@example.org');
   await page.locator('.b-audience .choice').nth(1).click();
   await page.locator('.b-checks label:has-text("Science Department") input').check();
   await page.locator('.b-checks label:has-text("All Staff") input').uncheck();
   await page.screenshot({ path: S + '/shots/28-builder-access.png', fullPage: true });
   await page.click('.bld-actions button:has-text("Publish")');
   await page.waitForFunction(() => /Published version/.test(document.querySelector('.toast')?.textContent || ''));
-  await page.locator('.bld-settings textarea').nth(1).fill('teacher@example.org');
+
+  // The owner changes the steps, but not the form.
+  await login(page, 'builder@example.org');
+  await page.goto(base + '/Builder');
+  check(await page.locator('.wf-tile').count() === 1 && await page.locator('.wf-tile button:has-text("Delete")').count() === 0 && await page.locator('.wf-tile button:has-text("Duplicate")').count() === 0,
+    'the owner sees the workflow they were given, without Duplicate or Delete');
+  await page.click('.wf-tile a:has-text("Edit steps")');
+  await page.waitForSelector('.bld-title');
+  check(await page.locator('.bld-tabs button:has-text("Form")').count() === 0 && (await page.locator('.bld-tabs button.on').textContent()) === 'Flow', 'the owner gets the Flow tab, and no Form tab');
+  await page.locator('.fl-node:has-text("Form submitted")').click();
+  await page.click('.bld-palette .pal-item:has(strong:text-is("Send notification"))');
+  await page.locator('.bld-inspector textarea').first().fill('{{submitter.email}}');
+  await page.locator('.bld-inspector textarea').nth(1).fill('Lab booking received');
+  const sendNode = page.locator('.fl-node:has-text("Send notification")');
+  check(await sendNode.count() === 1, 'the owner can add a step');
+  await page.click('.bld-tabs button:has-text("Settings")');
+  check((await page.locator('.bld-settings').first().textContent()).includes('changed by an administrator') && await page.locator('.bld-settings textarea').count() === 0, 'settings are read-only for the owner');
   await page.click('.bld-actions button:has-text("Save draft")');
-  await page.waitForFunction(() => /cannot remove yourself/.test(document.querySelector('.toast')?.textContent || ''));
-  check(true, 'an owner cannot remove themselves and lock the workflow');
+  await page.waitForFunction(() => /saved/i.test(document.querySelector('.toast')?.textContent || ''));
+  check(true, 'the owner can save a change to the steps');
+  const formChange = await page.evaluate(async (id) => {
+    const w = await window.SF.api('GET', '/api/builder/' + id);
+    const tries = {};
+    const save = async (body) => { try { await window.SF.api('PUT', '/api/builder/' + id, body); return 'saved'; } catch (e) { return e.message; } };
+    const base = { name: w.name, description: w.description, category: w.category, color: w.color, definition: w.definition };
+    tries.question = await save(Object.assign({}, base, { definition: Object.assign({}, w.definition, { form: { fields: w.definition.form.fields.concat([{ key: 'extra', label: 'Extra', type: 'text' }]) } }) }));
+    tries.name = await save(Object.assign({}, base, { name: 'Renamed' }));
+    tries.owners = await save(Object.assign({}, base, { owners: ['builder@example.org'] }));
+    tries.audience = await save(Object.assign({}, base, { audienceGroups: [] }));
+    return tries;
+  }, labId);
+  check(Object.values(formChange).every((m) => m.includes('Only an administrator can change the form')), 'the server refuses form, name, owner and audience changes from an owner (' + JSON.stringify(formChange).slice(0, 120) + ')');
 
   await login(page, 'teacher@example.org');
   check(await page.locator('.wf-card:has-text("Lab Booking")').count() === 1, 'a member of the audience group sees the form');
@@ -711,7 +753,7 @@ async function login(page, email) {
   await page.goto(base + '/Admin/Audit');
   const audit = await page.locator('.table tbody').textContent();
   check(audit.includes("Approved on someone's behalf") && audit.includes('Principal is away'), 'the override is in the audit log');
-  check(audit.includes('Workflow published') && audit.includes('Lab Booking') && audit.includes('Bailey Builder'), 'publishing is in the audit log');
+  check(audit.includes('Workflow published') && audit.includes('Lab Booking') && audit.includes('Avery Admin'), 'publishing is in the audit log');
   check(audit.includes('Who can submit changed') && audit.includes('Science Department'), 'audience changes are in the audit log');
   await page.screenshot({ path: S + '/shots/29-audit.png', fullPage: true });
   await page.fill('input[name=q]', 'Lab Booking');
@@ -942,8 +984,8 @@ async function login(page, email) {
   check(pagesOverflow <= 0, 'no horizontal overflow on phone: multi-page form (' + pagesOverflow + ')');
   await page.screenshot({ path: S + '/shots/43-mobile-pages.png', fullPage: true });
   await page.setViewportSize({ width: 1360, height: 900 });
-  const teacherExport = await page.evaluate(async (id) => { const r = await fetch('/Builder?handler=Export&id=' + id); return r.url + ' ' + r.headers.get('content-type'); }, outingId);
-  check(teacherExport.includes('/Account/Denied') && !teacherExport.includes('json'), 'staff cannot export a workflow (' + teacherExport + ')');
+  const teacherExport = await page.evaluate(async (id) => { const r = await fetch('/Builder?handler=Export&id=' + id); return r.status + ' ' + r.headers.get('content-type'); }, outingId);
+  check(teacherExport.startsWith('404') && !teacherExport.includes('json'), 'staff cannot export a workflow they do not look after (' + teacherExport + ')');
 
   await login(page, 'admin@example.org');
   await page.goto(base + '/Builder/Edit/' + outingId);

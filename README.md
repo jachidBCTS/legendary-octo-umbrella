@@ -131,8 +131,9 @@ Roles and permissions are described under [Permissions](#permissions) below.
 | Role | Can do |
 | --- | --- |
 | Staff (everyone who signs in) | Submit the forms open to them; see their own requests and drafts; approve what is sent to them; keep their own approval chains |
-| Builder | Also create workflows, and manage shared approval chain templates. A builder only sees and edits the workflows they **own** |
-| Admin | Everything, everywhere: all workflows and requests, departments, locations, groups, roles, settings, the audit log. Can approve or reject on behalf of the assigned approvers |
+| Builder | Use shared approval chain templates and the Reports and Formula guide pages. The role on its own gives no access to any workflow |
+| Admin | Everything, everywhere. **Only admins create, copy, import or delete forms, change a form's questions, name or audience, and choose its owners.** Admins also manage departments, teams, locations, groups, roles, rates, student access, settings and the audit log, and can approve on behalf of the assigned approvers |
+| Workflow owner (any staff member an admin names on a workflow) | Change that workflow's steps — approvals, tasks, notifications, due dates — on the Flow tab, and publish them; see, retry and cancel its requests. Owners cannot change the form, and cannot add help desk steps |
 
 A person's role is the **highest** of: the role set by hand under Admin → Settings; any registered
 Entra group they belong to; an Entra app role named `Admin` or `Builder`; and the `Auth:Admins`

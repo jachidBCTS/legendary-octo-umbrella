@@ -118,6 +118,15 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   is untouched. `form-runtime.js` builds held fields "compact" (`buildField(field, true)`, named by
   `aria-label`) and `buildWorksheet` places them. `FormDefinition.Style = "paper"` is CSS only
   (`.sf-paper`). Intro lines that all start with `•` render as a notice list.
+- **Who builds what (owner, Nov 17, 2026): forms are admin-only; flows can be changed by staff.**
+  `AccessService.CanEditForm` (= admin) gates creating, duplicating, importing and deleting
+  workflows and any change to the form, trigger, name/description/category/colour, owners or
+  audience. `CanManage` = admin **or listed owner** (the Builder role is no longer required, and on
+  its own grants nothing). An owner who is not an admin gets the Flow, Preview and a read-only
+  Settings tab; `BuilderController.FormRule` compares the saved form/meta against a snapshot taken
+  before the save and refuses any difference; restoring a version as an owner copies only its flow.
+  `/Builder` and `BuilderController` are `[Authorize]` (any signed-in person) — ownership is
+  checked per workflow, and things a person may not touch are 404.
 - **Owner's direction (Nov 17, 2026): everything stays in house.** Business office staff have no
   Freshservice accounts and will not get them. Only technology-type workflows go to the help desk,
   and those are built **only by administrators**: `WorkflowDefinition.UsesHelpDesk()` (ticket

@@ -137,7 +137,7 @@ public sealed class FormsController : ControllerBase
         }
         else if (request.Definition is not null)
         {
-            if (!User.IsBuilder()) return Forbid();
+            if (!User.IsBuilder() && !await new AccessService(_db).OwnsAnyWorkflowAsync(User, ct)) return Forbid();
             form = request.Definition;
             form.Fields ??= new List<FieldDef>();
             form.Fields.RemoveAll(f => f is null);
@@ -423,7 +423,7 @@ public sealed class CheckFormulaRequest
 }
 
 [ApiController]
-[Authorize(Policy = "Builder")]
+[Authorize] // owners need not be builders; every workflow call checks AccessService.CanManage
 [AutoValidateAntiforgeryToken]
 [Route("api/builder")]
 public sealed class BuilderController : ControllerBase
@@ -468,6 +468,7 @@ public sealed class BuilderController : ControllerBase
             publishedVersion = w.PublishedVersion, isPublished = w.PublishedJson is not null,
             hasUnpublishedChanges = w.HasUnpublishedChanges, isEnabled = w.IsEnabled,
             isAdmin = User.IsAdmin(),
+            canEditForm = AccessService.CanEditForm(User),
             teams = await _db.Teams.AsNoTracking().OrderBy(t => t.Name).Select(t => t.Name).ToListAsync(ct),
         }, Json.Options);
     }
@@ -535,6 +536,30 @@ public sealed class BuilderController : ControllerBase
         return null;
     }
 
+    /// <summary>What an owner who is not an admin may not change: everything about the form and who looks after it.</summary>
+    private sealed record FormSnapshot(string Name, string Description, string Category, string Color, string Form, string Trigger, string Owners, string Audience)
+    {
+        public static FormSnapshot Of(Workflow w)
+        {
+            var def = Json.ParseDefinition(w.DraftJson);
+            return new(w.Name, w.Description, w.Category, w.Color, Json.Serialize(def.Form), Json.Serialize(def.Trigger), w.Owners, w.AudienceGroups);
+        }
+    }
+
+    public const string FormMessage = "Only an administrator can change the form (its questions, name, description, colour or how it starts) or who looks after it. You can change the Flow.";
+
+    /// <summary>Owners who are not admins may change the flow only.</summary>
+    private string? FormRule(FormSnapshot before, Workflow w, WorkflowDefinition def, SaveWorkflowRequest request)
+    {
+        if (AccessService.CanEditForm(User)) return null;
+        static IEnumerable<string> Norm(IEnumerable<string?> list) => list.Select(o => (o ?? "").Trim().ToLowerInvariant()).Where(o => o.Length > 0).Distinct().OrderBy(o => o);
+        var ownersChanged = request.Owners is not null && !Norm(request.Owners).SequenceEqual(Norm(before.Owners.Split(';')));
+        var audienceChanged = request.AudienceGroups is not null && !Norm(request.AudienceGroups).SequenceEqual(Norm(before.Audience.Split(';')));
+        var changed = w.Name != before.Name || w.Description != before.Description || w.Category != before.Category || w.Color != before.Color
+            || Json.Serialize(def.Form) != before.Form || Json.Serialize(def.Trigger) != before.Trigger || ownersChanged || audienceChanged;
+        return changed ? FormMessage : null;
+    }
+
     /// <summary>Workflows that reach into the help desk are built by administrators only.</summary>
     private string? HelpDeskRule(WorkflowDefinition def) => !User.IsAdmin() && def.UsesHelpDesk() ? HelpDeskMessage : null;
 
@@ -551,7 +576,8 @@ public sealed class BuilderController : ControllerBase
     {
         var w = await ManagedAsync(id, tracked: true, ct);
         if (w is null) return NotFound();
-        var error = Apply(w, request, User.Email(), out var def) ?? HelpDeskRule(def!) ?? await ApplyAccessAsync(w, request);
+        var locked = FormSnapshot.Of(w);
+        var error = Apply(w, request, User.Email(), out var def) ?? HelpDeskRule(def!) ?? FormRule(locked, w, def!, request) ?? await ApplyAccessAsync(w, request);
         if (error is not null) return BadRequest(new { error });
         await _db.SaveChangesAsync(ct);
         var saved = DefinitionValidator.Validate(def!);
@@ -564,7 +590,8 @@ public sealed class BuilderController : ControllerBase
     {
         var w = await ManagedAsync(id, tracked: true, ct);
         if (w is null) return NotFound();
-        var error = Apply(w, request, User.Email(), out var def) ?? HelpDeskRule(def!) ?? await ApplyAccessAsync(w, request);
+        var locked = FormSnapshot.Of(w);
+        var error = Apply(w, request, User.Email(), out var def) ?? HelpDeskRule(def!) ?? FormRule(locked, w, def!, request) ?? await ApplyAccessAsync(w, request);
         if (error is not null) return BadRequest(new { error });
 
         var issues = DefinitionValidator.Validate(def!);
@@ -621,10 +648,21 @@ public sealed class BuilderController : ControllerBase
         if (w is null) return NotFound();
         var row = await _db.WorkflowVersions.AsNoTracking().FirstOrDefaultAsync(v => v.WorkflowId == id && v.Version == version, ct);
         if (row is null) return NotFound(new { error = "That version is no longer kept." });
-        w.DraftJson = row.Json;
+        var restored = Json.ParseDefinition(row.Json);
+        if (!AccessService.CanEditForm(User))
+        {
+            // An owner rolls back the flow only; the form stays as the admin left it.
+            var current = Json.ParseDefinition(w.DraftJson);
+            current.Flow = restored.Flow;
+            restored = current;
+        }
+        if (HelpDeskRule(restored) is string helpDesk) return BadRequest(new { error = helpDesk });
+        w.DraftJson = Json.Serialize(restored);
         w.UpdatedAt = DateTime.UtcNow;
         w.UpdatedBy = User.Email();
-        _audit.Record(User, "workflow.restored", w.Name, $"Version {version} was put back as the draft.");
+        _audit.Record(User, "workflow.restored", w.Name, AccessService.CanEditForm(User)
+            ? $"Version {version} was put back as the draft."
+            : $"The flow of version {version} was put back into the draft.");
         await _db.SaveChangesAsync(ct);
         return Ok(new { ok = true });
     }

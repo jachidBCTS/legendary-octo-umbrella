@@ -4,6 +4,7 @@
 @inject IAntiforgery Antiforgery
 @inject AppDbContext Db
 @inject IFreshserviceClient Freshservice
+@inject AccessService Access
 @{
     var signedIn = User.Identity?.IsAuthenticated == true;
     var email = User.Email();
@@ -20,6 +21,7 @@
         unreadCount = await Db.Notifications.CountAsync(n => n.UserEmail == email && n.ReadAt == null);
     }
     var wide = ViewData["Wide"] as bool? == true;
+    var showBuild = signedIn && (User.IsBuilder() || await Access.OwnsAnyWorkflowAsync(User));
     var a11y = Context.Request.Cookies[SchoolFlow.Web.Pages.Account.DisplayModel.CookieName] == "1";
 }
 <!DOCTYPE html>
@@ -57,7 +59,7 @@
             <a class="@Active("/Chains")" href="/Chains"><partial name="_Icons" model='"chain"' /> Approval chains</a>
             <a class="@Active("/Away")" href="/Away"><partial name="_Icons" model='"clock"' /> Away / stand-in</a>
             <a class="@Active("/Account/Display")" href="/Account/Display"><partial name="_Icons" model='"eye"' /> Accessibility@(a11y ? " (on)" : "")</a>
-            @if (User.IsBuilder())
+            @if (showBuild)
             {
                 <div class="nav-label">Build</div>
                 <a class="@Active("/Builder")" href="/Builder"><partial name="_Icons" model='"flow"' /> Workflows</a>

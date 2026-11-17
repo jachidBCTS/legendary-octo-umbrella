@@ -85,15 +85,19 @@ public sealed class PermissionTests : IDisposable
     }
 
     [Fact]
-    public void Managing_IsForOwnersWhoAreBuilders_AndAdmins()
+    public void Managing_IsForTheOwnersAnAdminNamed_AndAdmins_ButOnlyAdminsEditForms()
     {
-        var workflow = new Workflow { Name = "Trips", Owners = ApprovalTask.Pack(new[] { "Owner@School.org", "demoted@school.org" }) };
+        var workflow = new Workflow { Name = "Trips", Owners = ApprovalTask.Pack(new[] { "Owner@School.org", "staff.owner@school.org" }) };
         Assert.True(AccessService.CanManage(Person("owner@school.org", Roles.Builder), workflow));
+        Assert.True(AccessService.CanManage(Person("staff.owner@school.org", Roles.Staff), workflow));   // owning is enough; no Builder role needed
         Assert.True(AccessService.CanManage(Person("admin@school.org", Roles.Admin), workflow));
-        Assert.False(AccessService.CanManage(Person("other@school.org", Roles.Builder), workflow));
-        Assert.False(AccessService.CanManage(Person("wner@school.org", Roles.Builder), workflow));     // no partial-email matches
-        Assert.False(AccessService.CanManage(Person("demoted@school.org", Roles.Staff), workflow));    // listed, but no longer a builder
+        Assert.False(AccessService.CanManage(Person("other@school.org", Roles.Builder), workflow));     // the Builder role alone grants nothing
+        Assert.False(AccessService.CanManage(Person("wner@school.org", Roles.Builder), workflow));      // no partial-email matches
         Assert.False(AccessService.CanManage(Person("builder@school.org", Roles.Builder), new Workflow { Name = "Unowned" }));
+
+        Assert.True(AccessService.CanEditForm(Person("admin@school.org", Roles.Admin)));
+        Assert.False(AccessService.CanEditForm(Person("owner@school.org", Roles.Builder)));
+        Assert.False(AccessService.CanEditForm(Person("staff.owner@school.org", Roles.Staff)));
     }
 
     [Fact]
@@ -134,7 +138,10 @@ public sealed class PermissionTests : IDisposable
         Assert.Null(await access.ManagedWorkflowIdsAsync(Person("admin@school.org", Roles.Admin)));   // null = everything
         Assert.Equal(new[] { tripId }, (await access.ManagedWorkflowIdsAsync(Person("owner@school.org", Roles.Builder)))!.ToArray());
         Assert.Equal(new[] { otherId }, (await access.ManagedWorkflowIdsAsync(Person("otherowner@school.org", Roles.Builder)))!.ToArray());
-        Assert.Empty((await access.ManagedWorkflowIdsAsync(Person("owner@school.org", Roles.Staff)))!);
+        Assert.Equal(new[] { tripId }, (await access.ManagedWorkflowIdsAsync(Person("owner@school.org", Roles.Staff)))!.ToArray());   // an owner without the Builder role
+        Assert.Empty((await access.ManagedWorkflowIdsAsync(Person("stranger@school.org", Roles.Builder)))!);
+        Assert.True(await access.OwnsAnyWorkflowAsync(Person("owner@school.org", Roles.Staff)));
+        Assert.False(await access.OwnsAnyWorkflowAsync(Person("stranger@school.org", Roles.Builder)));
         Assert.Single(await access.DepartmentsApprovedByAsync(Person("head@school.org")));
         Assert.Empty(await access.DepartmentsApprovedByAsync(Person("t@school.org")));
     }
