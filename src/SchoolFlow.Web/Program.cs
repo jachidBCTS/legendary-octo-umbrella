@@ -81,6 +81,7 @@ builder.Services.AddScoped<Microsoft.AspNetCore.Authentication.IClaimsTransforma
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<GroupDirectory>();
 builder.Services.AddScoped<AccessService>();
+builder.Services.AddSingleton<DomainPolicy>();
 builder.Services.AddScoped<AuditService>();
 builder.Services.AddScoped<SchoolCalendar>();
 builder.Services.AddHostedService<FollowUpWorker>();
@@ -114,6 +115,14 @@ builder.Services.AddRateLimiter(options =>
     options.AddPolicy("webhook", context => RateLimitPartition.GetFixedWindowLimiter(
         context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = 300, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+    // Every other /api call: a generous ceiling per signed-in person (or per address when signed out),
+    // well above what a person filling in forms produces, to stop runaway scripts and scraping.
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+        !context.Request.Path.StartsWithSegments("/api") || context.Request.Path.StartsWithSegments("/api/webhooks")
+            ? RateLimitPartition.GetNoLimiter("other")
+            : RateLimitPartition.GetFixedWindowLimiter(
+                context.User.Identity?.IsAuthenticated == true ? "user:" + context.User.Email() : "ip:" + (context.Connection.RemoteIpAddress?.ToString() ?? "unknown"),
+                _ => new FixedWindowRateLimiterOptions { PermitLimit = 1200, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
 });
 
 // ---- Uploaded files ---------------------------------------------------------------------
@@ -133,6 +142,7 @@ builder.Services.AddRazorPages(options =>
     options.Conventions.AuthorizeFolder("/Admin", "Admin");
     options.Conventions.AllowAnonymousToPage("/Account/DevLogin");
     options.Conventions.AllowAnonymousToPage("/Account/Denied");
+    options.Conventions.AllowAnonymousToPage("/Account/SignOut");
     options.Conventions.AllowAnonymousToPage("/Error");
 });
 builder.Services.AddControllers();
@@ -168,7 +178,6 @@ app.Use(async (context, next) =>
 });
 app.UseStaticFiles();
 app.UseRouting();
-app.UseRateLimiter();
 app.UseAuthentication();
 // Signed-out API calls get a plain 401 whatever the sign-in scheme, never a redirect to a login page.
 // (The Freshservice webhook is the one anonymous API; it checks its own shared secret.)
@@ -182,19 +191,11 @@ app.Use(async (context, next) =>
     }
     await next();
 });
+// After sign-in is read, so the API limit is per person rather than per (often shared) school address.
+app.UseRateLimiter();
 app.UseAuthorization();
 app.MapRazorPages();
 app.MapControllers();
-
-app.MapGet("/Account/SignOut", async (HttpContext http) =>
-{
-    await Microsoft.AspNetCore.Authentication.AuthenticationHttpContextExtensions.SignOutAsync(http, CookieAuthenticationDefaults.AuthenticationScheme);
-    if (!devAuth)
-        await Microsoft.AspNetCore.Authentication.AuthenticationHttpContextExtensions.SignOutAsync(http, OpenIdConnectDefaults.AuthenticationScheme,
-            new Microsoft.AspNetCore.Authentication.AuthenticationProperties { RedirectUri = "/" });
-    else
-        http.Response.Redirect("/Account/DevLogin");
-}).AllowAnonymous();
 
 app.MapGet("/healthz", () => Results.Text("ok")).AllowAnonymous();
 

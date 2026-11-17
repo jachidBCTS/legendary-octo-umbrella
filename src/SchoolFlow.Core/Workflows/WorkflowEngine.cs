@@ -101,6 +101,15 @@ public sealed class WorkflowEngine
 
     private static readonly System.Text.RegularExpressions.Regex TeamReference = new(@"\[([^\[\]]{1,200})\]");
 
+    /// <summary>The step settings that name people, and so may name a team as [Team name]. Nothing else is read for teams.</summary>
+    public static readonly string[] PeopleSettings = { "approvers", "assignees", "to", "escalateTo", "dueNotify" };
+
+    /// <summary>The team names a step's "who" settings mention, whether written directly or inside a {{formula}}.</summary>
+    public static IEnumerable<string> TeamsNamedBy(NodeDef node) =>
+        PeopleSettings.SelectMany(key => TeamReference.Matches(node.Get(key)).Select(m => m.Groups[1].Value.Trim()))
+            // A formula list such as ["Open", "Closed"] is not a team: team names are never quoted inside the brackets.
+            .Where(name => name.Length > 0 && !name.Contains('"') && !name.Contains('\''));
+
     /// <summary>
     /// The people a step's setting names: email addresses, and the members of any [Team name] in it.
     /// A team that does not exist, or has nobody in it, stops the step with a message an admin can act on.
@@ -732,25 +741,101 @@ public sealed class WorkflowEngine
     /// Puts a request that was sent back for changes in front of the same approval step again, now that
     /// the requester has resubmitted it.
     /// </summary>
-    public Task ReenterApprovalAsync(FlowDefinition flow, RunState state, CancellationToken ct = default)
+    public async Task ReenterApprovalAsync(FlowDefinition flow, RunState state, CancellationToken ct = default)
     {
         if (state.Status != RunStatus.ChangesRequested) throw new InvalidOperationException("This request is not waiting for changes.");
         var node = FindNode(flow, state.CurrentNodeId);
         if (node is null)
         {
             Fail(state, state.CurrentNodeId, "The approval step no longer exists in this workflow version.");
-            return Task.CompletedTask;
+            return;
         }
-        if (node.Type == NodeTypes.ApprovalChain && state.Context.GetValueOrDefault("chain") is Dictionary<string, object?> chain
-            && chain.GetValueOrDefault("steps") is List<object?>)
+
+        // The changed answers may send the request down a different path (for example a purchase
+        // brought under the amount that needs approval). That is worked out again from the start,
+        // but only when nothing with an effect has happened yet: every step before this one was a
+        // decision or a calculation, and no approval, task or ticket is on record.
+        if (RouteFromStartIfUntouched(flow, state) is { } routed && routed != node.Id)
         {
-            // Keep the chain and its earlier approvals; go back to the step that asked for changes.
-            try { EnterChainStep(state, node, chain); }
-            catch (ExpressionException ex) { Fail(state, node.Id, ex.Message); }
-            return Task.CompletedTask;
+            var start = flow.Nodes.First(n => n.Type == NodeTypes.Start);
+            Log(state, node.Id, "info", "The changes mean this request no longer goes to this step, so its route has been worked out again.");
+            state.PendingApproval = null;
+            state.Status = RunStatus.Running;
+            state.CurrentNodeId = start.Id;
+            await AdvanceAsync(flow, state, ct);
+            return;
         }
-        state.Status = RunStatus.Running; // a single approval step is simply asked again
-        return AdvanceAsync(flow, state, ct);
+
+        if (node.Type == NodeTypes.ApprovalChain && state.Context.GetValueOrDefault("chain") is Dictionary<string, object?> chain
+            && chain.GetValueOrDefault("steps") is List<object?> oldSteps)
+        {
+            try
+            {
+                // The chain is worked out again from the changed answers (the requester may have changed
+                // the department or the approvers they listed). Approvals already given stand only if
+                // the steps they belong to are unchanged; otherwise the chain starts again.
+                var fresh = await BuildChainAsync(node, state, ct);
+                var index = (int)Values.ToNumber(chain["index"]);
+                var previous = ChainValue.ToSteps(chain);
+                bool Same(ChainStep a, ChainStep b) => a.Name == b.Name && a.Rule == b.Rule
+                    && a.Approvers.OrderBy(x => x).SequenceEqual(b.Approvers.OrderBy(x => x));
+                var keep = index < fresh.Count && index <= previous.Count && Enumerable.Range(0, index).All(k => Same(previous[k], fresh[k]));
+                var records = fresh.Select((step, k) =>
+                {
+                    var record = Values.NewDict();
+                    record["name"] = step.Name;
+                    record["approvers"] = step.Approvers.Cast<object?>().ToList();
+                    record["rule"] = step.Rule;
+                    record["status"] = keep && k < index ? "approved" : "pending";
+                    if (keep && k < index && oldSteps[k] is Dictionary<string, object?> old) record["by"] = old.GetValueOrDefault("by");
+                    return (object?)record;
+                }).ToList();
+                chain["steps"] = records;
+                if (!keep)
+                {
+                    chain["index"] = 0m;
+                    if (index > 0) Log(state, node.Id, "info", "The changes altered the approval chain, so it starts again from the first step.");
+                }
+                EnterChainStep(state, node, chain);
+            }
+            catch (ExpressionException ex) { Fail(state, node.Id, ex.Message); }
+            return;
+        }
+        state.Status = RunStatus.Running; // a single approval step is asked again, with its approvers worked out afresh
+        await AdvanceAsync(flow, state, ct);
+    }
+
+    /// <summary>
+    /// Where the request would now go from Start, passing only through decisions and calculations — or
+    /// null when that cannot be relied on (something with an effect has already happened, or a formula fails).
+    /// </summary>
+    private string? RouteFromStartIfUntouched(FlowDefinition flow, RunState state)
+    {
+        foreach (var key in new[] { "approvals", "ticket", "task" })
+            if (state.Context.TryGetValue(key, out var value) && !Values.IsBlank(value) && value is not List<object?> { Count: 0 }) return null;
+        var start = flow.Nodes.FirstOrDefault(n => n.Type == NodeTypes.Start);
+        if (start is null) return null;
+        var probe = new Dictionary<string, object?>(state.Context, StringComparer.OrdinalIgnoreCase);
+        var current = start;
+        for (var steps = 0; steps < 100; steps++)
+        {
+            var port = "next";
+            try
+            {
+                if (current.Type == NodeTypes.Condition)
+                    port = Values.ToBool(Formula.Evaluate(current.Get("expression"), new Scope(probe, now: _now, closedDays: _closedDays))) ? "true" : "false";
+                else if (current.Type == NodeTypes.SetVariable)
+                    probe[current.Get("name").Trim()] = Formula.Evaluate(current.Get("expression"), new Scope(probe, now: _now, closedDays: _closedDays));
+                else if (current.Type != NodeTypes.Start)
+                    return current.Id;
+            }
+            catch (ExpressionException) { return null; }
+            var edge = flow.Edges.FirstOrDefault(e => e.From == current.Id && e.Port == port);
+            if (edge is null) return null;   // the path would end here; leave the request where it is
+            current = FindNode(flow, edge.To);
+            if (current is null) return null;
+        }
+        return null;
     }
 
     private string Sim() => _freshservice.IsLive ? "" : "[Simulated] ";

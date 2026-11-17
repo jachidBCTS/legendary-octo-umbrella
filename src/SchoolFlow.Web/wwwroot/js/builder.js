@@ -55,7 +55,10 @@
   const NODE_INFO = Object.fromEntries(NODE_TYPES.map((n) => [n.type, n]));
   // Steps and fields that reach into the Freshservice help desk: administrators only.
   const HELP_DESK_STEPS = ['fs_create_ticket', 'fs_update_ticket', 'fs_add_note', 'fs_service_request', 'fs_lookup', 'wait_ticket'];
-  const TASK_FIELD_TYPES = [['text', 'Text'], ['textarea', 'Paragraph'], ['number', 'Number'], ['currency', 'Currency'], ['date', 'Date'], ['time', 'Time'], ['select', 'Dropdown'], ['radio', 'Choice buttons'], ['checkbox', 'Yes / no'], ['attachments', 'Attachments'], ['calculated', 'Calculated']];
+  // Matches FieldTypes.InTask on the server.
+  const TASK_FIELD_TYPES = [['text', 'Text'], ['textarea', 'Paragraph'], ['email', 'Email'], ['phone', 'Phone number'], ['number', 'Number'], ['currency', 'Currency'],
+    ['date', 'Date'], ['time', 'Time'], ['select', 'Dropdown'], ['radio', 'Choice buttons'], ['multiselect', 'Checkboxes'], ['checkbox', 'Yes / no'],
+    ['attachments', 'Attachments'], ['calculated', 'Calculated'], ['section', 'Section heading']];
   NODE_INFO.start = { type: 'start', label: 'Start', hint: '', tone: 'indigo' };
   const APPROVAL_PORTS = [['approved', 'Approved'], ['rejected', 'Rejected']];
   const PORTS = { condition: [['true', 'Yes'], ['false', 'No']], approval: APPROVAL_PORTS, approval_chain: APPROVAL_PORTS, end: [] };
@@ -357,7 +360,12 @@
       state.def.flow.nodes.forEach((n) => {
         if (n.type === 'set_variable' && n.config.name) items.push([n.config.name.trim(), 'Value set by “' + (n.label || 'Set value') + '”']);
         if (n.type === 'fs_lookup' && n.config.saveAs) items.push([n.config.saveAs.trim() + '.name', 'Looked up by “' + (n.label || 'Look up') + '”']);
+        if (n.type === 'task') (n.fields || []).forEach((f) => {
+          if (f.key && f.type !== 'section') items.push([f.type === 'attachments' ? 'COUNT(' + f.key + ')' : f.key, (f.label || f.key) + ' — filled in at “' + (n.label || 'Task') + '”']);
+        });
       });
+      if (state.def.flow.nodes.some((n) => n.type === 'task'))
+        items.push(['task.by', 'Who completed the last task'], ['task.step', 'Name of the last task completed']);
     }
     return items;
   }
@@ -1324,12 +1332,21 @@
               row('Key', keyInput, 'The name later steps and messages use, e.g. {{' + (f.key || 'key') + '}}.'),
               row('Type', select(f.type, TASK_FIELD_TYPES, (v) => {
                 f.type = v;
-                if (['select', 'radio'].includes(v)) f.options = f.options || ['Option 1', 'Option 2']; else delete f.options;
+                if (['select', 'radio', 'multiselect'].includes(v)) f.options = f.options || ['Option 1', 'Option 2']; else delete f.options;
+                if (!['number', 'currency'].includes(v)) { delete f.min; delete f.max; }
+                if (v !== 'attachments') delete f.maxFiles;
                 if (v !== 'calculated') delete f.formula;
                 renderFields();
               })));
-            if (['select', 'radio'].includes(f.type))
+            if (['number', 'currency'].includes(f.type))
+              box.append(h('div', { class: 'b-pair' },
+                row('Minimum', numberInput(f.min, (v) => { f.min = v; }, { step: 'any' })),
+                row('Maximum', numberInput(f.max, (v) => { f.max = v; }, { step: 'any' }))));
+            if (f.type === 'attachments')
+              box.append(row('Most files allowed', numberInput(f.maxFiles, (v) => { f.maxFiles = v === null ? null : Math.max(1, Math.min(20, Math.round(v))); }, { min: 1, max: 20, step: 1, placeholder: '5' })));
+            if (['select', 'radio', 'multiselect'].includes(f.type))
               box.append(row('Options', textArea((f.options || []).join('\n'), (v) => { f.options = v.split('\n').map((o) => o.trim()).filter(Boolean); }, 3), 'One option per line.'));
+            if (f.type === 'section') { list.appendChild(box); return; }
             if (f.type === 'calculated')
               box.append(row('Formula', formulaInput(f.formula, (v) => { f.formula = v; }, { context: 'flow', placeholder: 'e.g. total - actual_total' })));
             else

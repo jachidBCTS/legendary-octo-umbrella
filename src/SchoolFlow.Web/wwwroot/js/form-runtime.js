@@ -172,7 +172,7 @@
     fields.forEach((f) => { byKey[f.key.toLowerCase()] = f; });
     const rowKeys = (row) => {
       const keys = [];
-      (row.description || '').replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (_, k) => { keys.push(k); return ''; });
+      (row.description || '').replace(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, k) => { keys.push(k); return ''; });
       if (row.cost) keys.push(row.cost);
       return keys.map((k) => byKey[k.trim().toLowerCase()]).filter(Boolean);
     };
@@ -290,7 +290,7 @@
         const errors = [];
         let last = 0;
         const text = row.description || '';
-        text.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (match, key, at) => {
+        text.replace(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (match, key, at) => {
           if (at > last) description.appendChild(h('span', null, text.slice(last, at).trim()));
           const control = place(byKey[key.toLowerCase()]);
           if (control) { description.appendChild(control.wrap); errors.push(control.error); }

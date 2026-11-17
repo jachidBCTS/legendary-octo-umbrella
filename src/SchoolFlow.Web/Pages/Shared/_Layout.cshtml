@@ -82,7 +82,10 @@
         <div class="sidebar-user">
             <span class="avatar">@Ui.Initials(name)</span>
             <span class="who"><strong>@name</strong><small>@email</small></span>
-            <a href="/Account/SignOut" title="Sign out" aria-label="Sign out"><partial name="_Icons" model='"signout"' /></a>
+            <form method="post" action="/Account/SignOut" class="signout-form">
+                @Html.AntiForgeryToken()
+                <button type="submit" title="Sign out" aria-label="Sign out"><partial name="_Icons" model='"signout"' /></button>
+            </form>
         </div>
       </div>
     </aside>

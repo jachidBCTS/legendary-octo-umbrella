@@ -12,13 +12,9 @@ namespace SchoolFlow.Web.Services;
 /// </summary>
 public static class TeamCheck
 {
-    private static readonly Regex Reference = new(@"\[([^\[\]]{1,200})\]", RegexOptions.Compiled);
-
     public static async Task<List<Issue>> IssuesAsync(AppDbContext db, WorkflowDefinition def, CancellationToken ct = default)
     {
-        var used = def.Flow.Nodes
-            .SelectMany(n => n.Config.Values.SelectMany(v => Reference.Matches(v ?? "").Select(m => (Node: n, Team: m.Groups[1].Value.Trim()))))
-            .ToList();
+        var used = def.Flow.Nodes.SelectMany(n => WorkflowEngine.TeamsNamedBy(n).Select(team => (Node: n, Team: team))).ToList();
         if (used.Count == 0) return new List<Issue>();
         var teams = (await db.Teams.AsNoTracking().ToListAsync(ct)).ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
         var issues = new List<Issue>();

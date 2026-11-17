@@ -42,6 +42,8 @@ public static class Ui
     }
 
     /// <summary>Formats a stored field value for read-only display.</summary>
+    private static readonly System.Text.RegularExpressions.Regex DateOnlyText = new(@"^\d{4}-\d{2}-\d{2}$");
+
     public static string Display(object? value, string type, string? format, int? decimals)
     {
         if (Values.IsBlank(value)) return "—";
@@ -61,6 +63,9 @@ public static class Ui
             return decimals is int places ? d.ToString("N" + places, Values.DisplayCulture) : Values.FormatNumber(d);
         }
         if (type == FieldTypes.Date && Values.TryToDate(value, out var date)) return date.ToString("MMM d, yyyy", Values.DisplayCulture);
+        // A calculated date (e.g. a due date) is stored as "yyyy-MM-dd"; show it the same way as a date field.
+        if (type == FieldTypes.Calculated && value is string text && DateOnlyText.IsMatch(text) && Values.TryToDate(text, out var worked))
+            return worked.ToString("MMM d, yyyy", Values.DisplayCulture);
         if (value is DateTime dt) return dt.ToString(dt.TimeOfDay == TimeSpan.Zero ? "MMM d, yyyy" : "MMM d, yyyy h:mm tt", CultureInfo.GetCultureInfo("en-US"));
         return Values.ToText(value);
     }

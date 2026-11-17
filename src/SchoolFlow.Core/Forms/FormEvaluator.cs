@@ -48,7 +48,7 @@ public static class FormEvaluator
         IDictionary<string, object?>? ambient = null, bool applyDefaults = false, Func<DateTime>? now = null,
         IReadOnlyDictionary<long, string>? departments = null, IReadOnlyDictionary<long, string>? locations = null,
         IReadOnlyDictionary<string, AttachmentInfo>? attachments = null, IReadOnlySet<DateTime>? closedDays = null,
-        StudentDirectory? students = null)
+        StudentDirectory? students = null, IReadOnlyCollection<string>? allowedDomains = null)
     {
         var result = new FormResult();
         var submitterEmail = ambient is not null && ambient.TryGetValue("submitter", out var who) && who is Dictionary<string, object?> person
@@ -100,7 +100,7 @@ public static class FormEvaluator
                         FieldTypes.Location => NormalizeListed(raw, locations, "location", state.Errors),
                         FieldTypes.Attachments => NormalizeAttachments(field, raw, attachments, state.Errors),
                         FieldTypes.Student => NormalizeStudent(raw, students, state.Errors),
-                        FieldTypes.ApprovalChain => Workflows.ChainValue.Normalize(raw, submitterEmail.Length > 0 ? submitterEmail : null, state.Errors),
+                        FieldTypes.ApprovalChain => Workflows.ChainValue.Normalize(raw, submitterEmail.Length > 0 ? submitterEmail : null, state.Errors, allowedDomains),
                         _ => NormalizeScalar(field.Type, field.Options, raw, state.Errors),
                     };
                 }
@@ -150,7 +150,8 @@ public static class FormEvaluator
     private static IEnumerable<string> Dependencies(FieldDef field, Dictionary<string, FieldDef> byKey)
     {
         var refs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var source in new[] { field.VisibleWhen, field.Type == FieldTypes.Calculated ? field.Formula : null })
+        // A default value can read other fields too, so it has to be worked out after them.
+        foreach (var source in new[] { field.VisibleWhen, field.Type == FieldTypes.Calculated ? field.Formula : null, field.Default })
         {
             if (string.IsNullOrWhiteSpace(source)) continue;
             if (Formula.TryParse(source, out var formula, out _))

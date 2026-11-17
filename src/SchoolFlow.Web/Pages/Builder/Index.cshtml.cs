@@ -28,13 +28,16 @@ public class IndexModel : PageModel
     public List<Workflow> Workflows { get; private set; } = new();
     public Dictionary<int, int> RunCounts { get; private set; } = new();
 
-    public async Task OnGetAsync()
+    public async Task<IActionResult> OnGetAsync([FromServices] AccessService access)
     {
+        // Somebody who neither builds nor looks after any workflow has nothing here.
+        if (!User.IsBuilder() && !await access.OwnsAnyWorkflowAsync(User)) return Forbid();
         // Builders see the workflows they own; admins see them all.
         Workflows = (await _db.Workflows.AsNoTracking().OrderBy(w => w.Name).ToListAsync())
             .Where(w => AccessService.CanManage(User, w)).ToList();
         RunCounts = await _db.Runs.GroupBy(r => r.WorkflowId).Select(g => new { g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.Key, x => x.Count);
+        return Page();
     }
 
     private IActionResult AdminsOnly()

@@ -95,6 +95,7 @@ Settings come from `appsettings.json`, `appsettings.Production.json` or environm
 | Setting | Purpose |
 | --- | --- |
 | `Auth:Mode` | `EntraId` (default) or `Dev`. `Dev` is refused unless `ASPNETCORE_ENVIRONMENT=Development` |
+| `Auth:AllowedDomains` | Email domains (e.g. `["bergen.org"]`) that approvers a requester types into their own approval chain, and stand-ins, must use. Empty accepts any address. Builders' notification steps are not limited |
 | `Auth:Admins` | Emails that are always Admin, so the first admin can sign in and assign roles |
 | `AzureAd:TenantId`, `AzureAd:ClientId`, `AzureAd:ClientSecret` | Microsoft Entra ID app registration |
 | `Database:Provider` | `Sqlite` (default) or `SqlServer` |

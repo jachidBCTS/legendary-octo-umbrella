@@ -160,7 +160,7 @@ public sealed class WorksheetRow
     public string? Description { get; set; }
     public string? Cost { get; set; }
 
-    private static readonly System.Text.RegularExpressions.Regex Placeholder = new(@"\{([A-Za-z][A-Za-z0-9_]*)\}");
+    private static readonly System.Text.RegularExpressions.Regex Placeholder = new(@"\{([A-Za-z_][A-Za-z0-9_]*)\}");
 
     /// <summary>Field keys this row draws, in order: those in the description, then the cost field.</summary>
     public IEnumerable<string> FieldKeys()

@@ -21,6 +21,8 @@ public static class DefinitionValidator
         "true", "false", "null", "blank", "and", "or", "not",
     };
 
+    public const int MaxFields = 250;
+
     public static bool IsValidKey(string? key) => key is not null && KeyPattern.IsMatch(key);
 
     public static List<Issue> Validate(WorkflowDefinition def)
@@ -36,6 +38,11 @@ public static class DefinitionValidator
         var known = new HashSet<string>(Reserved, StringComparer.OrdinalIgnoreCase);
         if (isForm) ValidateForm(def.Form, known, issues);
         ValidateFlow(def, known, isForm, issues);
+        // Student information may only be seen by people given student access, so it is never written
+        // into a message, instruction or ticket, which reach people regardless of that access.
+        foreach (var (node, setting) in Forms.StudentData.Leaks(def).DistinctBy(l => l.Node.Id))
+            issues.Add(new Issue("error", "flow", node.Id,
+                $"“{(string.IsNullOrWhiteSpace(node.Label) ? node.Type : node.Label)}”: student details cannot be used in messages, instructions or tickets — the people who receive them may not have student access. Remove them from “{setting}”."));
         return issues;
     }
 
@@ -69,6 +76,9 @@ public static class DefinitionValidator
         if (form.Style is not (null or "" or "paper"))
             issues.Add(new Issue("error", "form", null, $"Unknown form style '{form.Style}'."));
         ValidateWorksheets(form, issues);
+
+        if (form.Fields.Count > MaxFields)
+            issues.Add(new Issue("error", "form", null, $"A form can have at most {MaxFields} fields (this one has {form.Fields.Count}). Split it into separate forms."));
 
         var hasOpens = FormDefinition.TryParseDay(form.OpensOn, out var opens);
         var hasCloses = FormDefinition.TryParseDay(form.ClosesOn, out var closes);
@@ -132,7 +142,7 @@ public static class DefinitionValidator
         FormEvaluator.TopologicalOrder(valid, f => f.Key, f =>
         {
             var refs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var src in new[] { f.VisibleWhen, f.Type == FieldTypes.Calculated ? f.Formula : null })
+            foreach (var src in new[] { f.VisibleWhen, f.Type == FieldTypes.Calculated ? f.Formula : null, f.Default })
                 if (!string.IsNullOrWhiteSpace(src) && Formula.TryParse(src, out var parsed, out _)) refs.UnionWith(parsed!.References);
             return refs.Where(keys.Contains);
         }, out var cyclic);

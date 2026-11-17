@@ -35,6 +35,8 @@ public class IndexModel : PageModel
         to = (to ?? "").Trim().ToLowerInvariant();
         if (email.Length == 0) return Fail("Your account has no email address.");
         if (to.Length > 320 || !System.Text.RegularExpressions.Regex.IsMatch(to, @"^[^@\s]+@[^@\s]+\.[^@\s]+$")) return Fail("Enter your stand-in's email address.");
+        var domains = HttpContext.RequestServices.GetRequiredService<DomainPolicy>();
+        if (!domains.IsAllowed(to)) return Fail($"Your stand-in must have a district address ({domains.Describe()}).");
         if (to == email) return Fail("You cannot be your own stand-in.");
         if (startsOn is null || endsOn is null) return Fail("Choose both dates.");
         var start = startsOn.Value.Date;

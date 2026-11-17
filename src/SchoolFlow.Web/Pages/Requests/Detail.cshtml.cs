@@ -115,7 +115,9 @@ public class DetailModel : PageModel
         if (MyWork.FirstOrDefault() is { } work && def.Flow.Nodes.FirstOrDefault(n => n.Id == work.NodeId) is { } workNode)
             TaskFormJson = Json.Serialize(new FormDefinition { Fields = workNode.Fields ?? new List<FieldDef>(), SubmitLabel = "Complete task" }).Replace("<", "\\u003c");
 
-        var seesStudents = def.Form.Fields.Any(f => f.Type == FieldTypes.Student) && await _access.CanViewStudentsAsync(User);
+        // Student fields, and anything worked out from them, are hidden from people without student access.
+        var studentKeys = SchoolFlow.Core.Forms.StudentData.KeysOf(def);
+        var seesStudents = studentKeys.Count == 0 || await _access.CanViewStudentsAsync(User);
         AddAnswers(def.Form.Fields);
         // What was added along the way by completed tasks (the latest time each task was done).
         foreach (var done in tasks.Where(t => t.Kind == TaskKinds.Task && t.Status == ApprovalStatus.Done).GroupBy(t => t.NodeId).Select(g => g.OrderBy(t => t.Id).Last()).OrderBy(t => t.Id))
@@ -132,7 +134,7 @@ public class DetailModel : PageModel
         {
             var value = context.GetValueOrDefault(f.Key);
             if (Values.IsBlank(value)) continue; // hidden or unanswered (an unticked box is "No", not blank)
-            if (f.Type == FieldTypes.Student && !seesStudents)
+            if (!seesStudents && studentKeys.Contains(f.Key))
             {
                 Fields.Add(new Answer(f.Label, "Restricted — you do not have access to student information."));
                 continue;

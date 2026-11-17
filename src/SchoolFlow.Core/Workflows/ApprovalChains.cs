@@ -51,7 +51,7 @@ public static class ChainValue
     /// Cleans a chain supplied by a person (form field or saved template). Problems are added to
     /// <paramref name="errors"/>; returns null when there are no steps at all.
     /// </summary>
-    public static Dictionary<string, object?>? Normalize(object? raw, string? submitterEmail, List<string> errors)
+    public static Dictionary<string, object?>? Normalize(object? raw, string? submitterEmail, List<string> errors, IReadOnlyCollection<string>? allowedDomains = null)
     {
         if (raw is not Dictionary<string, object?> record || Get(record, "steps") is not List<object?> rawSteps || rawSteps.Count == 0)
             return null;
@@ -78,6 +78,11 @@ public static class ChainValue
                 if (entry.Length > 320 || !EmailPattern.IsMatch(entry))
                 {
                     errors.Add($"{name}: '{(entry.Length > 60 ? entry[..60] + "…" : entry)}' is not an email address.");
+                    continue;
+                }
+                if (allowedDomains is { Count: > 0 } && !allowedDomains.Contains(entry[(entry.LastIndexOf('@') + 1)..]))
+                {
+                    errors.Add($"{name}: '{entry}' is not a district address. Approvers must use {string.Join(" or ", allowedDomains.Select(d => "@" + d))}.");
                     continue;
                 }
                 if (submitterEmail is not null && string.Equals(entry, submitterEmail, StringComparison.OrdinalIgnoreCase))

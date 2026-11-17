@@ -127,6 +127,20 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   before the save and refuses any difference; restoring a version as an owner copies only its flow.
   `/Builder` and `BuilderController` are `[Authorize]` (any signed-in person) — ownership is
   checked per workflow, and things a person may not touch are 404.
+- **External code review (Nov 17, 2026)** — fixed: team check reads only "who" settings
+  (`WorkflowEngine.PeopleSettings`/`TeamsNamedBy`); resubmit re-routes from Start when nothing with
+  an effect has happened yet (`RouteFromStartIfUntouched`) and rebuilds an approval chain, keeping
+  earlier approvals only if their steps are unchanged; overdue-notice recipients can open the
+  request; follow-up reads only actionable items, in pages; resubmit deletes files taken off the
+  form; defaults ordered after the fields they read; student data **and anything computed from it**
+  (`StudentData.KeysOf`) hidden from people without access and refused by the checker in any
+  message/instruction/ticket text; others' requests offered for copying only when Completed and
+  without email/phone/approval-chain answers; `Auth:AllowedDomains` (`DomainPolicy`) for
+  requester-typed approvers and stand-ins; Freshservice list lookups cached 15 min; per-person
+  limit of 1200 `/api` calls a minute (limiter runs **after** authentication — school networks share
+  one address); 1 MB cap on answer bodies; 250-field cap; sign-out is a POST page; `/Builder` refused
+  to people who neither build nor own a workflow. Not done, by decision: limiting builders'
+  notification recipients to district domains (outside notifications were requested).
 - **Owner's direction (Nov 17, 2026): everything stays in house.** Business office staff have no
   Freshservice accounts and will not get them. Only technology-type workflows go to the help desk,
   and those are built **only by administrators**: `WorkflowDefinition.UsesHelpDesk()` (ticket

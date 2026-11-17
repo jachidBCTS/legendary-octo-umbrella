@@ -26,8 +26,9 @@ public sealed class RunService
     private readonly AttachmentService _attachments;
 
     public RunService(AppDbContext db, IFreshserviceClient freshservice, NotificationService notifications, AttachmentService attachments,
-        SchoolCalendar calendar, ILogger<RunService> log)
+        SchoolCalendar calendar, ILogger<RunService> log, DomainPolicy? domains = null)
     {
+        _domains = domains?.Domains;
         _calendar = calendar;
         _db = db;
         _freshservice = freshservice;
@@ -35,6 +36,9 @@ public sealed class RunService
         _attachments = attachments;
         _log = log;
     }
+
+    /// <summary>District email domains approvers chosen on a form must use; null or empty for any.</summary>
+    private readonly IReadOnlyList<string>? _domains;
 
     /// <summary>The engine, built once per request with the school calendar as it is now.</summary>
     private async Task<WorkflowEngine> EngineAsync(CancellationToken ct) =>
@@ -78,7 +82,7 @@ public sealed class RunService
             locations: await ActiveLocationsAsync(ct),
             attachments: await _attachments.PendingForAsync(email, workflow.Id, ct),
             closedDays: await _calendar.ClosedDaysAsync(ct),
-            students: await new AccessService(_db).StudentsForAsync(def.Form, input, email, ct));
+            students: await new AccessService(_db).StudentsForAsync(def.Form, input, email, ct), allowedDomains: _domains);
         if (!form.IsValid) return (form, null);
 
         var context = Values.NewDict();
@@ -365,16 +369,27 @@ public sealed class RunService
         ambient["rates"] = await _calendar.RatesAsync(ct);
         var form = FormEvaluator.Evaluate(def.Form, input, ambient, departments: await ActiveDepartmentsAsync(ct), locations: await ActiveLocationsAsync(ct),
             attachments: await _attachments.UsableForRunAsync(email, run, ct), closedDays: await _calendar.ClosedDaysAsync(ct),
-            students: await new AccessService(_db).StudentsForAsync(def.Form, input, email, ct));
+            students: await new AccessService(_db).StudentsForAsync(def.Form, input, email, ct), allowedDomains: _domains);
         if (!form.IsValid) return (form, ActionResult.Fail("Please fix the highlighted fields."));
 
         var state = Load(run);
         foreach (var kv in form.Values) state.Context[kv.Key] = kv.Value;
+        // The request's files: the form's (as resubmitted) and any that completed tasks added.
         var files = CollectFiles(def.Form, form.Values);
+        var taskFields = new FormDefinition { Fields = def.Flow.Nodes.Where(n => n.Type == NodeTypes.Task).SelectMany(n => n.Fields ?? new List<FieldDef>()).ToList() };
+        files.AddRange(CollectFiles(taskFields, state.Context));
         state.Context["attachments"] = files;
         var fileIds = files.OfType<Dictionary<string, object?>>().Select(f => Values.ToText(f.GetValueOrDefault("id"))).ToList();
         foreach (var attachment in await _db.Attachments.Where(a => fileIds.Contains(a.PublicId) && a.OwnerEmail == email && a.RunId == null).ToListAsync(ct))
             attachment.RunId = run.Id;
+        // Files the requester took off the request are deleted, not left attached and downloadable.
+        var removedFiles = await _db.Attachments.Where(a => a.RunId == run.Id && !fileIds.Contains(a.PublicId)).ToListAsync(ct);
+        if (removedFiles.Count > 0)
+        {
+            _db.Attachments.RemoveRange(removedFiles);
+            state.NewEvents.Add(new RunEvent(DateTime.Now, state.CurrentNodeId, "info",
+                $"Removed {removedFiles.Count} file{(removedFiles.Count == 1 ? "" : "s")} taken off the request: {string.Join(", ", removedFiles.Select(f => f.FileName))}."));
+        }
 
         var department = def.Form.Fields.Where(f => f.Type == FieldTypes.Department).Select(f => form.Values.GetValueOrDefault(f.Key)).OfType<Dictionary<string, object?>>().FirstOrDefault();
         if (department is not null && Values.TryToNumber(department.GetValueOrDefault("id"), out var departmentId))
@@ -385,9 +400,10 @@ public sealed class RunService
 
         state.NewEvents.Add(new RunEvent(DateTime.Now, state.CurrentNodeId, "info", $"Resubmitted with changes by {name}."));
         await (await EngineAsync(ct)).ReenterApprovalAsync(def.Flow, state, ct);
-        return await TrySaveAsync(run, state, ct)
-            ? (form, new ActionResult(true, RunId: run.Id))
-            : (form, ActionResult.Fail("The request changed while you were editing. Refresh and try again."));
+        if (!await TrySaveAsync(run, state, ct))
+            return (form, ActionResult.Fail("The request changed while you were editing. Refresh and try again."));
+        _attachments.DeleteFiles(removedFiles);   // only once the database agrees they are gone
+        return (form, new ActionResult(true, RunId: run.Id));
     }
 
     /// <summary>Lets the requester take back a request that is still waiting for approval (or for their own changes).</summary>
@@ -432,12 +448,12 @@ public sealed class RunService
     }
 
     /// <summary>Every uploaded file among the form's answers, as the flat list flow steps use.</summary>
-    private static List<object?> CollectFiles(FormDefinition form, Dictionary<string, object?> values)
+    private static List<object?> CollectFiles(FormDefinition form, IDictionary<string, object?> values)
     {
         var files = new List<object?>();
         foreach (var field in form.Fields.Where(f => f.Type == FieldTypes.Attachments))
         {
-            if (values.GetValueOrDefault(field.Key) is not List<object?> list) continue;
+            if (!values.TryGetValue(field.Key, out var raw) || raw is not List<object?> list) continue;
             foreach (var file in list.OfType<Dictionary<string, object?>>())
             {
                 var copy = Values.NewDict();
@@ -460,10 +476,29 @@ public sealed class RunService
 
     public async Task<(int Reminded, int Escalated)> FollowUpApprovalsAsync(DateTime nowUtc, CancellationToken ct)
     {
-        const int MaxReminders = 5;
-        var tasks = await _db.ApprovalTasks.Where(t => t.Status == ApprovalStatus.Pending && (t.RemindDays > 0 || t.EscalateDays > 0 || t.DueOn != null))
-            .OrderBy(t => t.Id).Take(500).ToListAsync(ct);
-        if (tasks.Count == 0) return (0, 0);
+        int reminded = 0, escalated = 0;
+        // Only items that can still get a reminder, an escalation or a due-date notice are read, and in
+        // pages, so items that have had everything they will ever get can never crowd out newer ones.
+        for (int lastId = 0, page = 0; page < 40; page++)
+        {
+            var tasks = await _db.ApprovalTasks.Where(t => t.Status == ApprovalStatus.Pending && t.Id > lastId
+                    && ((t.RemindDays > 0 && t.ReminderCount < MaxReminders)
+                        || (t.EscalateDays > 0 && t.EscalatedAt == null && t.EscalateTo != "")
+                        || (t.DueOn != null && t.OverdueSentAt == null)))
+                .OrderBy(t => t.Id).Take(500).ToListAsync(ct);
+            if (tasks.Count == 0) break;
+            lastId = tasks[^1].Id;
+            var (r, e) = await FollowUpPageAsync(tasks, nowUtc, ct);
+            reminded += r;
+            escalated += e;
+        }
+        return (reminded, escalated);
+    }
+
+    private const int MaxReminders = 5;
+
+    private async Task<(int Reminded, int Escalated)> FollowUpPageAsync(List<ApprovalTask> tasks, DateTime nowUtc, CancellationToken ct)
+    {
         var runIds = tasks.Select(t => t.RunId).Distinct().ToList();
         var runs = await _db.Runs.Where(r => runIds.Contains(r.Id)).ToDictionaryAsync(r => r.Id, ct);
         int reminded = 0, escalated = 0;

@@ -705,3 +705,7 @@ dl.answers dt.answers-head { grid-column: 1 / -1; font-weight: 700; color: var(-
 dl.answers dd.answers-head { grid-column: 1 / -1; margin-top: -4px; }
 .b-task-field { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-bottom: 10px; background: #fafbfe; }
 .b-people { display: grid; gap: 6px; }
+
+.signout-form { display: contents; }
+.signout-form button { background: none; border: 0; color: var(--side-ink); padding: 6px; border-radius: 8px; cursor: pointer; display: grid; place-items: center; }
+.signout-form button:hover { color: #fff; background: rgba(255, 255, 255, .08); }

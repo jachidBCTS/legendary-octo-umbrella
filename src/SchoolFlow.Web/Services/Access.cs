@@ -138,6 +138,8 @@ public sealed class AccessService
         var needle = ";" + email + ";";
         // Asked to approve it — directly, as a stand-in, or after escalation.
         if (await _db.ApprovalTasks.AsNoTracking().AnyAsync(t => t.RunId == run.Id && (t.Assignees.Contains(needle) || t.Extra.Contains(needle)), ct)) return true;
+        // Told that a step is overdue: the notice links to the request, so they can see what is late.
+        if (await _db.ApprovalTasks.AsNoTracking().AnyAsync(t => t.RunId == run.Id && t.OverdueSentAt != null && t.DueNotify.Contains(needle), ct)) return true;
         return run.DepartmentId is long departmentId
                && await _db.Departments.AsNoTracking().AnyAsync(d => d.Id == departmentId && d.FinalApprovers.Contains(needle), ct);
     }

@@ -48,13 +48,25 @@ public static class RequestExport
             var context = Json.ToValues(run.ContextJson);
             var answers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var field in FormOf(run).Fields.Where(HasAnswer))
-                answers.TryAdd(Header(field), field.Type == FieldTypes.Student && !includeStudents
+                answers.TryAdd(Header(field), !includeStudents && StudentKeysOf(run).Contains(field.Key)
                     ? (Values.IsBlank(context.GetValueOrDefault(field.Key)) ? "" : "(restricted)")
                     : Answer(field, context.GetValueOrDefault(field.Key)));
             cells.AddRange(columns.Select(c => answers.GetValueOrDefault(c, "")));
             csv.AppendLine(string.Join(",", cells.Select(Cell)));
         }
         return csv.ToString();
+    }
+
+    [ThreadStatic] private static Dictionary<string, HashSet<string>>? _studentKeys;
+
+    /// <summary>The answers on this request's version of the workflow that carry student information.</summary>
+    private static HashSet<string> StudentKeysOf(WorkflowRun run)
+    {
+        _studentKeys ??= new Dictionary<string, HashSet<string>>();
+        if (_studentKeys.Count > 50) _studentKeys.Clear();
+        if (!_studentKeys.TryGetValue(run.DefinitionJson, out var keys))
+            _studentKeys[run.DefinitionJson] = keys = SchoolFlow.Core.Forms.StudentData.KeysOf(Json.ParseDefinition(run.DefinitionJson));
+        return keys;
     }
 
     private static string Answer(FieldDef field, object? value)

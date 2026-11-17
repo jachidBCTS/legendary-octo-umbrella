@@ -17,14 +17,21 @@ public static class FormCopy
         && field.Type != FieldTypes.Student;
 
     /// <summary>
+    /// What may be copied from someone else's request: the same, less personal contact details and the
+    /// approvers they chose, which belong to that person and not to the next requester.
+    /// </summary>
+    public static bool IsCopyable(FieldDef field, bool fromSomeoneElse) =>
+        IsCopyable(field) && !(fromSomeoneElse && field.Type is FieldTypes.Email or FieldTypes.Phone or FieldTypes.ApprovalChain);
+
+    /// <summary>
     /// The answers from <paramref name="previous"/> that the current form still has and allows copying.
     /// Only keys of copyable fields are returned, so nothing else stored with the old request
     /// (approval comments, ticket details, excluded fields) can leak through.
     /// </summary>
-    public static Dictionary<string, object?> Extract(FormDefinition form, IDictionary<string, object?> previous)
+    public static Dictionary<string, object?> Extract(FormDefinition form, IDictionary<string, object?> previous, bool fromSomeoneElse = false)
     {
         var result = Values.NewDict();
-        foreach (var field in form.Fields.Where(IsCopyable))
+        foreach (var field in form.Fields.Where(f => IsCopyable(f, fromSomeoneElse)))
         {
             if (!TryGet(previous, field.Key, out var value) || Values.IsBlank(value)) continue;
             result[field.Key] = value;
@@ -33,10 +40,10 @@ public static class FormCopy
     }
 
     /// <summary>A one-line description of a previous request, built from its first few short answers.</summary>
-    public static string Summary(FormDefinition form, IDictionary<string, object?> previous, int maxParts = 3)
+    public static string Summary(FormDefinition form, IDictionary<string, object?> previous, int maxParts = 3, bool fromSomeoneElse = false)
     {
         var parts = new List<string>();
-        foreach (var field in form.Fields.Where(IsCopyable))
+        foreach (var field in form.Fields.Where(f => IsCopyable(f, fromSomeoneElse)))
         {
             if (parts.Count >= maxParts) break;
             if (field.Type is FieldTypes.TextArea or FieldTypes.Table or FieldTypes.Checkbox or FieldTypes.MultiSelect or FieldTypes.ApprovalChain) continue;
@@ -51,8 +58,8 @@ public static class FormCopy
     }
 
     /// <summary>All copyable answers as plain text, for searching the picker.</summary>
-    public static string SearchText(FormDefinition form, IDictionary<string, object?> previous) =>
-        string.Join(' ', Extract(form, previous).Values.Select(Flatten));
+    public static string SearchText(FormDefinition form, IDictionary<string, object?> previous, bool fromSomeoneElse = false) =>
+        string.Join(' ', Extract(form, previous, fromSomeoneElse).Values.Select(Flatten));
 
     private static string Flatten(object? value) => value switch
     {

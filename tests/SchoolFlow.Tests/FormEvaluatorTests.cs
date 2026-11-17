@@ -294,6 +294,89 @@ public class FormEvaluatorTests
     }
 
     [Fact]
+    public void DefaultValues_AreWorkedOutAfterTheFieldsTheyRead()
+    {
+        var form = new FormDefinition
+        {
+            Fields =
+            {
+                new FieldDef { Key = "greeting", Label = "Greeting", Type = "text", Default = "name & '!'" },   // listed first, reads the field below
+                new FieldDef { Key = "name", Label = "Name", Type = "text", Default = "'Sam'" },
+            },
+        };
+        var result = FormEvaluator.Evaluate(form, new Dictionary<string, object?>(), applyDefaults: true, now: Now);
+        Assert.Equal("Sam!", result.Values["greeting"]);
+    }
+
+    [Fact]
+    public void Worksheets_AcceptKeysThatStartWithAnUnderscore()
+    {
+        var row = new WorksheetRow { Description = "{_nights} x {rate_2}", Cost = "_total" };
+        Assert.Equal(new[] { "_nights", "rate_2", "_total" }, row.FieldKeys().ToArray());
+    }
+
+    [Fact]
+    public void CopyingFromSomeoneElse_LeavesOutTheirContactDetailsAndApprovers()
+    {
+        var form = new FormDefinition
+        {
+            Fields =
+            {
+                new FieldDef { Key = "destination", Label = "Where", Type = "text" },
+                new FieldDef { Key = "contact", Label = "Email", Type = "email" },
+                new FieldDef { Key = "cell", Label = "Phone", Type = "phone" },
+                new FieldDef { Key = "approvers", Label = "Approvers", Type = "approval_chain" },
+            },
+        };
+        var previous = new Dictionary<string, object?> { ["destination"] = "Zoo", ["contact"] = "a@school.org", ["cell"] = "201-555-0100", ["approvers"] = new Dictionary<string, object?> { ["steps"] = new List<object?>() } };
+        Assert.Equal(new[] { "destination", "contact", "cell", "approvers" }, FormCopy.Extract(form, previous).Keys.ToArray());   // your own request: all of it
+        Assert.Equal(new[] { "destination" }, FormCopy.Extract(form, previous, fromSomeoneElse: true).Keys.ToArray());
+    }
+
+    [Fact]
+    public void RequesterChosenApprovers_MustUseADistrictAddress_WhenDomainsAreSet()
+    {
+        var form = new FormDefinition { Fields = { new FieldDef { Key = "approvers", Label = "Approvers", Type = "approval_chain" } } };
+        var chain = new Dictionary<string, object?>
+        {
+            ["steps"] = new List<object?> { new Dictionary<string, object?> { ["name"] = "Leader", ["approvers"] = new List<object?> { "lead@bergen.org", "friend@gmail.com" } } },
+        };
+        var input = new Dictionary<string, object?> { ["approvers"] = chain };
+        Assert.Empty(FormEvaluator.Evaluate(form, input, now: Now).Fields["approvers"].Errors);                     // no domains set: any address
+        var errors = FormEvaluator.Evaluate(form, input, now: Now, allowedDomains: new[] { "bergen.org" }).Fields["approvers"].Errors;
+        Assert.Contains(errors, e => e.Contains("'friend@gmail.com' is not a district address"));
+    }
+
+    [Fact]
+    public void StudentDetails_AndAnythingWorkedOutFromThem_AreKnown_AndCannotGoIntoMessages()
+    {
+        var def = new WorkflowDefinition
+        {
+            Form = { Fields =
+            {
+                new FieldDef { Key = "student", Label = "Student", Type = FieldTypes.Student },
+                new FieldDef { Key = "label", Label = "Label", Type = "calculated", Formula = "student.last & ' ' & reason" },
+                new FieldDef { Key = "shout", Label = "Shout", Type = "calculated", Formula = "UPPER(label)" },     // two steps away
+                new FieldDef { Key = "reason", Label = "Reason", Type = "text" },
+            } },
+            Flow = { Nodes =
+            {
+                new NodeDef { Id = "start", Type = NodeTypes.Start },
+                new NodeDef { Id = "copy", Type = NodeTypes.SetVariable, Config = { ["name"] = "who", ["expression"] = "shout" } },
+                new NodeDef { Id = "tell", Type = NodeTypes.Notify, Label = "Tell the office", Config = { ["to"] = "office@school.org", ["subject"] = "Early dismissal", ["message"] = "Reason: {{reason}}" } },
+                new NodeDef { Id = "end", Type = NodeTypes.End },
+            }, Edges = { new EdgeDef { From = "start", To = "copy" }, new EdgeDef { From = "copy", To = "tell" }, new EdgeDef { From = "tell", To = "end" } } },
+        };
+        Assert.Equal(new[] { "label", "shout", "student", "who" }, StudentData.KeysOf(def).OrderBy(k => k).ToArray());
+        Assert.DoesNotContain(SchoolFlow.Core.Workflows.DefinitionValidator.Validate(def), i => i.IsError);
+        foreach (var leak in new[] { "{{student.name}}", "{{shout}}", "{{who}}" })
+        {
+            def.Flow.Nodes.Single(n => n.Id == "tell").Config["message"] = "About " + leak;
+            Assert.Contains(SchoolFlow.Core.Workflows.DefinitionValidator.Validate(def), i => i.IsError && i.Message.Contains("student details cannot be used in messages"));
+        }
+    }
+
+    [Fact]
     public void OpeningAndClosingDates_DecideWhetherTheFormTakesRequests()
     {
         var form = new FormDefinition { OpensOn = "2026-09-01", ClosesOn = "2026-10-15" };

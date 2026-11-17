@@ -34,11 +34,10 @@ public class TeamsModel : PageModel
         var usage = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
         foreach (var w in await _db.Workflows.AsNoTracking().Select(w => new { w.Name, w.DraftJson, w.PublishedJson }).ToListAsync())
         {
-            var settings = new[] { w.DraftJson, w.PublishedJson }.Where(j => !string.IsNullOrEmpty(j))
-                .SelectMany(j => Json.ParseDefinition(j!).Flow.Nodes.SelectMany(n => n.Config.Values)).ToList();
-            foreach (System.Text.RegularExpressions.Match m in settings.SelectMany(s => System.Text.RegularExpressions.Regex.Matches(s ?? "", @"\[([^\[\]]{1,200})\]")))
+            var named = new[] { w.DraftJson, w.PublishedJson }.Where(j => !string.IsNullOrEmpty(j))
+                .SelectMany(j => Json.ParseDefinition(j!).Flow.Nodes.SelectMany(SchoolFlow.Core.Workflows.WorkflowEngine.TeamsNamedBy)).ToList();
+            foreach (var name in named)
             {
-                var name = m.Groups[1].Value.Trim();
                 if (!usage.TryGetValue(name, out var list)) usage[name] = list = new List<string>();
                 if (!list.Contains(w.Name)) list.Add(w.Name);
             }

@@ -128,6 +128,7 @@ On the server, copy `appsettings.Production.example.json` (in the package) to
 **`appsettings.Production.json`** in the same folder and fill it in:
 
 - `Auth:Admins` — your own email, so you are an admin the first time you sign in.
+- `Auth:AllowedDomains` — your district email domain(s), e.g. `["bergen.org"]`. Approvers people type into their own approval chain, and stand-ins, must use these.
 - `AzureAd` — the tenant ID, client ID and client secret from section 5.
 - `Database:ConnectionString` — replace `YOUR-SQL-SERVER`. Leave `Integrated Security=True`.
   `TrustServerCertificate=True` is needed when the SQL Server uses its default self-issued

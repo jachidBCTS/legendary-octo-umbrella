@@ -14,7 +14,12 @@ const note = (m) => console.log(m);
 function check(cond, msg) { if (cond) note('  ok   ' + msg); else { note('  FAIL ' + msg); problems.push(msg); } }
 
 async function login(page, email) {
+  // Signing out is a POST (with the anti-forgery token); opening the address shows the button.
   await page.goto(base + '/Account/SignOut');
+  if (await page.locator('main form button:has-text("Sign out")').count()) {
+    await page.click('main form button:has-text("Sign out")');
+    await page.waitForURL(/DevLogin/);
+  }
   await page.goto(base + '/Account/DevLogin');
   await page.click(`button[value="${email}"]`);
   await page.waitForURL(base + '/');
@@ -34,9 +39,19 @@ async function login(page, email) {
   check(await page.locator('.wf-card').count() === 4, 'four live forms on home (ticket-triggered draft hidden)');
   check(await page.locator('a[href="/Builder"]').count() === 0, 'staff do not see builder nav');
   await page.goto(base + '/Builder');
-  check(await page.locator('.wf-tile').count() === 0 && await page.locator('[data-open-dialog="new-dialog"]').count() === 0, 'staff who own no workflow see none, and cannot create one');
+  check(page.url().includes('/Account/Denied'), 'staff who neither build nor own a workflow are refused the Workflows page (' + page.url() + ')');
   const api = await page.evaluate(async () => (await fetch('/api/builder/1')).status);
   check(api === 404, 'staff cannot load a workflow in the builder API (status ' + api + ')');
+
+  const signOutByLink = await page.evaluate(async () => (await fetch('/Account/SignOut', { redirect: 'manual' })).status);
+  check(signOutByLink === 200 && await page.evaluate(async () => (await fetch('/api/forms/1/previous')).status) !== 401, 'opening the sign-out address does not sign you out (a link from elsewhere cannot)');
+  const forged = await page.evaluate(async () => (await fetch('/Account/SignOut', { method: 'POST', redirect: 'manual' })).status);
+  check(forged === 400, 'a sign-out posted without the anti-forgery token is refused (' + forged + ')');
+  await page.goto(base + '/');
+  await page.click('.signout-form button');
+  await page.waitForURL(/DevLogin/);
+  check(true, 'the sidebar button signs you out');
+  await login(page, 'teacher@example.org');
 
   note('2. purchase form');
   await page.goto(base + '/');
@@ -74,17 +89,17 @@ async function login(page, email) {
   check(await field("Approver's email").isVisible(), 'approver appears at >= $500');
   await page.screenshot({ path: S + '/shots/02-form.png', fullPage: true });
 
-  await page.click('button[type=submit]');
+  await page.click('main button[type=submit]');
   await page.waitForSelector('.sf-banner:not([hidden])');
   check((await field("Approver's email").locator('.sf-error').textContent()).includes('required'), 'submit blocked: approver required');
   check((await field('Justification').locator('.sf-error').textContent()).includes('required'), 'submit blocked: justification required when >= 500');
   await field("Approver's email").locator('input').fill('teacher@example.org');
   await field('Justification').locator('textarea').fill('Needed for <b>algebra</b> & "stats"');
-  await page.click('button[type=submit]');
+  await page.click('main button[type=submit]');
   await page.waitForTimeout(600);
   check((await field("Approver's email").locator('.sf-error').textContent()).includes('own request'), 'custom rule: cannot approve own request');
   await field("Approver's email").locator('input').fill('principal@example.org');
-  await page.click('button[type=submit]');
+  await page.click('main button[type=submit]');
   await page.waitForURL(/Requests\/Detail\/\d+/);
   const runUrl = page.url();
   check((await page.locator('.page-head .pill').textContent()) === 'Awaiting approval', 'run is awaiting approval');
@@ -134,11 +149,11 @@ async function login(page, email) {
   await field('What is wrong?').locator('select').selectOption('Lost or stolen');
   await field('A police report').waitFor({ state: 'visible' });
   check(await field('Where can we pick it up?').isHidden(), 'location hidden for lost/stolen');
-  await page.click('button[type=submit]');
+  await page.click('main button[type=submit]');
   await page.waitForSelector('.sf-banner:not([hidden])');
   check((await field('Details').locator('.sf-error').textContent()).includes('required'), 'details required for lost/stolen');
   await field('Details').locator('textarea').fill('Left on the bus');
-  await page.click('button[type=submit]');
+  await page.click('main button[type=submit]');
   await page.waitForURL(/Requests\/Detail\/\d+/);
   check((await page.locator('.page-head .pill').textContent()) === 'Completed', 'repair run completed');
   const t2 = await page.locator('.timeline').textContent();
@@ -234,7 +249,7 @@ async function login(page, email) {
   await field('Hourly rate').locator('input').fill('12.50');
   await page.waitForFunction(() => document.querySelector('.sf-calc')?.textContent === '37.5');
   check(true, 'new form calculates 37.5');
-  await page.click('button[type=submit]');
+  await page.click('main button[type=submit]');
   await page.waitForURL(/Requests\/Detail\/\d+/);
   check((await page.locator('.timeline').textContent()).includes('Room booking: $37.50'), 'ticket subject rendered from formula');
 
@@ -298,13 +313,13 @@ async function login(page, email) {
   check(await page.locator('.sf-table tbody tr').count() === 2, 'table rows prefilled (' + await page.locator('.sf-table tbody tr').count() + ')');
   check(await page.locator('.sf-table tbody tr').nth(1).locator('input').first().inputValue() === 'Desmos Pro', 'table cell prefilled');
   check(await page.locator('.sf-table tbody tr').nth(1).locator('output').textContent() === '$303.00', 'table line total recalculated');
-  check(await field("Approver's email").locator('input').inputValue() === 'principal@example.org', 'email prefilled');
+  check(await field("Approver's email").locator('input').inputValue() === '', "someone else's approver email is not copied");
   await page.screenshot({ path: S + '/shots/16-copy-prefilled.png', fullPage: true });
-  await page.click('button[type=submit]');
+  await page.click('main button[type=submit]');
   await page.waitForSelector('.sf-banner:not([hidden])');
-  check((await field("Approver's email").locator('.sf-error').textContent()).includes('own request'), 'copied answers are still validated for the new submitter');
+  check((await field("Approver's email").locator('.sf-error').textContent()).includes('required'), 'the new submitter must choose their own approver');
   await field("Approver's email").locator('input').fill('admin@example.org');
-  await page.click('button[type=submit]');
+  await page.click('main button[type=submit]');
   await page.waitForURL(/Requests\/Detail\/\d+/);
   check((await page.locator('.page-head .pill').textContent()) === 'Awaiting approval', 'copied request submitted as a new request');
   check((await page.locator('.page-head').textContent()).includes('Submitted by Pat Principal'), 'new request belongs to the new submitter');
@@ -391,13 +406,13 @@ async function login(page, email) {
   await page.locator('.sf-chain .ce-step').nth(1).locator('input').nth(0).fill('Me');
   await page.locator('.sf-chain .ce-step').nth(1).locator('input').nth(1).fill('teacher@example.org');
   await page.screenshot({ path: S + '/shots/19-trip-form.png', fullPage: true });
-  await page.click('button[type=submit]');
+  await page.click('main button[type=submit]');
   await page.waitForSelector('.sf-banner:not([hidden])');
   check((await field('Number of chaperones').locator('.sf-error').textContent()).includes('every 10 students'), 'ratio rule enforced');
   check((await field('Who needs to approve').locator('.sf-error').textContent()).includes('own request'), 'cannot list yourself as an approver');
   await field('Number of chaperones').locator('input').fill('3');
   await page.locator('.sf-chain .ce-step').nth(1).locator('button[aria-label="Remove step"]').click();
-  await page.click('button[type=submit]');
+  await page.click('main button[type=submit]');
   await page.waitForURL(/Requests\/Detail\/\d+/);
   const tripUrl = page.url();
   const track = () => page.locator('.chain-track li').allTextContents();
@@ -533,7 +548,7 @@ async function login(page, email) {
   await page.goto(base + '/Start/2?draft=' + draftNo);
   await page.waitForSelector('#draft-bar.filled');
   await page.waitForFunction(() => document.querySelector('.sf-form textarea')?.value === 'Coffee spilled on the keyboard');
-  await page.click('button[type=submit]');
+  await page.click('main button[type=submit]');
   await page.waitForURL(/Requests\/Detail\/\d+/);
   check((await page.locator('.answers').textContent()).includes('Coffee spilled on the keyboard'), 'a draft can be submitted as a request');
   await page.goto(base + '/');
@@ -586,7 +601,7 @@ async function login(page, email) {
     return { status: r.status, disposition: r.headers.get('content-disposition') || '', type: r.headers.get('content-type') || '', start: r.ok ? (await r.text()).slice(0, 8) : '' };
   }, id);
   check((await fetchFile(pendingId)).status === 200, 'the uploader can download their own file before submitting');
-  await page.click('button[type=submit]');
+  await page.click('main button[type=submit]');
   await page.waitForURL(/Requests\/Detail\/\d+/);
   const fileRunUrl = page.url();
   check((await page.locator('.file-list').textContent()).includes('cracked screen.pdf'), 'the request page lists the file');
@@ -710,7 +725,7 @@ async function login(page, email) {
   await page.click('.wf-card:has-text("Lab Booking")');
   await page.waitForSelector('.sf-form');
   await field('Which lab?').locator('input').fill('Chemistry 2');
-  await page.click('button[type=submit]');
+  await page.click('main button[type=submit]');
   await page.waitForURL(/Requests\/Detail\/\d+/);
   const labRun = page.url();
   check(await page.locator('.actions button:has-text("Cancel request")').count() === 0, 'the requester cannot cancel or retry');
@@ -747,7 +762,7 @@ async function login(page, email) {
   await field('Number of students').locator('input').fill('20');
   await field('Number of chaperones').locator('input').fill('2');
   await field('How does this trip').locator('textarea').fill('Space unit');
-  await page.click('button[type=submit]');
+  await page.click('main button[type=submit]');
   await page.waitForURL(/Requests\/Detail\/\d+/);
   const behalfRun = page.url();
   await login(page, 'admin@example.org');
@@ -822,7 +837,7 @@ async function login(page, email) {
     await field('Number of students').locator('input').fill('20');
     await field('Number of chaperones').locator('input').fill('2');
     await field('How does this trip').locator('textarea').fill('Ecology unit');
-    await page.click('button[type=submit]');
+    await page.click('main button[type=submit]');
     await page.waitForURL(/Requests\/Detail\/\d+/);
     return page.url();
   };
@@ -857,7 +872,7 @@ async function login(page, email) {
   check(true, 'the edit page is filled with the earlier answers');
   await field('Number of chaperones').locator('input').fill('3');
   await page.screenshot({ path: S + '/shots/34-revise.png', fullPage: true });
-  await page.click('button[type=submit]');
+  await page.click('main button[type=submit]');
   await page.waitForURL(/Requests\/Detail\/\d+/);
   check((await page.locator('.page-head .pill').textContent()) === 'Awaiting approval', 'resubmitted: awaiting approval again');
   check((await page.locator('.timeline').textContent()).includes('Resubmitted with changes'), 'the history records the resubmission');
@@ -1213,7 +1228,7 @@ async function login(page, email) {
   await field('Bus quote').waitFor({ state: 'visible' });
   await field('Bus quote').locator('input').fill('520');
   await field('How does this trip').locator('textarea').fill('Evolution unit');
-  await page.click('button[type=submit]');
+  await page.click('main button[type=submit]');
   await page.waitForURL(/Requests\/Detail\/\d+/);
   const busTrip = page.url();
   await login(page, 'principal@example.org');
@@ -1291,7 +1306,7 @@ async function login(page, email) {
   check((await page.locator('.sf-student').textContent()).includes('ID 20451') && (await page.locator('.sf-student').textContent()).includes('Grade 10'), 'the chosen student shows ID, school, grade and academy');
   await field('Reason').locator('input').fill('Medical appointment');
   await page.screenshot({ path: S + '/shots/50-student-field.png', fullPage: true });
-  await page.click('button[type=submit]');
+  await page.click('main button[type=submit]');
   await page.waitForURL(/Requests\/Detail\/\d+/);
   const dismissalUrl = page.url();
   check((await page.locator('.answers').textContent()).includes('Okafor, Maya · ID 20451 · Teterboro · Grade 10 · Aerospace'), 'someone with access sees the student on the request');
@@ -1313,7 +1328,7 @@ async function login(page, email) {
   await page.goto(base + '/Start/1');
   await page.waitForSelector('.sf-form');
   check(await page.evaluate(() => document.documentElement.classList.contains('a11y') && parseFloat(getComputedStyle(document.body).fontSize) > 17), 'it stays on from page to page, with larger text');
-  await page.click('button[type=submit]');
+  await page.click('main button[type=submit]');
   await page.waitForSelector('.sf-banner:not([hidden])');
   check(await field('What do you need?').locator('input').getAttribute('aria-invalid') === 'true' && !!(await field('What do you need?').locator('input').getAttribute('aria-describedby')), 'a problem is tied to its field for screen readers');
   await page.screenshot({ path: S + '/shots/51-accessibility-mode.png', fullPage: true });

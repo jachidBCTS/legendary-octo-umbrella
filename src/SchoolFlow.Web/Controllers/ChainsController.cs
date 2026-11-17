@@ -75,7 +75,7 @@ public sealed class ChainsController : ControllerBase
     }
 
     /// <summary>Validates the request and copies it onto the template. Returns an error message, or null.</summary>
-    private static string? Apply(ApprovalChainTemplate chain, SaveChainRequest request)
+    private static string? Apply(ApprovalChainTemplate chain, SaveChainRequest request, IReadOnlyCollection<string> allowedDomains)
     {
         var name = (request.Name ?? "").Trim();
         if (name.Length == 0) return "Give the approval chain a name.";
@@ -85,7 +85,7 @@ public sealed class ChainsController : ControllerBase
         raw["name"] = name;
         raw["steps"] = request.Steps.ValueKind == JsonValueKind.Array ? Json.ToValue(request.Steps) : new List<object?>();
         var errors = new List<string>();
-        var cleaned = ChainValue.Normalize(raw, null, errors);
+        var cleaned = ChainValue.Normalize(raw, null, errors, allowedDomains);
         if (cleaned is null) return "Add at least one step.";
         if (errors.Count > 0) return string.Join(" ", errors.Take(3));
 
@@ -107,7 +107,7 @@ public sealed class ChainsController : ControllerBase
             return BadRequest(new { error = $"You can save up to {MaxPersonalChains} approval chains. Delete one you no longer use." });
 
         var chain = new ApprovalChainTemplate { OwnerEmail = request.Shared ? "" : email };
-        var error = Apply(chain, request);
+        var error = Apply(chain, request, HttpContext.RequestServices.GetRequiredService<DomainPolicy>().Domains);
         if (error is not null) return BadRequest(new { error });
         _db.ApprovalChains.Add(chain);
         await _db.SaveChangesAsync(ct);
@@ -128,7 +128,7 @@ public sealed class ChainsController : ControllerBase
     {
         var chain = await FindEditableAsync(id, ct);
         if (chain is null) return NotFound();
-        var error = Apply(chain, request);
+        var error = Apply(chain, request, HttpContext.RequestServices.GetRequiredService<DomainPolicy>().Domains);
         if (error is not null) return BadRequest(new { error });
         await _db.SaveChangesAsync(ct);
         return Ok(Shape(chain, true));

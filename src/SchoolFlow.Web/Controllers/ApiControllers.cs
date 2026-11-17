@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Caching.Memory;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -65,9 +66,16 @@ public sealed class FormsController : ControllerBase
     private readonly IFreshserviceClient _freshservice;
     private readonly AttachmentService _attachments;
     private readonly SchoolCalendar _calendar;
+    private readonly DomainPolicy _domains;
+    /// <summary>A form's answers are small; anything larger than this is refused before it is read.</summary>
+    private const int MaxAnswersBytes = 1_000_000;
+    private readonly Microsoft.Extensions.Caching.Memory.IMemoryCache _cache;
 
-    public FormsController(AppDbContext db, RunService runs, IFreshserviceClient freshservice, AttachmentService attachments, SchoolCalendar calendar)
+    public FormsController(AppDbContext db, RunService runs, IFreshserviceClient freshservice, AttachmentService attachments, SchoolCalendar calendar,
+        DomainPolicy domains, Microsoft.Extensions.Caching.Memory.IMemoryCache cache)
     {
+        _domains = domains;
+        _cache = cache;
         _calendar = calendar;
         _attachments = attachments;
         _db = db;
@@ -95,6 +103,7 @@ public sealed class FormsController : ControllerBase
     }
 
     [HttpPost("forms/resubmit")]
+    [RequestSizeLimit(MaxAnswersBytes)]
     public async Task<IActionResult> Resubmit([FromBody] ResubmitRequest request, CancellationToken ct)
     {
         var (form, result) = await _runs.ResubmitAsync(request.RunId, Json.ToValues(request.Values), User.Email(), User.DisplayName(), ct);
@@ -124,6 +133,7 @@ public sealed class FormsController : ControllerBase
     };
 
     [HttpPost("forms/evaluate")]
+    [RequestSizeLimit(MaxAnswersBytes)]
     public async Task<IActionResult> Evaluate([FromBody] EvaluateRequest request, CancellationToken ct)
     {
         FormDefinition form;
@@ -154,11 +164,13 @@ public sealed class FormsController : ControllerBase
             attachments: usableFiles ?? (request.Definition is not null ? null : await _attachments.PendingForAsync(User.Email(), request.WorkflowId, ct)),
             closedDays: await _calendar.ClosedDaysAsync(ct),
             // The builder's preview is not checked against the roster (and cannot search it without access).
-            students: request.Definition is not null ? null : await new AccessService(_db).StudentsForAsync(form, Json.ToValues(request.Values), User.Email(), ct));
+            students: request.Definition is not null ? null : await new AccessService(_db).StudentsForAsync(form, Json.ToValues(request.Values), User.Email(), ct),
+            allowedDomains: _domains.Domains);
         return new JsonResult(Shape(result), Json.Options);
     }
 
     [HttpPost("forms/submit")]
+    [RequestSizeLimit(MaxAnswersBytes)]
     public async Task<IActionResult> Submit([FromBody] SubmitRequest request, CancellationToken ct)
     {
         var email = User.Email();
@@ -186,6 +198,7 @@ public sealed class FormsController : ControllerBase
 
     /// <summary>Live checking of a task's fields while its assignee fills them in.</summary>
     [HttpPost("tasks/{id:int}/evaluate")]
+    [RequestSizeLimit(MaxAnswersBytes)]
     public async Task<IActionResult> EvaluateTask(int id, [FromBody] TaskRequest request, CancellationToken ct)
     {
         var result = await _runs.EvaluateTaskAsync(id, Json.ToValues(request.Values), User.Email(), User.IsAdmin(), request.Init, ct);
@@ -193,6 +206,7 @@ public sealed class FormsController : ControllerBase
     }
 
     [HttpPost("tasks/{id:int}/complete")]
+    [RequestSizeLimit(MaxAnswersBytes)]
     public async Task<IActionResult> CompleteTask(int id, [FromBody] TaskRequest request, CancellationToken ct)
     {
         var (form, result) = await _runs.CompleteTaskAsync(id, Json.ToValues(request.Values), User.Email(), User.DisplayName(), User.IsAdmin(), ct);
@@ -253,6 +267,7 @@ public sealed class FormsController : ControllerBase
     private const int MaxDraftBytes = 300_000;
 
     [HttpPost("forms/drafts")]
+    [RequestSizeLimit(MaxAnswersBytes)]
     public async Task<IActionResult> SaveDraft([FromBody] SaveDraftRequest request, CancellationToken ct)
     {
         var email = User.Email();
@@ -331,6 +346,9 @@ public sealed class FormsController : ControllerBase
             .Where(r => r.WorkflowId == workflowId && r.SubmitterEmail != "" && r.Status != RunStatus.Cancelled);
         // "own" (and anyone without an email) only ever sees their own requests.
         if (form.AllowCopy != CopyModes.Everyone || email.Length == 0) runs = runs.Where(r => r.SubmitterEmail == email && email != "");
+        // Other people's requests are offered only once they have been completed (approved and done),
+        // never while they are in progress, sent back, rejected or failed.
+        else runs = runs.Where(r => r.SubmitterEmail == email || r.Status == RunStatus.Completed);
         return (form, runs);
     }
 
@@ -351,15 +369,16 @@ public sealed class FormsController : ControllerBase
         foreach (var run in recent)
         {
             var context = Json.ToValues(run.ContextJson);
+            var someoneElse = run.SubmitterEmail != email;
             if (q.Length > 0 && !run.SubmitterName.Contains(q, StringComparison.OrdinalIgnoreCase)
-                             && !FormCopy.SearchText(form, context).Contains(q, StringComparison.OrdinalIgnoreCase)) continue;
+                             && !FormCopy.SearchText(form, context, someoneElse).Contains(q, StringComparison.OrdinalIgnoreCase)) continue;
             items.Add(new
             {
                 runId = run.Id,
                 submitter = run.SubmitterName,
                 mine = run.SubmitterEmail == email,
                 date = Ui.Local(run.CreatedAt).ToString("MMM d, yyyy", Values.DisplayCulture),
-                summary = FormCopy.Summary(form, context),
+                summary = FormCopy.Summary(form, context, fromSomeoneElse: someoneElse),
             });
             if (items.Count >= 50) break;
         }
@@ -373,11 +392,11 @@ public sealed class FormsController : ControllerBase
         if (source is null) return NotFound();
         var (form, runs) = source.Value;
         var run = await runs.Where(r => r.Id == runId)
-            .Select(r => new { r.SubmitterName, r.CreatedAt, r.ContextJson }).FirstOrDefaultAsync(ct);
+            .Select(r => new { r.SubmitterName, r.SubmitterEmail, r.CreatedAt, r.ContextJson }).FirstOrDefaultAsync(ct);
         if (run is null) return NotFound();
         return new JsonResult(new
         {
-            values = FormCopy.Extract(form, Json.ToValues(run.ContextJson)),
+            values = FormCopy.Extract(form, Json.ToValues(run.ContextJson), fromSomeoneElse: run.SubmitterEmail != User.Email()),
             submitter = run.SubmitterName,
             date = Ui.Local(run.CreatedAt).ToString("MMM d, yyyy", Values.DisplayCulture),
         }, Json.Options);
@@ -393,7 +412,23 @@ public sealed class FormsController : ControllerBase
         if (q?.Length > 100) q = q[..100];
         try
         {
-            var items = await _freshservice.LookupAsync(source, q, User.Email(), ct);
+            IReadOnlyList<LookupItem> items;
+            if (source is LookupSources.Departments or LookupSources.Groups or LookupSources.Locations or LookupSources.Agents)
+            {
+                // Whole lists that are the same for everyone: fetched from Freshservice at most every 15
+                // minutes (each fetch can be several pages), then filtered here.
+                var all = (await _cache.GetOrCreateAsync("fs-lookup:" + source, async entry =>
+                {
+                    entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(15);
+                    return await _freshservice.LookupAsync(source, null, null, ct);
+                }))!;
+                var term = (q ?? "").Trim();
+                items = term.Length == 0 ? all : all.Where(i => i.Name.Contains(term, StringComparison.OrdinalIgnoreCase)).ToList();
+            }
+            else
+            {
+                items = await _freshservice.LookupAsync(source, q, User.Email(), ct);
+            }
             return Ok(new { items = items.Take(200).Select(i => new { id = i.Id, name = i.Name, email = i.Email, detail = i.Detail }) });
         }
         catch (Exception ex) when (ex is FreshserviceException or HttpRequestException or TaskCanceledException)
