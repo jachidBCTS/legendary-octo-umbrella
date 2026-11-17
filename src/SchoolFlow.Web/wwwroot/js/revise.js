@@ -13,6 +13,7 @@
     runId,
     workflowId: Number(root.dataset.workflowId),
     initialValues: JSON.parse(document.getElementById('form-values').textContent),
+    previousDisplay: JSON.parse((document.getElementById('form-previous') || {}).textContent || '{}'),
     evaluate: (values, init) => api('POST', '/api/forms/evaluate', { runId, values, init }),
     submit: (values) => api('POST', '/api/forms/resubmit', { runId, values }),
     onSuccess: () => { window.location.href = '/Requests/Detail/' + encodeURIComponent(runId); },

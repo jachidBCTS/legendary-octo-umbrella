@@ -95,7 +95,7 @@
     if (/^[0-9]/.test(s)) s = 'f_' + s;
     return s;
   };
-  const RESERVED = ['submitter', 'ticket', 'approval', 'approvals', 'run', 'event', 'chain', 'attachments', 'rates', 'task', 'true', 'false', 'null', 'blank', 'and', 'or', 'not'];
+  const RESERVED = ['submitter', 'ticket', 'approval', 'approvals', 'run', 'event', 'chain', 'attachments', 'rates', 'task', '_previous', '_restart', 'true', 'false', 'null', 'blank', 'and', 'or', 'not'];
   function uniqueKey(base, taken) {
     let key = RESERVED.includes(base) ? base + '_field' : base;
     let n = 2;
@@ -104,6 +104,26 @@
   }
   const fieldKeys = (except) => state.def.form.fields.filter((f) => f !== except).map((f) => f.key);
   const isFormTrigger = () => state.def.trigger.type !== 'ticket';
+
+  // ---- undo ---------------------------------------------------------------------------
+  // A copy of the whole definition is kept before each structural change (adding, removing, duplicating
+  // or moving a step or field, connecting steps); Undo or Ctrl+Z puts the last one back. Up to 30.
+  const undoStack = [];
+  function remember() {
+    undoStack.push(JSON.stringify(state.def));
+    if (undoStack.length > 30) undoStack.shift();
+  }
+  function undo() {
+    if (!undoStack.length) { toast('Nothing to undo.'); return; }
+    state.def = JSON.parse(undoStack.pop());
+    if (state.selNode && !nodeById(state.selNode)) state.selNode = null;
+    state.selEdge = -1;
+    if (state.selField >= state.def.form.fields.length) state.selField = -1;
+    state.dirty = false; // markDirty re-renders the top bar (and the Undo button with it)
+    markDirty();
+    renderAll();
+    toast('Undone.');
+  }
 
   function markDirty() {
     if (!state.dirty) { state.dirty = true; renderTop(); }
@@ -200,7 +220,9 @@
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(false); return; }
     const typing = e.target.closest && e.target.closest('input, textarea, select, dialog, [contenteditable]');
-    if (typing || state.tab !== 'flow') return;
+    if (typing) return; // inside a text box, Ctrl+Z undoes typing as usual
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return; }
+    if (state.tab !== 'flow') return;
     if (e.key === 'Delete' || e.key === 'Backspace') {
       if (state.selEdge >= 0) { e.preventDefault(); removeEdge(state.selEdge); }
       else if (state.selNode) { e.preventDefault(); removeNode(state.selNode); }
@@ -450,6 +472,7 @@
         state.issues.length ? h('button', { type: 'button', class: 'btn small ' + (errors ? 'ghost-danger' : ''),
           onclick: () => { state.showIssues = !state.showIssues; renderIssues(); } },
         (errors ? errors + ' problem' + (errors === 1 ? '' : 's') : '') + (errors && warnings ? ', ' : '') + (warnings ? warnings + ' warning' + (warnings === 1 ? '' : 's') : '')) : null,
+        h('button', { type: 'button', class: 'btn small', disabled: !undoStack.length, title: 'Undo the last change to steps or fields (Ctrl+Z)', onclick: undo }, 'Undo'),
         h('button', { type: 'button', class: 'btn small', onclick: check }, 'Check'),
         h('button', { type: 'button', class: 'btn small', disabled: state.saving, onclick: () => save(false) }, state.saving ? 'Saving…' : 'Save draft'),
         h('button', { type: 'button', class: 'btn small primary', disabled: state.saving, onclick: () => save(true) }, 'Publish')));
@@ -501,6 +524,7 @@
   function addField(type) {
     const info = FIELD_TYPES.find((t) => t.type === type);
     const label = type === 'section' ? 'New section' : type === 'page' ? 'Next page' : type === 'worksheet' ? 'Worksheet' : 'New ' + info.label.toLowerCase();
+    remember();
     const field = { key: uniqueKey(slug(label), fieldKeys()), label, type };
     if (type === 'worksheet') field.rows = [{ number: '1.', item: 'Item', description: 'Description' }];
     if (['select', 'radio', 'multiselect'].includes(type)) field.options = ['Option 1', 'Option 2'];
@@ -574,6 +598,7 @@
   }
 
   function moveField(index, delta) {
+    remember();
     const fields = state.def.form.fields;
     const [moved] = fields.splice(index, 1);
     fields.splice(index + delta, 0, moved);
@@ -582,6 +607,7 @@
     renderAll();
   }
   function duplicateField(index) {
+    remember();
     const fields = state.def.form.fields;
     const copy = JSON.parse(JSON.stringify(fields[index]));
     copy.key = uniqueKey(copy.key, fieldKeys());
@@ -597,6 +623,7 @@
     const used = key && JSON.stringify(Object.assign({}, state.def, { form: { fields: fields.filter((_, i) => i !== index) } }))
       .match(new RegExp('\\b' + key.replace(/[^A-Za-z0-9_]/g, '') + '\\b'));
     if (used && !window.confirm('Other formulas or flow steps mention “' + key + '”. Delete this field anyway?')) return;
+    remember();
     fields.splice(index, 1);
     state.selField = Math.min(index, fields.length - 1);
     markDirty();
@@ -850,6 +877,7 @@
     else { x = Math.round((canvas.scrollLeft + 80) / 10) * 10; y = Math.round((canvas.scrollTop + 60) / 10) * 10; }
     // Nudge sideways until it does not sit on top of another step.
     while (state.def.flow.nodes.some((n) => Math.abs(n.x - x) < 40 && Math.abs(n.y - y) < 40)) x += 260;
+    remember();
     const node = { id: newNodeId(type), type, label: info.label, x, y, config: {}, customFields: {} };
     if (type === 'fs_create_ticket') Object.assign(node.config, { subject: '', priority: '2', status: '2', attachFiles: 'true' });
     if (type === 'fs_add_note') node.config.visibility = 'private';
@@ -882,6 +910,7 @@
     const node = nodeById(id);
     if (!node) return;
     if (node.type === 'start') { toast('The Start step cannot be removed.', 'bad'); return; }
+    remember();
     state.def.flow.nodes = state.def.flow.nodes.filter((n) => n.id !== id);
     state.def.flow.edges = state.def.flow.edges.filter((e) => e.from !== id && e.to !== id);
     state.selNode = null;
@@ -889,7 +918,45 @@
     renderAll();
   }
 
+  /** Copies a step (with its settings and, for a task, its fields under new keys) next to the original. */
+  function duplicateNode(id) {
+    const node = nodeById(id);
+    if (!node || node.type === 'start') return;
+    remember();
+    const copy = JSON.parse(JSON.stringify(node));
+    copy.id = newNodeId(node.type);
+    copy.x = node.x + 30;
+    copy.y = node.y + 30;
+    copy.label = (node.label || '') + ' (copy)';
+    if (Array.isArray(copy.fields) && copy.fields.length) {
+      // Answers are stored by key, and keys must be unique across the form and every task.
+      const taken = fieldKeys().concat(state.def.flow.nodes.flatMap((n) => (n.fields || []).map((f) => f.key)));
+      const renamed = {};
+      for (const f of copy.fields) {
+        if (!f.key) continue;
+        const fresh = uniqueKey(f.key, taken);
+        taken.push(fresh);
+        renamed[f.key] = fresh;
+        f.key = fresh;
+      }
+      // Formulas inside the copied task that read its own fields read the copies.
+      const swap = (text) => typeof text !== 'string' ? text
+        : text.replace(/[A-Za-z_][A-Za-z0-9_]*/g, (word) => Object.prototype.hasOwnProperty.call(renamed, word) ? renamed[word] : word);
+      for (const f of copy.fields) {
+        for (const prop of ['formula', 'default', 'requiredWhen', 'visibleWhen']) if (f[prop]) f[prop] = swap(f[prop]);
+        for (const rule of f.rules || []) rule.check = swap(rule.check);
+      }
+    }
+    state.def.flow.nodes.push(copy);
+    state.selNode = copy.id;
+    state.selEdge = -1;
+    markDirty();
+    renderAll();
+    toast('Step duplicated. Connect it where it should run.');
+  }
+
   function removeEdge(index) {
+    remember();
     state.def.flow.edges.splice(index, 1);
     state.selEdge = -1;
     markDirty();
@@ -1068,6 +1135,7 @@
     if (portEl) { startConnect(e, node, portEl.dataset.port); return; }
 
     const startX = e.clientX, startY = e.clientY, originX = node.x, originY = node.y;
+    const before = JSON.stringify(state.def); // kept for Undo only if the step is actually moved
     let moved = false;
     el.setPointerCapture(e.pointerId);
     const move = (ev) => {
@@ -1084,7 +1152,7 @@
       el.removeEventListener('pointermove', move);
       el.removeEventListener('pointerup', up);
       el.removeEventListener('pointercancel', up);
-      if (moved) { markDirty(); resizeCanvas(); drawEdges(); }
+      if (moved) { undoStack.push(before); if (undoStack.length > 30) undoStack.shift(); markDirty(); renderTop(); resizeCanvas(); drawEdges(); }
       if (state.selNode !== node.id || state.selEdge >= 0) { state.selNode = node.id; state.selEdge = -1; renderAll(); }
     };
     el.addEventListener('pointermove', move);
@@ -1114,6 +1182,7 @@
       document.removeEventListener('pointercancel', up);
       if (target) {
         // One line per output: a new line replaces the old one.
+        remember();
         state.def.flow.edges = state.def.flow.edges.filter((ed) => !(ed.from === node.id && ed.port === port));
         state.def.flow.edges.push({ from: node.id, port, to: target.id });
         markDirty();
@@ -1230,6 +1299,9 @@
     // Reminder and escalation settings shared by the two approval steps.
     const people = (key, placeholder) => {
       const input = tpl(key, 1, placeholder);
+      // Suggest staff addresses as the builder types (the last address in the list is completed).
+      const box = input.matches && input.matches('input') ? input : input.querySelector && input.querySelector('input');
+      if (box) { box.setAttribute('data-people', 'multi'); box.setAttribute('autocomplete', 'off'); }
       if (!state.teams.length) return input;
       const pick = select('', [['', 'Add a team…']].concat(state.teams.map((t) => [t, t])), (v) => {
         if (!v) return;
@@ -1257,7 +1329,9 @@
 
     panel.append(
       h('div', { class: 'row-between' }, h('h3', null, info.label),
-        node.type !== 'start' ? h('button', { type: 'button', class: 'btn small ghost-danger', onclick: () => removeNode(node.id) }, 'Delete step') : null),
+        node.type !== 'start' ? h('div', { class: 'row' },
+          h('button', { type: 'button', class: 'btn small', onclick: () => duplicateNode(node.id) }, 'Duplicate step'),
+          h('button', { type: 'button', class: 'btn small ghost-danger', onclick: () => removeNode(node.id) }, 'Delete step')) : null),
       row('Name', textInput(node.label, (v) => { node.label = v; refreshNode(); })));
 
     switch (node.type) {

@@ -74,6 +74,33 @@
         else if (!task.IsAssignedTo(User.Email())) { <p class="muted">This task belongs to @string.Join(", ", task.AssigneeList). As an admin you can complete it on their behalf; that is recorded on the request and in the audit log.</p> }
         <div id="task-root" data-task-id="@task.Id" data-workflow-id="@Model.Run.WorkflowId"></div>
         <script type="application/json" id="task-definition">@Html.Raw(Model.TaskFormJson)</script>
+        <script type="application/json" id="task-values">@Html.Raw(Model.TaskValuesJson)</script>
+        <script type="application/json" id="task-previous">@Html.Raw(Model.TaskPreviousJson)</script>
+        <details class="forward">
+            <summary>Send back for changes</summary>
+            <form method="post" asp-page-handler="ReturnTask">
+                <input type="hidden" name="taskId" value="@task.Id" />
+                <label class="lbl" for="return-@task.Id">What needs changing? <span class="muted">(required)</span></label>
+                <textarea id="return-@task.Id" name="comment" rows="2" maxlength="2000" required></textarea>
+                <p class="muted small">@(Model.TaskReturnsTo is { } back ? $"It goes back to the “{back}” step, with your note; this task comes back to you afterwards." : "It goes back to the requester to edit and resubmit.")</p>
+                <div class="actions"><button class="btn">Send back</button></div>
+            </form>
+        </details>
+        @if (Model.CanForward.Contains(task.Id))
+        {
+            <details class="forward">
+                <summary>Pass to someone else</summary>
+                <form method="post" asp-page-handler="Forward" class="forward-form">
+                    <input type="hidden" name="taskId" value="@task.Id" />
+                    <label class="lbl" for="to-@task.Id">Their email address</label>
+                    <input id="to-@task.Id" name="to" type="email" required maxlength="254" autocomplete="off" data-people />
+                    <label class="lbl" for="note-@task.Id">Note <span class="muted">(optional, sent to them)</span></label>
+                    <input id="note-@task.Id" name="note" type="text" maxlength="1000" />
+                    <p class="muted small">@(task.IsAssignedTo(User.Email()) ? "They take your place on this step." : "They replace everyone this step is waiting for.") It is recorded on the request and in the audit log.</p>
+                    <div class="actions"><button class="btn">Pass it on</button></div>
+                </form>
+            </details>
+        }
     </section>
 }
 
@@ -99,7 +126,49 @@
                 <button class="btn" name="decision" value="return" title="Ask the requester to change something and resubmit">Send back for changes</button>
                 <button class="btn danger" name="decision" value="reject">Reject</button>
             </div>
+            @if (Model.HasEarlierApprovals)
+            {
+                <label class="b-toggle restart-toggle"><input type="checkbox" name="restart" value="true" /> <span>If I send it back, ask every approver again from the start once it is resubmitted</span></label>
+            }
         </form>
+        @if (Model.CanForward.Contains(task.Id))
+        {
+            <details class="forward">
+                <summary>Pass to someone else</summary>
+                <form method="post" asp-page-handler="Forward" class="forward-form">
+                    <input type="hidden" name="taskId" value="@task.Id" />
+                    <label class="lbl" for="to-@task.Id">Their email address</label>
+                    <input id="to-@task.Id" name="to" type="email" required maxlength="254" autocomplete="off" data-people />
+                    <label class="lbl" for="note-@task.Id">Note <span class="muted">(optional, sent to them)</span></label>
+                    <input id="note-@task.Id" name="note" type="text" maxlength="1000" />
+                    <p class="muted small">@(task.IsAssignedTo(User.Email()) ? "They take your place on this step." : "They replace everyone this step is waiting for.") It is recorded on the request and in the audit log.</p>
+                    <div class="actions"><button class="btn">Pass it on</button></div>
+                </form>
+            </details>
+        }
+    </section>
+}
+
+@foreach (var task in Model.OthersWaiting)
+{
+    <section class="panel">
+        <h2>Waiting: @task.Title</h2>
+        <p class="muted">Waiting for @string.Join(", ", task.AssigneeList). As @(User.IsAdmin() ? "an admin" : "an owner of this workflow") you can pass it to someone else.</p>
+        @if (Model.CanForward.Contains(task.Id))
+        {
+            <details class="forward">
+                <summary>Pass to someone else</summary>
+                <form method="post" asp-page-handler="Forward" class="forward-form">
+                    <input type="hidden" name="taskId" value="@task.Id" />
+                    <label class="lbl" for="to-@task.Id">Their email address</label>
+                    <input id="to-@task.Id" name="to" type="email" required maxlength="254" autocomplete="off" data-people />
+                    <label class="lbl" for="note-@task.Id">Note <span class="muted">(optional, sent to them)</span></label>
+                    <input id="note-@task.Id" name="note" type="text" maxlength="1000" />
+                    <p class="muted small">@(task.IsAssignedTo(User.Email()) ? "They take your place on this step." : "They replace everyone this step is waiting for.") It is recorded on the request and in the audit log.</p>
+                    <div class="actions"><button class="btn">Pass it on</button></div>
+                </form>
+            </details>
+        }
     </section>
 }
 
@@ -140,6 +209,7 @@
     </section>
     <section class="panel">
         <h2>What was submitted</h2>
+        @if (Model.ZipUrl is not null) { <p><a class="btn small" href="@Model.ZipUrl" download><partial name="_Icons" model='"clip"' /> Download all files (.zip)</a></p> }
         @if (Model.Fields.Count == 0)
         {
             <p class="muted">This request was started by a Freshservice ticket event, not a form.</p>
@@ -152,7 +222,12 @@
                     <dt class="answers-head">@f.Label</dt><dd class="answers-head muted small">@f.Value</dd>
                     continue;
                 }
-                <dt>@f.Label</dt>
+                <dt>@f.Label
+                    @if (f.PreviousValue is { } was)
+                    {
+                        <span class="edit-badge" title="Previously: @was" tabindex="0">Edited · was: @(was.Length > 45 ? was[..45] + "…" : was)</span>
+                    }
+                </dt>
                 @if (f.Files is not null)
                 {
                     <dd>

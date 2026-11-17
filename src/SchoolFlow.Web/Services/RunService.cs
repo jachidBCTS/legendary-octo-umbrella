@@ -223,6 +223,16 @@ public sealed class RunService
 
         var def = Json.ParseDefinition(run.DefinitionJson);
         var state = Load(run);
+        // A task done before (and sent back since) shows what changed, like a resubmitted form.
+        if (await _db.ApprovalTasks.AnyAsync(t => t.RunId == run.Id && t.NodeId == node.Id && t.Id != task.Id && t.Kind == TaskKinds.Task
+                && t.Status == ApprovalStatus.Done, ct))
+        {
+            var fields = node.Fields ?? new List<FieldDef>();
+            var (adjusted, previous) = Changes(fields, state.Context, form.Values, StudentData.KeysOf(def));
+            RememberPrevious(state.Context, fields, previous);
+            if (adjusted.Count > 0)
+                state.NewEvents.Add(new RunEvent(DateTime.Now, node.Id, "info", $"{task.Title}: answers updated{Adjusted(adjusted)}."));
+        }
         // Files uploaded for this task now belong to the request, like the ones sent with the form.
         var files = CollectFiles(TaskForm(node), form.Values);
         var fileIds = files.OfType<Dictionary<string, object?>>().Select(f => Values.ToText(f.GetValueOrDefault("id"))).ToList();
@@ -244,7 +254,8 @@ public sealed class RunService
     /// Records an approver's decision. The person may be one of the step's approvers, someone standing
     /// in for one, someone the step was escalated to, or an admin acting on their behalf.
     /// </summary>
-    public async Task<ActionResult> DecideAsync(int taskId, string email, string name, bool isAdmin, ApprovalAction action, string? comment, CancellationToken ct)
+    public async Task<ActionResult> DecideAsync(int taskId, string email, string name, bool isAdmin, ApprovalAction action, string? comment, CancellationToken ct,
+        bool restartApprovals = false)
     {
         const string Raced = "Someone else acted on this request at the same moment. Refresh to see the latest.";
         var task = await _db.ApprovalTasks.FirstOrDefaultAsync(t => t.Id == taskId, ct);
@@ -304,9 +315,14 @@ public sealed class RunService
             task.DecidedAt = DateTime.UtcNow;
             var state = Load(run);
             state.Status = RunStatus.ChangesRequested;
-            state.NewEvents.Add(new RunEvent(DateTime.Now, task.NodeId, "returned", $"Sent back for changes by {who} — “{comment}”"));
+            // The approver can ask for every approval to be given again once the request comes back.
+            var restart = restartApprovals && state.Context.GetValueOrDefault("approvals") is List<object?> { Count: > 0 };
+            if (restart) state.Context["_restart"] = true;
+            state.NewEvents.Add(new RunEvent(DateTime.Now, task.NodeId, "returned", $"Sent back for changes by {who} — “{comment}”" +
+                (restart ? " Approvals will start again from the beginning when it is resubmitted." : "")));
             await _notifications.NotifyAsync(new[] { run.SubmitterEmail }, $"Changes needed: {run.WorkflowName} #{run.Id}",
-                $"{(string.IsNullOrWhiteSpace(name) ? email : name)} sent your request back for changes:\n\n{comment}\n\nOpen the request, choose “Edit and resubmit”, and it will go back to the same approver.",
+                $"{(string.IsNullOrWhiteSpace(name) ? email : name)} sent your request back for changes:\n\n{comment}\n\nOpen the request, choose “Edit and resubmit”, and it will go back to " +
+                (restart ? "the first approver." : "the same approver."),
                 $"/Requests/Detail/{run.Id}", ct);
             return await TrySaveAsync(run, state, ct) ? new ActionResult(true, RunId: run.Id) : ActionResult.Fail(Raced);
         }
@@ -354,6 +370,170 @@ public sealed class RunService
         return await TrySaveAsync(run, resumed, ct) ? new ActionResult(true, RunId: run.Id) : ActionResult.Fail(Raced);
     }
 
+    /// <summary>
+    /// Sends a task back. When an earlier task step was done on this request (for example the traveller's
+    /// "after the trip" details, now being reconciled), it goes back to that step and its assignee is told
+    /// why; otherwise it goes back to the requester to edit and resubmit, like an approver's "send back".
+    /// </summary>
+    public async Task<ActionResult> ReturnTaskAsync(int taskId, string email, string name, bool isAdmin, string? comment, CancellationToken ct)
+    {
+        if (await OpenTaskAsync(taskId, email, isAdmin, ct) is not { } open)
+            return ActionResult.Fail("This task is no longer waiting for you. Refresh to see the latest.");
+        var (task, run, node, onBehalf) = open;
+        comment = string.IsNullOrWhiteSpace(comment) ? null : comment.Trim();
+        if (comment is null) return ActionResult.Fail("Say what needs changing, so the person knows what to fix.");
+        if (comment.Length > 2000) comment = comment[..2000];
+
+        var who = string.IsNullOrWhiteSpace(name) ? email : $"{name} ({email})";
+        if (task.StandsInFor(email) is { } original) who += $", standing in for {original}";
+        else if (task.IsEscalatedTo(email)) who += ", after the step was escalated";
+        else if (onBehalf)
+        {
+            who += ", an admin acting on behalf of " + string.Join(", ", task.AssigneeList);
+            _db.AuditEntries.Add(new AuditEntry
+            {
+                At = DateTime.UtcNow, ActorEmail = email, ActorName = name, Action = "task.override-returned",
+                Target = $"{run.WorkflowName} #{run.Id}", Detail = $"Task “{task.Title}”, on behalf of {string.Join(", ", task.AssigneeList)}. Comment: {comment}",
+            });
+        }
+        task.Status = ApprovalStatus.Returned;
+        task.DecidedBy = email;
+        task.Comment = comment;
+        task.DecidedAt = DateTime.UtcNow;
+
+        var def = Json.ParseDefinition(run.DefinitionJson);
+        var state = Load(run);
+        var sender = string.IsNullOrWhiteSpace(name) ? email : name;
+        var earlier = (await _db.ApprovalTasks.AsNoTracking()
+                .Where(t => t.RunId == run.Id && t.Kind == TaskKinds.Task && t.Status == ApprovalStatus.Done && t.NodeId != node.Id)
+                .OrderByDescending(t => t.DecidedAt).ThenByDescending(t => t.Id).ToListAsync(ct))
+            .FirstOrDefault(t => def.Flow.Nodes.Any(n => n.Id == t.NodeId && n.Type == NodeTypes.Task));
+        if (earlier is not null)
+        {
+            state.NewEvents.Add(new RunEvent(DateTime.Now, node.Id, "returned", $"Sent back to “{earlier.Title}” by {who} — “{comment}”"));
+            await (await EngineAsync(ct)).ReturnToTaskAsync(def.Flow, state, earlier.NodeId, ct);
+            // The comment travels with the task, so it is in the email and on the task itself.
+            if (state.PendingApproval is { } again)
+                again.Instructions = $"Sent back by {sender}: {comment}" + (again.Instructions.Length > 0 ? "\n\n" + again.Instructions : "");
+        }
+        else
+        {
+            state.Status = RunStatus.ChangesRequested;
+            state.NewEvents.Add(new RunEvent(DateTime.Now, node.Id, "returned", $"Sent back for changes by {who} — “{comment}”"));
+            await _notifications.NotifyAsync(new[] { run.SubmitterEmail }, $"Changes needed: {run.WorkflowName} #{run.Id}",
+                $"{sender} sent your request back for changes:\n\n{comment}\n\nOpen the request, choose “Edit and resubmit”, and it will go back to the same step.",
+                $"/Requests/Detail/{run.Id}", ct);
+        }
+        return await TrySaveAsync(run, state, ct) ? new ActionResult(true, RunId: run.Id)
+            : ActionResult.Fail("Someone else acted on this request at the same moment. Refresh to see the latest.");
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex EmailShape = new(@"^[^@\s;,<>]+@[^@\s;,<>]+\.[^@\s;,<>]+$");
+
+    /// <summary>
+    /// Hands a waiting approval or task to someone else. A person it is assigned to hands over their own
+    /// place; a workflow owner or an admin (or a stand-in, or someone it was escalated to) replaces
+    /// everyone it is waiting for. Recorded on the timeline and in the audit log.
+    /// </summary>
+    public async Task<ActionResult> ForwardAsync(int taskId, string email, string name, bool isAdmin, bool canManage, string? to, string? note,
+        IReadOnlyList<string>? allowedDomains, CancellationToken ct)
+    {
+        const string Raced = "Someone else acted on this request at the same moment. Refresh to see the latest.";
+        var task = await _db.ApprovalTasks.FirstOrDefaultAsync(t => t.Id == taskId, ct);
+        if (task is null || task.Status != ApprovalStatus.Pending) return ActionResult.Fail("This is no longer waiting on anyone. Refresh to see the latest.");
+        if (!task.CanBeDecidedBy(email) && !isAdmin && !canManage) return ActionResult.Fail("This is not yours to pass on.");
+        var run = await _db.Runs.FirstOrDefaultAsync(r => r.Id == task.RunId, ct);
+        if (run is null || !RunStatus.IsWaitingOnPeople(run.Status) || run.CurrentNodeId != task.NodeId)
+            return ActionResult.Fail("The request is no longer waiting on this step.");
+
+        to = (to ?? "").Trim().ToLowerInvariant();
+        note = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+        if (note?.Length > 1000) note = note[..1000];
+        if (!EmailShape.IsMatch(to) || to.Length > 254) return ActionResult.Fail("Enter one email address to pass this on to.");
+        if (allowedDomains is { Count: > 0 } domains && !domains.Any(d => to.EndsWith("@" + d, StringComparison.OrdinalIgnoreCase)))
+            return ActionResult.Fail($"Only district addresses can be chosen ({string.Join(" or ", domains.Select(d => "@" + d))}).");
+        if (to == run.SubmitterEmail.ToLowerInvariant()) return ActionResult.Fail("A request cannot be passed to the person who asked for it.");
+        if (task.IsAssignedTo(to)) return ActionResult.Fail($"{to} is already being asked.");
+
+        var isTask = task.Kind == TaskKinds.Task;
+        var ownPlace = task.IsAssignedTo(email);
+        if (ownPlace && task.HasApproved(email)) return ActionResult.Fail("You have already approved this, so there is nothing to pass on.");
+        var before = task.AssigneeList.ToList();
+        var after = ownPlace ? before.Select(a => a == email.ToLowerInvariant() ? to : a).Distinct().ToList() : new List<string> { to };
+        task.Assignees = ApprovalTask.Pack(after);
+        task.ApprovedBy = ApprovalTask.Pack(task.ApprovedByList.Where(after.Contains));
+        if (task.ApprovedBy == ";;") task.ApprovedBy = "";
+        // Stand-ins follow the people now asked: worked out again for the new list.
+        var standIns = await StandInsForAsync(after, run.SubmitterEmail, ct);
+        task.StandIns = standIns.Count == 0 ? "" : ";" + string.Join(";", standIns.Select(p => $"{p.StandIn}={p.For}")) + ";";
+        task.RebuildExtra();
+        task.ReminderCount = 0;
+        task.LastReminderAt = null;
+
+        var state = Load(run);
+        // An approval chain remembers who each step asks; keep it in step with the change.
+        if (!isTask && state.Context.GetValueOrDefault("chain") is Dictionary<string, object?> chain
+            && chain.GetValueOrDefault("steps") is List<object?> steps && Values.TryToNumber(chain.GetValueOrDefault("index"), out var position)
+            && position >= 0 && position < steps.Count && steps[(int)position] is Dictionary<string, object?> step)
+            step["approvers"] = after.Cast<object?>().ToList();
+
+        var who = string.IsNullOrWhiteSpace(name) ? email : $"{name} ({email})";
+        var replaced = ownPlace ? email.ToLowerInvariant() : string.Join(", ", before);
+        state.NewEvents.Add(new RunEvent(DateTime.Now, task.NodeId, "info",
+            $"{task.Title}: passed from {replaced} to {to} by {who}{(note is null ? "" : $" — “{note}”")}"));
+        _db.AuditEntries.Add(new AuditEntry
+        {
+            At = DateTime.UtcNow, ActorEmail = email, ActorName = name, Action = isTask ? "task.forwarded" : "approval.forwarded",
+            Target = $"{run.WorkflowName} #{run.Id}", Detail = $"“{task.Title}” passed from {replaced} to {to}." + (note is null ? "" : $" Note: {note}"),
+        });
+        var label = $"{run.WorkflowName} #{run.Id}";
+        var sender = string.IsNullOrWhiteSpace(name) ? email : name;
+        await _notifications.NotifyAsync(new[] { to }.Concat(standIns.Select(p => p.StandIn)), isTask ? $"Task for you: {label}" : $"Approval needed: {label}",
+            $"{sender} passed this to you: {task.Title}{(task.Position.Length > 0 ? $" ({task.Position.ToLowerInvariant()})" : "")}." +
+            (note is null ? "" : $"\n\nNote: {note}") + (task.Instructions.Length > 0 ? "\n\n" + task.Instructions : ""),
+            $"/Requests/Detail/{run.Id}", ct);
+        return await TrySaveAsync(run, state, ct) ? new ActionResult(true, RunId: run.Id) : ActionResult.Fail(Raced);
+    }
+
+    // ---- change tracking --------------------------------------------------------------
+
+    /// <summary>
+    /// The fields whose answer changed: their labels (for the timeline) and how each read before (for
+    /// "Edited · was: …"). Student details are listed by label but their old values are not kept.
+    /// </summary>
+    internal static (List<string> Labels, Dictionary<string, string> Previous) Changes(IEnumerable<FieldDef> fields,
+        IDictionary<string, object?> before, IDictionary<string, object?> after, HashSet<string> tainted)
+    {
+        var labels = new List<string>();
+        var previous = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var field in fields)
+        {
+            if (FieldTypes.IsLayout(field.Type) || string.IsNullOrWhiteSpace(field.Key)) continue;
+            var old = before.TryGetValue(field.Key, out var o) ? o : null;
+            var now = after.TryGetValue(field.Key, out var n) ? n : null;
+            if (ResubmitGuard.Same(old, now)) continue;
+            labels.Add(string.IsNullOrWhiteSpace(field.Label) ? field.Key : field.Label.Trim());
+            if (tainted.Contains(field.Key) || field.Type == FieldTypes.Student) continue;
+            var shown = field.Type == FieldTypes.Table && old is List<object?> rows
+                ? $"{rows.Count} row{(rows.Count == 1 ? "" : "s")}"
+                : Ui.Display(old, field.Type, field.Format, field.Decimals);
+            previous[field.Key] = shown.Length > 300 ? shown[..300] + "…" : shown;
+        }
+        return (labels, previous);
+    }
+
+    /// <summary>Replaces the remembered "before" values for these fields with this round's changes.</summary>
+    private static void RememberPrevious(Dictionary<string, object?> context, IEnumerable<FieldDef> fields, Dictionary<string, string> previous)
+    {
+        var store = context.GetValueOrDefault("_previous") as Dictionary<string, object?> ?? Values.NewDict();
+        foreach (var field in fields) store.Remove(field.Key);
+        foreach (var (key, value) in previous) store[key] = value;
+        if (store.Count == 0) context.Remove("_previous"); else context["_previous"] = store;
+    }
+
+    private static string Adjusted(List<string> labels) => labels.Count == 0 ? "" :
+        $" (adjusted: {string.Join(", ", labels.Take(8))}{(labels.Count > 8 ? $" and {labels.Count - 8} more" : "")})";
+
     // ---- the requester's own actions ---------------------------------------------------
 
     /// <summary>
@@ -377,7 +557,14 @@ public sealed class RunService
         if (!form.IsValid) return (form, ActionResult.Fail("Please fix the highlighted fields."));
 
         var state = Load(run);
+        var before = new Dictionary<string, object?>(state.Context, StringComparer.OrdinalIgnoreCase);
+        // What the approver will see as "Edited · was: …", and whether approvals already given still count.
+        var (adjusted, previous) = Changes(def.Form.Fields, before, form.Values, StudentData.KeysOf(def));
+        var restart = state.Context.Remove("_restart") ||
+            (before.GetValueOrDefault("approvals") is List<object?> { Count: > 0 }
+             && ResubmitGuard.Reasons(def.Flow, run.CurrentNodeId, def.Form.Fields, before, form.Values).Count > 0);
         foreach (var kv in form.Values) state.Context[kv.Key] = kv.Value;
+        RememberPrevious(state.Context, def.Form.Fields, previous);
         // The request's files: the form's (as resubmitted) and any that completed tasks added.
         var files = CollectFiles(def.Form, form.Values);
         var taskFields = new FormDefinition { Fields = def.Flow.Nodes.Where(n => n.Type == NodeTypes.Task).SelectMany(n => n.Fields ?? new List<FieldDef>()).ToList() };
@@ -402,8 +589,9 @@ public sealed class RunService
             run.DepartmentName = Values.ToText(department.GetValueOrDefault("name"));
         }
 
-        state.NewEvents.Add(new RunEvent(DateTime.Now, state.CurrentNodeId, "info", $"Resubmitted with changes by {name}."));
-        await (await EngineAsync(ct)).ReenterApprovalAsync(def.Flow, state, ct);
+        state.NewEvents.Add(new RunEvent(DateTime.Now, state.CurrentNodeId, "info",
+            $"Resubmitted with changes by {name}{Adjusted(adjusted)}."));
+        await (await EngineAsync(ct)).ReenterApprovalAsync(def.Flow, state, ct, restart);
         if (!await TrySaveAsync(run, state, ct))
             return (form, ActionResult.Fail("The request changed while you were editing. Refresh and try again."));
         _attachments.DeleteFiles(removedFiles);   // only once the database agrees they are gone

@@ -11,6 +11,9 @@
     definition,
     taskId,
     workflowId: Number(root.dataset.workflowId),
+    // Sent back to be done again: what was entered last time, and how it read.
+    initialValues: JSON.parse((document.getElementById('task-values') || {}).textContent || '{}'),
+    previousDisplay: JSON.parse((document.getElementById('task-previous') || {}).textContent || '{}'),
     evaluate: (values, init) => api('POST', '/api/tasks/' + taskId + '/evaluate', { values, init }),
     submit: (values) => api('POST', '/api/tasks/' + taskId + '/complete', { values }),
     onSuccess: () => { window.location.reload(); },

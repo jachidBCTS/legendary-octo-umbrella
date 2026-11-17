@@ -37,6 +37,64 @@ public sealed class FilesController : Controller
         return File(opened.Value.Stream, row.ContentType, row.FileName);
     }
 
+    /// <summary>Every file on a request in one .zip, for anyone who can open the request.</summary>
+    [HttpGet("/files/run/{runId:int}/zip")]
+    public async Task<IActionResult> Zip(int runId, CancellationToken ct)
+    {
+        var run = await _db.Runs.AsNoTracking().FirstOrDefaultAsync(r => r.Id == runId, ct);
+        if (run is null || !await _access.CanViewRunAsync(User, run, ct)) return NotFound();
+        var rows = await _db.Attachments.AsNoTracking().Where(a => a.RunId == runId).OrderBy(a => a.Id).ToListAsync(ct);
+        if (rows.Count == 0) return NotFound();
+
+        // Built in a temporary file (removed when the download ends) so large files never sit in memory.
+        var temp = Path.Combine(Path.GetTempPath(), "schoolflow-" + Guid.NewGuid().ToString("N") + ".zip");
+        var output = new FileStream(temp, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 81920, FileOptions.DeleteOnClose);
+        try
+        {
+            using (var zip = new System.IO.Compression.ZipArchive(output, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+            {
+                var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var missing = new List<string>();
+                foreach (var row in rows)
+                {
+                    var opened = await _attachments.OpenAsync(row.PublicId, ct);
+                    if (opened is null) { missing.Add(row.FileName); continue; }
+                    await using var source = opened.Value.Stream;
+                    var entry = zip.CreateEntry(UniqueName(AttachmentService.CleanName(row.FileName), used), System.IO.Compression.CompressionLevel.Fastest);
+                    await using var target = entry.Open();
+                    await source.CopyToAsync(target, ct);
+                }
+                if (missing.Count > 0)
+                {
+                    var note = zip.CreateEntry(UniqueName("missing-files.txt", used));
+                    await using var writer = new StreamWriter(note.Open());
+                    await writer.WriteAsync("These files are no longer on the server:\r\n" + string.Join("\r\n", missing));
+                }
+            }
+            output.Position = 0;
+            return File(output, "application/zip", $"request-{runId}-files.zip");
+        }
+        catch
+        {
+            await output.DisposeAsync();
+            throw;
+        }
+    }
+
+    /// <summary>"report.pdf", then "report (2).pdf", "report (3).pdf"… so no file in the zip replaces another.</summary>
+    public static string UniqueName(string name, HashSet<string> used)
+    {
+        if (string.IsNullOrWhiteSpace(name)) name = "file";
+        if (used.Add(name)) return name;
+        var stem = Path.GetFileNameWithoutExtension(name);
+        var extension = Path.GetExtension(name);
+        for (var n = 2; ; n++)
+        {
+            var candidate = $"{stem} ({n}){extension}";
+            if (used.Add(candidate)) return candidate;
+        }
+    }
+
     /// <summary>
     /// The uploader can always get their own file back. Once it is part of a request, so can anyone who
     /// can open that request (see <see cref="AccessService"/>).

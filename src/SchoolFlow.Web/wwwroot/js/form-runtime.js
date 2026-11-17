@@ -45,6 +45,7 @@
    * @param root      element to render into
    * @param options   { definition, evaluate(values, init) → Promise<state>, submit(values) → Promise<{ok, state, runId}>,
    *                    onSuccess(runId), preview, initialValues (answers to prefill, e.g. from a previous request),
+ *                    previousDisplay ({ key: text } — how answers read before, for "Was: …" when one is changed),
    *                    saveDraft(values) → Promise<{savedAt}> (adds a "Save for later" button; after the first
    *                    save, later changes are saved automatically) }
    */
@@ -215,6 +216,24 @@
       banner.textContent = message || '';
     }
 
+    // Revising: how each answer read before, so a changed one can say "Was: …".
+    const previous = options.previousDisplay || null;
+    const baseline = {};
+    function showWas(field, control, value, init) {
+      if (!previous || !(field.key in previous) || !control.error.parentNode) return;
+      const now = JSON.stringify(value === undefined ? null : value);
+      if (init) baseline[field.key] = now;
+      const differs = field.key in baseline && now !== baseline[field.key];
+      if (differs && !control.was) {
+        control.was = h('div', { class: 'sf-was' });
+        control.error.parentNode.insertBefore(control.was, control.error);
+      }
+      if (control.was) {
+        control.was.hidden = !differs;
+        control.was.textContent = differs ? 'Was: ' + previous[field.key] : '';
+      }
+    }
+
     function apply(state, init) {
       for (const field of fields) {
         const control = controls[field.key];
@@ -224,6 +243,7 @@
         if (control.required) control.required.hidden = !fieldState.required;
         if (init && control.set && value !== null && value !== undefined) control.set(value);
         if (control.update) control.update(value, fieldState);
+        showWas(field, control, value, init);
 
         const always = field.type === 'calculated';
         const show = always || showAllErrors || touched.has(field.key);
@@ -355,7 +375,7 @@
           body = input(h('input', { id, type: 'text', class: 'sf-signature', autocomplete: 'name', maxlength: 200, placeholder: 'Type your full name to sign' }), field.key, control);
           break;
         case 'email':
-          body = input(h('input', { id, type: 'email', autocomplete: 'email', placeholder: field.placeholder || null }), field.key, control);
+          body = input(h('input', { id, type: 'email', autocomplete: 'off', spellcheck: 'false', 'data-people': '', placeholder: field.placeholder || null }), field.key, control);
           break;
         case 'select': {
           const el = h('select', { id }, h('option', { value: '' }, 'Choose…'), (field.options || []).map((o) => h('option', { value: o }, o)));

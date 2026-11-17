@@ -97,6 +97,29 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   the answers in the run context and calls `WorkflowEngine.ReenterApprovalAsync`, which re-enters the
   *same* node (a chain keeps its `index`, so earlier approvals stand). `WithdrawAsync` (requester
   only, while waiting) and `CommentAsync` (`RunComments`, the discussion thread) also live there.
+- **Change tracking and approval restarts (Nov 17, 2026)**: `RunService.Changes` diffs answers on
+  resubmit (and when a task that was *Done* before is completed again) and stores how changed answers
+  read before in the reserved context name `_previous` (key → display text; student data never
+  stored); the timeline says "(adjusted: …)", the Detail page shows an `.edit-badge`, and Revise/task
+  pages get `previousDisplay` so `form-runtime.js` shows "Was: …". `ResubmitGuard` (Core) decides
+  whether earlier approvals still count: a **currency** field (or calculated currency) went up, or a
+  name read by a condition or an *earlier* approval step's settings changed (the step being returned
+  to is excluded — it re-works its approvers itself). An approver can also tick "ask every approver
+  again" (`_restart`). Then `ReenterApprovalAsync(..., restartApprovals: true)` clears
+  `approvals/approval/chain` and runs again from Start (or from the first approval node if a ticket
+  exists, so no second ticket). Approval records now carry `node`.
+- **Task send-back / passing on**: `RunService.ReturnTaskAsync` goes back to the latest *Done* task
+  step (engine `ReturnToTaskAsync`; steps between run again; the note is prepended to the task's
+  instructions, and the task is prefilled from the context) or, if none, to the requester
+  (`ChangesRequested`; resubmit re-asks the task). `ForwardAsync`: an assignee replaces themself; an
+  owner/admin/stand-in/escalation replaces everyone; never the requester; `Auth:AllowedDomains`
+  applies; chain record and stand-ins updated; audit `approval.forwarded`/`task.forwarded`.
+- **People suggestions**: `/api/people?q=` (`PeopleController`, 2+ characters, 20 results, allowed
+  domains only). Any `<input data-people>` gets a datalist from `common.js` (`data-people="multi"`
+  completes the last of several addresses; `data-people-add="<textarea id>"` appends to a list).
+- **Zip download**: `GET /files/run/{id}/zip` (`FilesController.Zip`, built in a temp file, names
+  de-duplicated); shown on Detail when a request has 2+ files. Builder: `duplicateNode`, `undo()`
+  with `remember()` before every structural change (30 snapshots of `state.def`).
 - **Approval follow-up**: `ApprovalTask` carries `RemindDays`/`EscalateDays`/`EscalateTo` copied
   from the node config, `StandIns` (from `Delegations`, applied when the task is created and when a
   delegation is added) and `Escalated`. Who may decide = `ApprovalTask.CanBeDecidedBy`. A stand-in's
@@ -253,7 +276,7 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   API and checks its own secret).
 - **Never trust the browser for identity or lists**: department/location names come from the
   server's tables; `submitter` is set server-side; webhook payloads cannot set reserved names.
-- **Reserved formula names**: `submitter, ticket, approval, approvals, run, event, chain, attachments, rates` plus
+- **Reserved formula names**: `submitter, ticket, approval, approvals, run, event, chain, attachments, rates, task, _previous, _restart` plus
   keywords — see `DefinitionValidator.Reserved` (mirrored in `builder.js` `RESERVED`).
 - **Adding a field type**: `FieldTypes` → `FormEvaluator` normalisation → `form-runtime.js`
   control → `builder.js` palette/inspector → `Ui.Display` if it needs special display →

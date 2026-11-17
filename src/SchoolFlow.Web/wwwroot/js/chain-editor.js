@@ -32,7 +32,7 @@
       steps.forEach((step, index) => {
         const name = h('input', { type: 'text', value: step.name, placeholder: 'Step name, e.g. Team leader', maxlength: 100, 'aria-label': 'Step ' + (index + 1) + ' name' });
         name.addEventListener('input', () => { step.name = name.value; changed(); });
-        const approvers = h('input', { type: 'text', value: step.approvers.join(', '), placeholder: 'Approver email(s), separated by commas', 'aria-label': 'Step ' + (index + 1) + ' approvers', autocomplete: 'off', spellcheck: 'false' });
+        const approvers = h('input', { type: 'text', value: step.approvers.join(', '), placeholder: 'Approver email(s), separated by commas', 'aria-label': 'Step ' + (index + 1) + ' approvers', autocomplete: 'off', spellcheck: 'false', 'data-people': 'multi' });
         const rule = h('select', { 'aria-label': 'Step ' + (index + 1) + ' rule' }, h('option', { value: 'any' }, 'Any one can approve'), h('option', { value: 'all' }, 'All must approve'));
         rule.value = step.rule === 'all' ? 'all' : 'any';
         const showRule = () => { rule.hidden = step.approvers.length < 2; };

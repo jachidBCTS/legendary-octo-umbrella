@@ -17,7 +17,7 @@ public static class DefinitionValidator
     /// <summary>Names formulas can always read, so fields and variables may not reuse them.</summary>
     public static readonly HashSet<string> Reserved = new(StringComparer.OrdinalIgnoreCase)
     {
-        "submitter", "ticket", "approval", "approvals", "run", "event", "chain", "attachments", "rates", "task",
+        "submitter", "ticket", "approval", "approvals", "run", "event", "chain", "attachments", "rates", "task", "_previous", "_restart",
         "true", "false", "null", "blank", "and", "or", "not",
     };
 

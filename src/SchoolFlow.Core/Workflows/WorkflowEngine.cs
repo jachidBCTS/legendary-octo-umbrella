@@ -173,6 +173,23 @@ public sealed class WorkflowEngine
         return AdvanceAsync(flow, state, ct);
     }
 
+    /// <summary>
+    /// Sends a request that is waiting on a task back to an earlier task step (for example the business
+    /// office returning the traveller's "after the trip" details). The steps between are run again.
+    /// </summary>
+    public Task ReturnToTaskAsync(FlowDefinition flow, RunState state, string targetNodeId, CancellationToken ct = default)
+    {
+        if (state.Status != RunStatus.WaitingTask)
+            throw new InvalidOperationException("This request is not waiting for a task.");
+        var target = FindNode(flow, targetNodeId);
+        if (target is null || target.Type != NodeTypes.Task)
+            throw new InvalidOperationException("That task step does not exist in this workflow version.");
+        state.PendingApproval = null;
+        state.Status = RunStatus.Running;
+        state.CurrentNodeId = target.Id;
+        return AdvanceAsync(flow, state, ct);
+    }
+
     public Task StartAsync(FlowDefinition flow, RunState state, CancellationToken ct = default)
     {
         var start = flow.Nodes.FirstOrDefault(n => n.Type == NodeTypes.Start);
@@ -204,6 +221,7 @@ public sealed class WorkflowEngine
         record["by"] = decision.By;
         record["comment"] = decision.Comment ?? "";
         record["step"] = node.Label ?? "";
+        record["node"] = node.Id;
         record["at"] = _now();
         state.Context["approval"] = record;
 
@@ -757,13 +775,35 @@ public sealed class WorkflowEngine
     /// Puts a request that was sent back for changes in front of the same approval step again, now that
     /// the requester has resubmitted it.
     /// </summary>
-    public async Task ReenterApprovalAsync(FlowDefinition flow, RunState state, CancellationToken ct = default)
+    public async Task ReenterApprovalAsync(FlowDefinition flow, RunState state, CancellationToken ct = default, bool restartApprovals = false)
     {
         if (state.Status != RunStatus.ChangesRequested) throw new InvalidOperationException("This request is not waiting for changes.");
         var node = FindNode(flow, state.CurrentNodeId);
         if (node is null)
         {
             Fail(state, state.CurrentNodeId, "The approval step no longer exists in this workflow version.");
+            return;
+        }
+
+        // Approvals given before the changes no longer count (the cost went up, or something that chose
+        // the approvers changed): they are cleared and asked for again from the beginning. When a ticket
+        // has already been created the flow is not re-run from Start (that would create another one);
+        // it goes back to the first step that approved the request instead.
+        if (restartApprovals && state.Context.GetValueOrDefault("approvals") is List<object?> { Count: > 0 } given)
+        {
+            var first = given.OfType<Dictionary<string, object?>>().Select(r => Values.ToText(r.GetValueOrDefault("node")))
+                .Select(id => FindNode(flow, id)).FirstOrDefault(n => n is not null);
+            var start = flow.Nodes.FirstOrDefault(n => n.Type == NodeTypes.Start);
+            var hasTicket = state.Context.TryGetValue("ticket", out var ticket) && !Values.IsBlank(ticket);
+            var target = hasTicket ? first ?? node : start ?? first ?? node;
+            state.Context.Remove("approvals");
+            state.Context.Remove("approval");
+            state.Context.Remove("chain");
+            Log(state, node.Id, "info", "Because the changes increased the cost or altered earlier approval settings, approvals have been restarted from the beginning.");
+            state.PendingApproval = null;
+            state.Status = RunStatus.Running;
+            state.CurrentNodeId = target.Id;
+            await AdvanceAsync(flow, state, ct);
             return;
         }
 

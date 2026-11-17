@@ -11,7 +11,7 @@
     <h2>Add a department</h2>
     <form method="post" asp-page-handler="Save" class="dept-form">
         <div><label class="lbl" for="new-name">Name</label><input id="new-name" name="name" required maxlength="200" placeholder="e.g. Science" /></div>
-        <div><label class="lbl" for="new-approvers">Final approver(s)</label><input id="new-approvers" name="approvers" placeholder="email addresses, separated by commas" /></div>
+        <div><label class="lbl" for="new-approvers">Final approver(s)</label><input id="new-approvers" name="approvers" placeholder="email addresses, separated by commas" autocomplete="off" data-people="multi" /></div>
         <div><label class="lbl" for="new-rule">If more than one</label>
             <select id="new-rule" name="rule"><option value="any">Any one can approve</option><option value="all">All must approve</option></select></div>
         <div class="dept-save"><button class="btn primary">Add department</button></div>
@@ -29,7 +29,7 @@
             <input type="hidden" name="id" value="@d.Id" />
             <div><label class="lbl" for="name-@d.Id">Name</label><input id="name-@d.Id" name="name" required maxlength="200" value="@d.Name" /></div>
             <div><label class="lbl" for="approvers-@d.Id">Final approver(s)</label>
-                <input id="approvers-@d.Id" name="approvers" value="@string.Join(", ", d.FinalApproverList)" placeholder="email addresses, separated by commas" />
+                <input id="approvers-@d.Id" name="approvers" value="@string.Join(", ", d.FinalApproverList)" placeholder="email addresses, separated by commas" autocomplete="off" data-people="multi" />
                 @if (d.IsActive && d.FinalApproverList.Count == 0) { <div class="sf-error">No final approver: requests for this department will stop with an error until one is set.</div> }
             </div>
             <div><label class="lbl" for="rule-@d.Id">If more than one</label>

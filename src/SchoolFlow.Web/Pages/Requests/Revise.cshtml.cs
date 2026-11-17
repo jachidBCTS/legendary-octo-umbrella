@@ -18,6 +18,8 @@ public class ReviseModel : PageModel
     public ApprovalTask? Asked { get; private set; }
     public string FormJson { get; private set; } = "{}";
     public string ValuesJson { get; private set; } = "{}";
+    /// <summary>How each answer reads now, so a field the requester changes can say "Was: …".</summary>
+    public string PreviousJson { get; private set; } = "{}";
 
     public async Task<IActionResult> OnGetAsync(int id)
     {
@@ -39,6 +41,15 @@ public class ReviseModel : PageModel
         foreach (var field in form.Fields.Where(f => !FieldTypes.IsLayout(f.Type) && f.Type != FieldTypes.Calculated))
             if (context.TryGetValue(field.Key, out var value)) values[field.Key] = value;
         ValuesJson = Json.Serialize(values).Replace("<", "\\u003c");
+        var shown = new Dictionary<string, string>();
+        foreach (var field in form.Fields.Where(f => !FieldTypes.IsLayout(f.Type)))
+        {
+            if (!context.TryGetValue(field.Key, out var value)) continue;
+            shown[field.Key] = field.Type == FieldTypes.Table && value is List<object?> rows
+                ? $"{rows.Count} row{(rows.Count == 1 ? "" : "s")}"
+                : Ui.Display(value, field.Type, field.Format, field.Decimals);
+        }
+        PreviousJson = Json.Serialize(shown).Replace("<", "\\u003c");
         return Page();
     }
 }

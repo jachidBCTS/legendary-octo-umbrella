@@ -10,7 +10,7 @@
 <section class="panel">
     <h2>Add a stand-in</h2>
     <form method="post" asp-page-handler="Add" class="dept-form">
-        <div><label class="lbl" for="to">Who can approve for you</label><input id="to" name="to" type="email" required placeholder="colleague@yourschool.org" /></div>
+        <div><label class="lbl" for="to">Who can approve for you</label><input id="to" name="to" type="email" required placeholder="colleague@yourschool.org" autocomplete="off" data-people /></div>
         <div><label class="lbl" for="from-date">From</label><input id="from-date" name="startsOn" type="date" required value="@DateTime.Now.ToString("yyyy-MM-dd")" /></div>
         <div><label class="lbl" for="to-date">Until (inclusive)</label><input id="to-date" name="endsOn" type="date" required /></div>
         <div class="dept-save"><button class="btn primary">Save</button></div>

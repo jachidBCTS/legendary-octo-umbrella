@@ -88,6 +88,60 @@
     toastTimer = setTimeout(() => { el.className = 'toast'; }, kind === 'bad' ? 7000 : 3200);
   }
 
+  // ---- staff email suggestions ---------------------------------------------------------
+  // Any <input data-people> suggests staff addresses as you type (from /api/people). With
+  // data-people="multi" the box holds several addresses separated by commas or semicolons and only the
+  // last one is completed. Inputs built later by scripts work too: the listener is on the document.
+  let peopleUid = 0;
+  const peopleCache = new Map();
+  const lookupPeople = debounce(async (input) => {
+    const multi = input.getAttribute('data-people') === 'multi';
+    const text = input.value;
+    const cut = multi ? Math.max(text.lastIndexOf(','), text.lastIndexOf(';')) + 1 : 0;
+    const head = text.slice(0, cut);
+    const query = text.slice(cut).trim();
+    if (query.length < 2) return;
+    let people = peopleCache.get(query.toLowerCase());
+    if (!people) {
+      try { people = await api('GET', '/api/people?q=' + encodeURIComponent(query)); } catch (e) { return; }
+      peopleCache.set(query.toLowerCase(), people || []);
+    }
+    if (input.value !== text) return; // they kept typing; a newer lookup will fill the list
+    let list = input.list;
+    if (!list) {
+      list = h('datalist', { id: 'sf-people-' + (++peopleUid) });
+      document.body.appendChild(list);
+      input.setAttribute('list', list.id);
+    }
+    list.replaceChildren(...(people || []).map((p) =>
+      h('option', { value: (head && !/\s$/.test(head) ? head + ' ' : head) + p.email }, p.name ? p.name : p.email)));
+  }, 250);
+
+  function addPerson(input) {
+    const target = document.getElementById(input.getAttribute('data-people-add') || '');
+    const email = input.value.trim();
+    if (!target || !email) return;
+    const lines = target.value.split(/[\r\n,;]+/).map((x) => x.trim()).filter(Boolean);
+    if (!lines.some((x) => x.toLowerCase() === email.toLowerCase())) lines.push(email);
+    target.value = lines.join('\n');
+    target.rows = Math.max(target.rows, lines.length + 1);
+    input.value = '';
+    input.focus();
+  }
+
+  document.addEventListener('input', (e) => {
+    const input = e.target;
+    if (!input.matches || !input.matches('input[data-people]')) return;
+    // Picking a suggestion in a "add to the list" box adds it straight away.
+    if (e.inputType === 'insertReplacementText' || (!e.inputType && input.list && [...input.list.options].some((o) => o.value === input.value))) {
+      if (input.hasAttribute('data-people-add')) { addPerson(input); return; }
+    }
+    lookupPeople(input);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.matches && e.target.matches('input[data-people-add]')) { e.preventDefault(); addPerson(e.target); }
+  });
+
   window.SF = { api, h, debounce, toast };
 
   document.addEventListener('submit', (e) => {
@@ -117,6 +171,12 @@
         const first = dialog.querySelector('input:not([type=hidden]), textarea, select');
         if (first) first.focus();
       }
+      return;
+    }
+    const adder = target.closest('[data-people-add-button]');
+    if (adder) {
+      const input = document.getElementById(adder.getAttribute('data-people-add-button'));
+      if (input) addPerson(input);
       return;
     }
     const closer = target.closest('[data-close-dialog]');

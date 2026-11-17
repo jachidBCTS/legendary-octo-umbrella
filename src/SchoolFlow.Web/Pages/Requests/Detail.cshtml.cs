@@ -34,10 +34,25 @@ public class DetailModel : PageModel
     public List<ChainStepView> Chain { get; private set; } = new();
 
     public sealed record FileLink(string Name, string Size, string Url);
-    public sealed record Answer(string Label, string Value, List<string>? Columns = null, List<List<string>>? Rows = null, List<FileLink>? Files = null, bool Heading = false);
+    public sealed record Answer(string Label, string Value, List<string>? Columns = null, List<List<string>>? Rows = null, List<FileLink>? Files = null, bool Heading = false,
+        string? PreviousValue = null);
     /// <summary>Tasks (fill-in steps) waiting for this person on this request.</summary>
     public List<ApprovalTask> MyWork { get; private set; } = new();
     public string TaskFormJson { get; private set; } = "{}";
+    /// <summary>The task's answers so far (when it was sent back to be done again), to prefill it.</summary>
+    public string TaskValuesJson { get; private set; } = "{}";
+    /// <summary>How those answers read, for the "Was: …" note shown when one is changed.</summary>
+    public string TaskPreviousJson { get; private set; } = "{}";
+    /// <summary>Where "Send back for changes" on the task goes: an earlier task's name, or null for the requester.</summary>
+    public string? TaskReturnsTo { get; private set; }
+    /// <summary>Approvals already given on this request (an approver sending it back may ask for them all again).</summary>
+    public bool HasEarlierApprovals { get; private set; }
+    /// <summary>Waiting steps this person may pass to someone else that are not already shown as theirs.</summary>
+    public List<ApprovalTask> OthersWaiting { get; private set; } = new();
+    /// <summary>Waiting steps this person may pass to someone else.</summary>
+    public HashSet<int> CanForward { get; private set; } = new();
+    /// <summary>Link to every file on the request as one .zip, when there are two or more.</summary>
+    public string? ZipUrl { get; private set; }
 
     public WorkflowRun Run { get; private set; } = null!;
     public List<RunEventRow> Events { get; private set; } = new();
@@ -75,6 +90,10 @@ public class DetailModel : PageModel
         var mine = pending.Where(t => (t.CanBeDecidedBy(email) && !t.IsDoneFor(email)) || (User.IsAdmin() && !t.CanBeDecidedBy(email))).ToList();
         MyTasks = mine.Where(t => t.Kind != TaskKinds.Task).ToList();
         MyWork = mine.Where(t => t.Kind == TaskKinds.Task).ToList();
+        // Anyone asked can pass their place on; owners and admins can pass any waiting step on.
+        foreach (var t in pending.Where(t => CanManage || (t.CanBeDecidedBy(email) && !t.IsDoneFor(email)))) CanForward.Add(t.Id);
+        OthersWaiting = pending.Where(t => CanForward.Contains(t.Id) && !mine.Contains(t)).ToList();
+        if (await _db.Attachments.AsNoTracking().CountAsync(a => a.RunId == id) >= 2) ZipUrl = $"/files/run/{id}/zip";
         PendingAssignees = pending.SelectMany(t => t.AssigneeList.Where(a => !t.HasApproved(a)).Concat(t.StandInPairs.Select(p => p.StandIn)).Concat(t.EscalatedList)).Distinct().ToList();
         Comments = await _db.RunComments.AsNoTracking().Where(c => c.RunId == id).OrderBy(c => c.Id).ToListAsync();
         Decisions = tasks.Where(t => t.Status is ApprovalStatus.Approved or ApprovalStatus.Rejected or ApprovalStatus.Returned).OrderBy(t => t.Id).ToList();
@@ -112,12 +131,32 @@ public class DetailModel : PageModel
                     status, Values.ToText(step.GetValueOrDefault("rule"))));
             }
         }
+        HasEarlierApprovals = context.GetValueOrDefault("approvals") is List<object?> { Count: > 0 };
         if (MyWork.FirstOrDefault() is { } work && def.Flow.Nodes.FirstOrDefault(n => n.Id == work.NodeId) is { } workNode)
+        {
             TaskFormJson = Json.Serialize(new FormDefinition { Fields = workNode.Fields ?? new List<FieldDef>(), SubmitLabel = "Complete task" }).Replace("<", "\\u003c");
+            // Sent back to be done again: start from what was entered last time.
+            var again = Values.NewDict();
+            var shown = new Dictionary<string, string>();
+            foreach (var f in (workNode.Fields ?? new List<FieldDef>()).Where(f => !FieldTypes.IsLayout(f.Type) && f.Type != FieldTypes.Calculated))
+            {
+                if (!context.TryGetValue(f.Key, out var v) || Values.IsBlank(v)) continue;
+                again[f.Key] = v;
+                shown[f.Key] = Ui.Display(v, f.Type, f.Format, f.Decimals);
+            }
+            TaskValuesJson = Json.Serialize(again).Replace("<", "\\u003c");
+            TaskPreviousJson = Json.Serialize(shown).Replace("<", "\\u003c");
+            TaskReturnsTo = tasks.Where(t => t.Kind == TaskKinds.Task && t.Status == ApprovalStatus.Done && t.NodeId != work.NodeId
+                    && def.Flow.Nodes.Any(n => n.Id == t.NodeId && n.Type == NodeTypes.Task))
+                .OrderByDescending(t => t.DecidedAt).ThenByDescending(t => t.Id).Select(t => t.Title).FirstOrDefault();
+        }
 
         // Student fields, and anything worked out from them, are hidden from people without student access.
         var studentKeys = SchoolFlow.Core.Forms.StudentData.KeysOf(def);
         var seesStudents = studentKeys.Count == 0 || await _access.CanViewStudentsAsync(User);
+        // How answers read before the latest change ("Edited · was: …").
+        var previous = context.GetValueOrDefault("_previous") as Dictionary<string, object?>;
+        string? Was(string key) => previous is not null && previous.TryGetValue(key, out var was) && !studentKeys.Contains(key) ? Values.ToText(was) : null;
         AddAnswers(def.Form.Fields);
         // What was added along the way by completed tasks (the latest time each task was done).
         foreach (var done in tasks.Where(t => t.Kind == TaskKinds.Task && t.Status == ApprovalStatus.Done).GroupBy(t => t.NodeId).Select(g => g.OrderBy(t => t.Id).Last()).OrderBy(t => t.Id))
@@ -144,18 +183,19 @@ public class DetailModel : PageModel
                 Fields.Add(new Answer(f.Label, "", Files: uploaded.OfType<Dictionary<string, object?>>().Select(file => new FileLink(
                     Values.ToText(file.GetValueOrDefault("name")),
                     AttachmentService.DisplaySize(Values.TryToNumber(file.GetValueOrDefault("size"), out var bytes) ? (long)bytes : 0),
-                    "/files/" + Uri.EscapeDataString(Values.ToText(file.GetValueOrDefault("id"))))).ToList()));
+                    "/files/" + Uri.EscapeDataString(Values.ToText(file.GetValueOrDefault("id"))))).ToList(), PreviousValue: Was(f.Key)));
             }
             else if (f.Type == FieldTypes.Table && value is List<object?> rows)
             {
                 var columns = f.Columns ?? new List<ColumnDef>();
                 Fields.Add(new Answer(f.Label, "", columns.Select(c => c.Label).ToList(),
                     rows.OfType<Dictionary<string, object?>>()
-                        .Select(r => columns.Select(c => Ui.Display(r.GetValueOrDefault(c.Key), c.Type, c.Format, c.Decimals)).ToList()).ToList()));
+                        .Select(r => columns.Select(c => Ui.Display(r.GetValueOrDefault(c.Key), c.Type, c.Format, c.Decimals)).ToList()).ToList(),
+                    PreviousValue: Was(f.Key)));
             }
             else
             {
-                Fields.Add(new Answer(f.Label, Ui.Display(value, f.Type, f.Format, f.Decimals)));
+                Fields.Add(new Answer(f.Label, Ui.Display(value, f.Type, f.Format, f.Decimals), PreviousValue: Was(f.Key)));
             }
         }
         }
@@ -177,7 +217,28 @@ public class DetailModel : PageModel
         return RedirectToPage(new { id });
     }
 
-    public async Task<IActionResult> OnPostDecideAsync(int id, int taskId, string? decision, string? comment, CancellationToken ct)
+    public async Task<IActionResult> OnPostReturnTaskAsync(int id, int taskId, string? comment, CancellationToken ct)
+    {
+        var belongs = await _db.ApprovalTasks.AsNoTracking().AnyAsync(t => t.Id == taskId && t.RunId == id, ct);
+        var run = await _db.Runs.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (!belongs || run is null || !await _access.CanViewRunAsync(User, run, ct)) return NotFound();
+        Flash(await _runs.ReturnTaskAsync(taskId, User.Email(), User.DisplayName(), User.IsAdmin(), comment, ct), "Sent back. They have been told what to change.");
+        return RedirectToPage(new { id });
+    }
+
+    public async Task<IActionResult> OnPostForwardAsync(int id, int taskId, string? to, string? note, CancellationToken ct)
+    {
+        var belongs = await _db.ApprovalTasks.AsNoTracking().AnyAsync(t => t.Id == taskId && t.RunId == id, ct);
+        var run = await _db.Runs.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (!belongs || run is null || !await _access.CanViewRunAsync(User, run, ct)) return NotFound();
+        var canManage = await _access.CanManageRunAsync(User, run, ct);
+        var domains = HttpContext.RequestServices.GetRequiredService<DomainPolicy>().Domains;
+        Flash(await _runs.ForwardAsync(taskId, User.Email(), User.DisplayName(), User.IsAdmin(), canManage, to, note, domains, ct),
+            $"Passed on. {(to ?? "").Trim()} has been told.");
+        return RedirectToPage(new { id });
+    }
+
+    public async Task<IActionResult> OnPostDecideAsync(int id, int taskId, string? decision, string? comment, bool restart, CancellationToken ct)
     {
         // The task must belong to this request; RunService checks the assignee.
         var belongs = await _db.ApprovalTasks.AsNoTracking().AnyAsync(t => t.Id == taskId && t.RunId == id, ct);
@@ -185,7 +246,7 @@ public class DetailModel : PageModel
         if (!belongs || run is null || !await _access.CanViewRunAsync(User, run, ct)) return NotFound();
         var action = decision switch { "approve" => ApprovalAction.Approve, "return" => ApprovalAction.Return, "reject" => ApprovalAction.Reject, _ => (ApprovalAction?)null };
         if (action is null) return BadRequest();
-        var result = await _runs.DecideAsync(taskId, User.Email(), User.DisplayName(), User.IsAdmin(), action.Value, comment, ct);
+        var result = await _runs.DecideAsync(taskId, User.Email(), User.DisplayName(), User.IsAdmin(), action.Value, comment, ct, restart);
         Flash(result, action switch
         {
             ApprovalAction.Approve => "Approved. The request has moved on.",

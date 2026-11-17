@@ -1639,4 +1639,216 @@ public sealed class RunServiceTests : IDisposable
     [InlineData("abc", null)]
     public void ParseTicketId_HandlesDisplayIds(string input, long? expected) =>
         Assert.Equal(expected, RunService.ParseTicketId(input));
+
+    // ---- change tracking, approval restarts, task send-back, passing a step on ----------------
+
+    private async Task<(FormResult? Form, ActionResult Result)> ResubmitAsync(int runId, Dictionary<string, object?> input)
+    {
+        await using var db = Db();
+        return await Service(db).ResubmitAsync(runId, input, "t@school.org", "T Teacher", default);
+    }
+
+    private static Dictionary<string, object?> PreviousOf(WorkflowRun run) =>
+        Json.ToValues(run.ContextJson).GetValueOrDefault("_previous") as Dictionary<string, object?> ?? new();
+
+    [Fact]
+    public async Task Resubmit_RecordsWhichAnswersChanged_AndHowTheyReadBefore()
+    {
+        var runId = await SubmitTripAsync("Science");
+        Assert.True((await ActAsync(runId, "principal@example.org", ApprovalAction.Return, "Wrong place")).Ok);
+        int deptId;
+        await using (var db = Db()) deptId = (await db.Departments.SingleAsync(d => d.Name == "Science")).Id;
+        var input = TripInput("Science", deptId, null);
+        input["destination"] = "Planetarium";
+        Assert.True((await ResubmitAsync(runId, input)).Result.Ok);
+
+        await using var check = Db();
+        var run = await check.Runs.SingleAsync(r => r.Id == runId);
+        Assert.Equal("Science Museum", PreviousOf(run)["destination"]);
+        Assert.Single(PreviousOf(run));                                      // only what changed
+        Assert.Contains(await check.RunEvents.Where(e => e.RunId == runId).ToListAsync(),
+            e => e.Message == "Resubmitted with changes by T Teacher (adjusted: Where are you going?).");
+        Assert.Equal(RunStatus.WaitingApproval, run.Status);                 // a different place does not restart anything
+    }
+
+    [Fact]
+    public async Task Resubmit_WithAHigherCost_AfterApprovals_StartsTheApprovalsAgain()
+    {
+        var (runId, values) = await SubmitTravelAsync("Bergen County Technical Schools", input => input["registration"] = 100m);
+        await ApproveInTurnAsync(runId, TechApprovals[0], TechApprovals[1]);
+        Assert.True((await ActAsync(runId, "admin@example.org", ApprovalAction.Return, "Add the hotel")).Ok);
+        var input = new Dictionary<string, object?>(values) { ["registration"] = 400m };
+        Assert.True((await ResubmitAsync(runId, input)).Result.Ok);
+
+        await using var db = Db();
+        var run = await db.Runs.SingleAsync(r => r.Id == runId);
+        Assert.Equal("Final approval — Science", (await db.ApprovalTasks.SingleAsync(t => t.RunId == runId && t.Status == ApprovalStatus.Pending)).Title);
+        Assert.DoesNotContain("\"approvals\"", run.ContextJson);
+        Assert.Contains(await db.RunEvents.Where(e => e.RunId == runId).ToListAsync(),
+            e => e.Message.Contains("approvals have been restarted from the beginning"));
+        Assert.Equal("$100.00", PreviousOf(run)["registration"]);
+    }
+
+    [Fact]
+    public async Task Resubmit_WithALowerCost_KeepsEarlierApprovals_UnlessTheApproverAskedToStartAgain()
+    {
+        var (runId, values) = await SubmitTravelAsync("Bergen County Technical Schools", input => input["registration"] = 100m);
+        await ApproveInTurnAsync(runId, TechApprovals[0], TechApprovals[1]);
+        Assert.True((await ActAsync(runId, "admin@example.org", ApprovalAction.Return, "Cheaper please")).Ok);
+        Assert.True((await ResubmitAsync(runId, new Dictionary<string, object?>(values) { ["registration"] = 80m })).Result.Ok);
+        await using (var db = Db())
+            Assert.Equal("Business Administrator approval", (await db.ApprovalTasks.SingleAsync(t => t.RunId == runId && t.Status == ApprovalStatus.Pending)).Title);
+
+        // This time the approver asks for every approval to be given again.
+        await using (var db = Db())
+        {
+            var task = await db.ApprovalTasks.SingleAsync(t => t.RunId == runId && t.Status == ApprovalStatus.Pending);
+            Assert.True((await Service(db).DecideAsync(task.Id, "admin@example.org", "Admin", false, ApprovalAction.Return, "Start over", default, restartApprovals: true)).Ok);
+        }
+        Assert.True((await ResubmitAsync(runId, new Dictionary<string, object?>(values) { ["registration"] = 80m })).Result.Ok);
+        await using var check = Db();
+        Assert.Equal("Final approval — Science", (await check.ApprovalTasks.SingleAsync(t => t.RunId == runId && t.Status == ApprovalStatus.Pending)).Title);
+        Assert.DoesNotContain("_restart", (await check.Runs.SingleAsync(r => r.Id == runId)).ContextJson);
+    }
+
+    [Fact]
+    public async Task Resubmit_ChangingTheDistrict_AfterApprovals_StartsTheApprovalsAgain()
+    {
+        var (runId, values) = await SubmitTravelAsync("Bergen County Technical Schools", input => input["registration"] = 100m);
+        await ApproveInTurnAsync(runId, TechApprovals[0], TechApprovals[1]);
+        Assert.True((await ActAsync(runId, "admin@example.org", ApprovalAction.Return, "Wrong district?")).Ok);
+        Assert.True((await ResubmitAsync(runId, new Dictionary<string, object?>(values) { ["district"] = "Bergen County Special Services" })).Result.Ok);
+        await using var db = Db();
+        Assert.Equal("Final approval — Science", (await db.ApprovalTasks.SingleAsync(t => t.RunId == runId && t.Status == ApprovalStatus.Pending)).Title);
+    }
+
+    private async Task<int> TravelToReconcileAsync()
+    {
+        var (runId, _) = await SubmitTravelAsync("Bergen County Technical Schools", input => input["registration"] = 100m);
+        await ApproveInTurnAsync(runId, TechApprovals);
+        Assert.True((await DoTaskAsync(runId, "admin@example.org", new() { ["office_budget"] = "11-000-223", ["office_po"] = "PO-1" })).Result.Ok);
+        await using (var db = Db())
+        {
+            var run = await db.Runs.SingleAsync(r => r.Id == runId);
+            foreach (var id in new[] { "r1", "p1" })
+                db.Attachments.Add(new Attachment { PublicId = id, StoredName = id + ".bin", FileName = id + ".pdf", Size = 10, WorkflowId = run.WorkflowId, OwnerEmail = "t@school.org", CreatedAt = DateTime.UtcNow });
+            await db.SaveChangesAsync();
+        }
+        object File(string id) => new List<object?> { new Dictionary<string, object?> { ["id"] = id } };
+        Assert.True((await DoTaskAsync(runId, "t@school.org", new() { ["actual_total"] = 90m, ["receipts"] = File("r1"), ["pd_report"] = File("p1") })).Result.Ok);
+        return runId;
+    }
+
+    private async Task<ActionResult> ReturnTaskAsync(int runId, string email, string? comment)
+    {
+        await using var db = Db();
+        var task = await db.ApprovalTasks.SingleAsync(t => t.RunId == runId && t.Status == ApprovalStatus.Pending);
+        return await Service(db).ReturnTaskAsync(task.Id, email, email, false, comment, default);
+    }
+
+    [Fact]
+    public async Task Task_SentBack_GoesToTheEarlierTask_ThenComesBack_WithTheChangesShown()
+    {
+        var runId = await TravelToReconcileAsync();
+        Assert.False((await ReturnTaskAsync(runId, "admin@example.org", " ")).Ok);          // a reason is required
+        Assert.False((await ReturnTaskAsync(runId, "t@school.org", "Not yours")).Ok);       // only the business office
+        Assert.True((await ReturnTaskAsync(runId, "admin@example.org", "The hotel receipt is missing")).Ok);
+
+        await using (var db = Db())
+        {
+            var run = await db.Runs.SingleAsync(r => r.Id == runId);
+            Assert.Equal(RunStatus.WaitingTask, run.Status);
+            var task = await db.ApprovalTasks.SingleAsync(t => t.RunId == runId && t.Status == ApprovalStatus.Pending);
+            Assert.Equal("After the trip: actual costs and receipts", task.Title);
+            Assert.StartsWith("Sent back by admin@example.org: The hotel receipt is missing", task.Instructions);
+            Assert.Equal(1, await db.ApprovalTasks.CountAsync(t => t.RunId == runId && t.Status == ApprovalStatus.Returned));
+            Assert.Contains(await db.Notifications.ToListAsync(), n => n.UserEmail == "t@school.org" && n.Body.Contains("The hotel receipt is missing"));
+        }
+        object File(string id) => new List<object?> { new Dictionary<string, object?> { ["id"] = id } };
+        Assert.True((await DoTaskAsync(runId, "t@school.org", new() { ["actual_total"] = 140m, ["receipts"] = File("r1"), ["pd_report"] = File("p1") })).Result.Ok);
+
+        await using var check = Db();
+        var after = await check.Runs.SingleAsync(r => r.Id == runId);
+        Assert.Equal("Business office: reconcile travel costs", (await check.ApprovalTasks.SingleAsync(t => t.RunId == runId && t.Status == ApprovalStatus.Pending)).Title);
+        Assert.Equal("$90.00", PreviousOf(after)["actual_total"]);
+        Assert.Contains(await check.RunEvents.Where(e => e.RunId == runId).ToListAsync(), e => e.Message.Contains("answers updated (adjusted: Actual total cost)"));
+
+        // The reconciliation was sent back before it was ever done, so doing it now is not an "edit".
+        Assert.True((await DoTaskAsync(runId, "admin@example.org", new() { ["reimbursement"] = 140m })).Result.Ok);
+        await using var finished = Db();
+        Assert.False(PreviousOf(await finished.Runs.SingleAsync(r => r.Id == runId)).ContainsKey("reimbursement"));
+    }
+
+    [Fact]
+    public async Task Task_SentBack_WithNoEarlierTask_GoesToTheRequester_AndComesBackToTheTask()
+    {
+        var (runId, values) = await SubmitTravelAsync("Bergen County Technical Schools", input => input["registration"] = 100m);
+        await ApproveInTurnAsync(runId, TechApprovals);
+        Assert.True((await ReturnTaskAsync(runId, "admin@example.org", "Which conference session?")).Ok);
+        await using (var db = Db())
+        {
+            Assert.Equal(RunStatus.ChangesRequested, (await db.Runs.SingleAsync(r => r.Id == runId)).Status);
+            Assert.Contains(await db.Notifications.ToListAsync(), n => n.UserEmail == "t@school.org" && n.Title.StartsWith("Changes needed"));
+        }
+        Assert.True((await ResubmitAsync(runId, new Dictionary<string, object?>(values) { ["reason_a"] = "Session 4B on lab safety" })).Result.Ok);
+        await using var check = Db();
+        Assert.Equal(RunStatus.WaitingTask, (await check.Runs.SingleAsync(r => r.Id == runId)).Status);
+        Assert.Equal("Business office: budget, PO and Board approval", (await check.ApprovalTasks.SingleAsync(t => t.RunId == runId && t.Status == ApprovalStatus.Pending)).Title);
+    }
+
+    private async Task<ActionResult> ForwardAsync(int runId, string email, string to, bool admin = false, bool owner = false, IReadOnlyList<string>? domains = null)
+    {
+        await using var db = Db();
+        var task = await db.ApprovalTasks.SingleAsync(t => t.RunId == runId && t.Status == ApprovalStatus.Pending);
+        return await Service(db).ForwardAsync(task.Id, email, email, admin, owner, to, "Please cover this", domains, default);
+    }
+
+    [Fact]
+    public async Task Forward_HandsTheStepOn_RecordsIt_AndTellsTheNewPerson()
+    {
+        var runId = await SubmitTripAsync("Science");
+        Assert.False((await ForwardAsync(runId, "someone@school.org", "deputy@school.org")).Ok);   // not theirs
+        Assert.False((await ForwardAsync(runId, "principal@example.org", "not an email")).Ok);
+        Assert.False((await ForwardAsync(runId, "principal@example.org", "t@school.org")).Ok);     // the requester
+        Assert.False((await ForwardAsync(runId, "principal@example.org", "x@gmail.com", domains: new[] { "school.org" })).Ok);
+        Assert.True((await ForwardAsync(runId, "principal@example.org", "Deputy@School.org", domains: new[] { "school.org" })).Ok);
+
+        await using (var db = Db())
+        {
+            var task = await db.ApprovalTasks.SingleAsync(t => t.RunId == runId && t.Status == ApprovalStatus.Pending);
+            Assert.Equal(new[] { "deputy@school.org" }, task.AssigneeList.ToArray());
+            Assert.Contains(await db.Notifications.ToListAsync(), n => n.UserEmail == "deputy@school.org" && n.Body.Contains("Please cover this"));
+            Assert.Equal("approval.forwarded", (await db.AuditEntries.SingleAsync()).Action);
+            Assert.Contains(await db.RunEvents.Where(e => e.RunId == runId).ToListAsync(), e => e.Message.Contains("passed from principal@example.org to deputy@school.org"));
+            Assert.Contains("deputy@school.org", (await db.Runs.SingleAsync(r => r.Id == runId)).ContextJson);   // the chain record follows
+        }
+        await DecideAsync(runId, "principal@example.org", expectOk: false);                        // no longer theirs
+        // A workflow owner can pass on a step that is not theirs.
+        Assert.True((await ForwardAsync(runId, "owner@school.org", "head@school.org", owner: true)).Ok);
+        await DecideAsync(runId, "head@school.org");
+    }
+
+    [Fact]
+    public void Guard_FindsCostIncreases_AndTheNamesThatChoseTheRoute()
+    {
+        var def = Json.ParseDefinition(SeedData.Templates.Single(t => t.Name == "Travel").Json);
+        var before = new Dictionary<string, object?> { ["total"] = 100m, ["tolls"] = null, ["miles"] = 5m, ["district"] = "A" };
+        var after = new Dictionary<string, object?> { ["total"] = 100.00m, ["tolls"] = 10m, ["miles"] = 50m, ["district"] = "A" };
+        Assert.Equal(new[] { "tolls" }, ResubmitGuard.Increased(def.Form.Fields, before, after).Select(f => f.Key).ToArray());
+        Assert.DoesNotContain("district", ResubmitGuard.RoutingNames(def.Flow, "central"));   // the step itself asks again anyway
+        var routing = ResubmitGuard.RoutingNames(def.Flow, "business");
+        Assert.Contains("district", routing);
+        Assert.Contains("department", routing);
+        Assert.DoesNotContain("board_decision", routing);                    // only steps on the way to this one count
+        Assert.Contains("board_decision", ResubmitGuard.RoutingNames(def.Flow, "tell"));
+    }
+
+    [Fact]
+    public void ZipNames_NeverReplaceEachOther()
+    {
+        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        Assert.Equal("a.pdf", SchoolFlow.Web.Controllers.FilesController.UniqueName("a.pdf", used));
+        Assert.Equal("A (2).pdf", SchoolFlow.Web.Controllers.FilesController.UniqueName("A.pdf", used));
+        Assert.Equal("a (3).pdf", SchoolFlow.Web.Controllers.FilesController.UniqueName("a.pdf", used));
+    }
 }

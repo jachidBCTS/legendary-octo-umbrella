@@ -871,11 +871,16 @@ async function login(page, email) {
   await page.waitForFunction(() => [...document.querySelectorAll('.sf-field input')].some((i) => i.value === 'Wetlands centre'));
   check(true, 'the edit page is filled with the earlier answers');
   await field('Number of chaperones').locator('input').fill('3');
+  await field('Number of chaperones').locator('.sf-was:not([hidden])').waitFor();
+  check((await field('Number of chaperones').locator('.sf-was').textContent()) === 'Was: 2', 'a changed answer shows what it was while editing');
   await page.screenshot({ path: S + '/shots/34-revise.png', fullPage: true });
   await page.click('main button[type=submit]');
   await page.waitForURL(/Requests\/Detail\/\d+/);
   check((await page.locator('.page-head .pill').textContent()) === 'Awaiting approval', 'resubmitted: awaiting approval again');
-  check((await page.locator('.timeline').textContent()).includes('Resubmitted with changes'), 'the history records the resubmission');
+  check((await page.locator('.timeline').textContent()).includes('Resubmitted with changes by Taylor Teacher (adjusted: Number of chaperones, Students per chaperone)'), 'the history records the resubmission and what changed, including what was worked out from it');
+  const edited = page.locator('.answers dt:has-text("Number of chaperones") .edit-badge');
+  check(await edited.count() === 1 && (await edited.textContent()).includes('was: 2') && (await edited.getAttribute('title')) === 'Previously: 2', 'the changed answer is marked "Edited · was: 2"');
+  check(await page.locator('.edit-badge').count() === 2, 'only the changed answers are marked (' + await page.locator('.edit-badge').count() + ')');
 
   const printPage = await ctx.newPage();
   await printPage.goto(sentBackUrl.replace('/Detail/', '/Print/'));
@@ -1180,9 +1185,38 @@ async function login(page, email) {
   await page.goto(travelUrl);
   await page.waitForSelector('.task-box .sf-form');
   check((await page.locator('.task-box').textContent()).includes('Actual: $690.25'), 'the business office is asked to reconcile, with estimate and actual');
+  // All the request's files in one download.
+  const zip = await page.evaluate(async (url) => { const r = await fetch(url); const b = new Uint8Array(await r.arrayBuffer()); return [r.status, r.headers.get('content-type'), r.headers.get('content-disposition') || '', b[0], b[1]]; },
+    await page.locator('a:has-text("Download all files")').getAttribute('href'));
+  check(zip[0] === 200 && zip[1] === 'application/zip' && zip[2].includes('request-') && zip[3] === 0x50 && zip[4] === 0x4b, 'the request\'s files download as one .zip (' + zip.slice(0, 3).join(' ') + ')');
+  // Not right yet: back to the employee's "after the trip" step.
+  await page.click('.task-box summary:has-text("Send back for changes")');
+  check((await page.locator('.task-box details[open]').textContent()).includes('“After the trip: actual costs and receipts” step'), 'the business office is told where a send-back goes');
+  await page.fill('.task-box details[open] textarea', 'The hotel receipt shows a different total.');
+  await page.click('.task-box details[open] button:has-text("Send back")');
+  await page.waitForSelector('.flash.ok');
+  check((await page.locator('.timeline').textContent()).includes('Sent back to “After the trip: actual costs and receipts”'), 'the reconciliation task can be sent back to the employee');
+  await login(page, 'teacher@example.org');
+  await page.goto(travelUrl);
+  await page.waitForSelector('.task-box .sf-form');
+  check((await page.locator('.task-box').textContent()).includes('Sent back by Avery Admin: The hotel receipt shows a different total.'), 'the employee sees why it came back');
+  await page.waitForFunction(() => [...document.querySelectorAll('.task-box input')].some((i) => i.value === '690.25'));
+  check(true, 'the task is filled with what they entered before');
+  await field('Actual total cost').locator('input').fill('702.10');
+  await field('Actual total cost').locator('.sf-was:not([hidden])').waitFor();
+  check((await field('Actual total cost').locator('.sf-was').textContent()) === 'Was: $690.25', 'the changed amount shows what it was');
+  await page.screenshot({ path: S + '/shots/57-task-sent-back.png', fullPage: true });
+  await page.click('.task-box button[type=submit]');
+  await page.waitForFunction(() => !document.querySelector('.task-box'), null, { timeout: 10000 });
+  check((await page.locator('.answers dt:has-text("Actual total cost") .edit-badge').textContent()).includes('was: $690.25'), 'the request marks the corrected amount');
+  await login(page, 'admin@example.org');
+  await page.goto(travelUrl);
+  await page.waitForSelector('.task-box .sf-form');
+  check((await page.locator('.task-box').textContent()).includes('Actual: $702.10'), 'reconciliation comes back to the business office with the corrected amount');
   await field('Amount to reimburse').locator('input').fill('690.25');
   await page.click('.task-box button[type=submit]');
   await page.waitForFunction(() => document.querySelector('.page-head .pill')?.textContent === 'Completed', null, { timeout: 10000 });
+  check(await page.locator('.answers dt:has-text("Amount to reimburse") .edit-badge').count() === 0, 'a task done for the first time is not marked as edited');
   check(true, 'reconciliation completes the request');
   await page.screenshot({ path: S + '/shots/53-travel-complete.png', fullPage: true });
 
@@ -1336,6 +1370,30 @@ async function login(page, email) {
   await page.click('main form button');
   await page.waitForSelector('.flash.ok');
   check(await page.evaluate(() => !document.documentElement.classList.contains('a11y')), 'accessibility mode switches off again');
+
+  note('13z. passing an approval to someone else, with staff email suggestions');
+  const passUrl = await submitTrip('Botanical garden');
+  await login(page, 'principal@example.org');
+  await page.goto(passUrl);
+  await page.click('.approve-box summary:has-text("Pass to someone else")');
+  const passTo = page.locator('.approve-box details[open] input[type=email]');
+  await passTo.pressSequentially('avery', { delay: 30 });
+  await page.waitForFunction(() => { const i = document.querySelector('.approve-box details[open] input[type=email]'); return i && i.list && i.list.options.length > 0; }, null, { timeout: 5000 });
+  check(await page.evaluate(() => [...document.querySelector('.approve-box details[open] input[type=email]').list.options].some((o) => o.value === 'admin@example.org')), 'typing a name suggests staff email addresses');
+  await page.screenshot({ path: S + '/shots/58-pass-on.png', fullPage: true });
+  await passTo.fill('teacher@example.org');
+  await page.click('.approve-box details[open] button:has-text("Pass it on")');
+  await page.waitForSelector('.flash.bad');
+  check((await page.locator('.flash.bad').textContent()).includes('person who asked'), 'an approval cannot be passed to the requester');
+  await page.click('.approve-box summary:has-text("Pass to someone else")');
+  await page.locator('.approve-box details[open] input[type=email]').fill('admin@example.org');
+  await page.fill('.approve-box details[open] input[name=note]', 'You know this programme better.');
+  await page.click('.approve-box details[open] button:has-text("Pass it on")');
+  await page.waitForSelector('.flash.ok');
+  check((await page.locator('.timeline').textContent()).includes('passed from principal@example.org to admin@example.org'), 'passing an approval on is on the request\'s history');
+  check(await page.locator('.approve-box').count() === 0, 'the person who passed it on no longer has it to decide');
+  const people = await page.evaluate(async () => (await fetch('/api/people?q=a')).json());
+  check(Array.isArray(people) && people.length === 0, 'email suggestions need at least two characters');
 
   note('14. admin + help + mobile');
   await login(page, 'admin@example.org');

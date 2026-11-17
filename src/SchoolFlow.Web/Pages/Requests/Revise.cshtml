@@ -18,6 +18,7 @@
     <div id="form-root" data-run-id="@Model.Run.Id" data-workflow-id="@Model.Run.WorkflowId"></div>
     <script type="application/json" id="form-definition">@Html.Raw(Model.FormJson)</script>
     <script type="application/json" id="form-values">@Html.Raw(Model.ValuesJson)</script>
+    <script type="application/json" id="form-previous">@Html.Raw(Model.PreviousJson)</script>
 </div>
 @section Scripts {
     <script src="~/js/chain-editor.js" asp-append-version="true"></script>
