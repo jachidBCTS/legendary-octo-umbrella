@@ -455,10 +455,13 @@ public sealed class RunService
     /// Sends reminders for approvals that have sat unanswered and escalates the ones that have sat too
     /// long. Ages are counted in school days. Returns (reminders sent, steps escalated).
     /// </summary>
+    /// <summary>How many days before a due date the person is given a heads-up.</summary>
+    public const int DueSoonDays = 3;
+
     public async Task<(int Reminded, int Escalated)> FollowUpApprovalsAsync(DateTime nowUtc, CancellationToken ct)
     {
         const int MaxReminders = 5;
-        var tasks = await _db.ApprovalTasks.Where(t => t.Status == ApprovalStatus.Pending && (t.RemindDays > 0 || t.EscalateDays > 0))
+        var tasks = await _db.ApprovalTasks.Where(t => t.Status == ApprovalStatus.Pending && (t.RemindDays > 0 || t.EscalateDays > 0 || t.DueOn != null))
             .OrderBy(t => t.Id).Take(500).ToListAsync(ct);
         if (tasks.Count == 0) return (0, 0);
         var runIds = tasks.Select(t => t.RunId).Distinct().ToList();
@@ -507,6 +510,40 @@ public sealed class RunService
                     var isTask = task.Kind == TaskKinds.Task;
                     await _notifications.NotifyAsync(owing, isTask ? $"Reminder: task waiting — {label}" : $"Reminder: approval needed — {label}",
                         $"{(string.IsNullOrEmpty(run.SubmitterName) ? "A request" : run.SubmitterName + "’s request")} has been waiting {waitingDays} school day{(waitingDays == 1 ? "" : "s")} for {(isTask ? "you to complete" : "your decision")}: {task.Title}.", link, ct);
+                    reminded++;
+                }
+            }
+
+            // Due dates are calendar days ("within 3 weeks of the trip"), not school days.
+            if (task.DueOn is DateTime dueOn)
+            {
+                var today = Ui.Local(nowUtc).Date;
+                var owing = task.AssigneeList.Concat(task.StandInPairs.Select(p => p.StandIn)).Concat(task.EscalatedList).Distinct().ToList();
+                var what = task.Kind == TaskKinds.Task ? "complete" : "decide";
+                if (today >= dueOn && task.OverdueSentAt is null)
+                {
+                    task.OverdueSentAt = nowUtc;
+                    task.DueSoonSentAt ??= nowUtc;
+                    // The person who owes it, and whoever the step says should know (they are told it is overdue, not asked to act).
+                    await _notifications.NotifyAsync(owing, $"Overdue: {task.Title} — {label}",
+                        $"This was due on {dueOn:dddd, MMMM d, yyyy} and is still waiting for you to {what} it: {task.Title}.", link, ct);
+                    var others = task.DueNotifyList.Except(owing).Where(e => e != "").ToList();
+                    if (others.Count > 0)
+                        await _notifications.NotifyAsync(others, $"Overdue: {task.Title} — {label}",
+                            $"“{task.Title}” was due on {dueOn:dddd, MMMM d, yyyy} and has not been done yet. It is waiting for {string.Join(", ", task.AssigneeList)}.", link, ct);
+                    _db.RunEvents.Add(new RunEventRow
+                    {
+                        RunId = run.Id, At = nowUtc, NodeId = task.NodeId, Kind = "waiting",
+                        Message = $"{task.Title}: overdue (was due {dueOn:MMM d, yyyy}). Reminded {string.Join(", ", owing)}" + (others.Count > 0 ? $" and told {string.Join(", ", others)}." : "."),
+                    });
+                    run.UpdatedAt = nowUtc;
+                    reminded++;
+                }
+                else if (today < dueOn && today >= dueOn.AddDays(-DueSoonDays) && task.DueSoonSentAt is null)
+                {
+                    task.DueSoonSentAt = nowUtc;
+                    await _notifications.NotifyAsync(owing, $"Due {dueOn:MMM d}: {task.Title} — {label}",
+                        $"A reminder that this is due on {dueOn:dddd, MMMM d, yyyy}: {task.Title}.", link, ct);
                     reminded++;
                 }
             }
@@ -759,6 +796,8 @@ public sealed class RunService
                     RemindDays = approval.RemindDays,
                     EscalateDays = approval.EscalateDays,
                     EscalateTo = approval.EscalateTo.Count == 0 ? "" : ApprovalTask.Pack(approval.EscalateTo),
+                    DueOn = approval.DueOn,
+                    DueNotify = approval.DueNotify.Count == 0 ? "" : ApprovalTask.Pack(approval.DueNotify),
                     CreatedAt = DateTime.UtcNow,
                 };
                 // Approvers who are away today have named someone to decide for them.

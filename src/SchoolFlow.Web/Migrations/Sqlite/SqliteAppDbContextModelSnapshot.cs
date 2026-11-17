@@ -118,6 +118,16 @@ namespace SchoolFlow.Web.Migrations.Sqlite
                         .HasMaxLength(320)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("DueNotify")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DueOn")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DueSoonSentAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("EscalateDays")
                         .HasColumnType("INTEGER");
 
@@ -153,6 +163,9 @@ namespace SchoolFlow.Web.Migrations.Sqlite
                     b.Property<string>("NodeId")
                         .IsRequired()
                         .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("OverdueSentAt")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Position")

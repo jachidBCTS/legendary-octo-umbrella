@@ -194,6 +194,10 @@ If the site cannot read the file, `icacls <file> /reset` puts the normal inherit
     - Submit one request of $150 or more as a test and take it all the way through: the four
       approvals, the business office task (budget account, PO, Board decision), the employee's
       "After the trip" task with a receipt attached, and the business office's reconciliation.
+    - The **Field Trip Request** form also arrives as a draft: put people in the *Transportation*
+      team (they book buses for approved trips), then publish it.
+    - A workflow that names a team cannot be published while that team is missing or empty.
+
 13. **Student information**, if any form will use a *Student* field: Admin → Student access. Import
     the roster as a CSV file with the headings Student ID, First Name, Last Name, School, Grade,
     Academy (other columns are ignored), then add the staff who may look students up. Nobody has

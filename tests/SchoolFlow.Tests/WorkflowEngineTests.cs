@@ -271,6 +271,26 @@ public class WorkflowEngineTests
     }
 
     [Fact]
+    public async Task DueDate_IsWorkedOutWhenTheStepIsReached_AndABadOneIsOnlyAWarning()
+    {
+        var flow = PurchaseFlow();
+        var approve = flow.Nodes.Single(n => n.Id == "approve");
+        approve.Config["dueDate"] = "DATEADD('2027-01-04', 10)";
+        approve.Config["dueNotify"] = "office@school.org, {{principal_email}}";   // the approver is not told about their own lateness twice
+        var state = State(900);
+        await new WorkflowEngine(new SimulatedFreshserviceClient()).StartAsync(flow, state);
+        Assert.Equal(new DateTime(2027, 1, 14), state.PendingApproval!.DueOn);
+        Assert.Equal(new[] { "office@school.org" }, state.PendingApproval.DueNotify);
+
+        approve.Config["dueDate"] = "title";                                         // "Lab kits" is not a date
+        state = State(900);
+        await new WorkflowEngine(new SimulatedFreshserviceClient()).StartAsync(flow, state);
+        Assert.Equal(RunStatus.WaitingApproval, state.Status);                        // the request carries on
+        Assert.Null(state.PendingApproval!.DueOn);
+        Assert.Contains(state.NewEvents, e => e.Kind == "warning" && e.Message.Contains("due date could not be worked out"));
+    }
+
+    [Fact]
     public async Task SentBackRequest_ReentersTheApprovalStep()
     {
         var engine = new WorkflowEngine(new SimulatedFreshserviceClient());

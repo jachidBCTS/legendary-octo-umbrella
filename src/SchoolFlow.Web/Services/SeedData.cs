@@ -33,7 +33,8 @@ public static class SeedData
         Add(db, "Technology Purchase Request", "Request hardware or software. Totals are calculated, and larger purchases need approval.", "Purchasing", "indigo", Purchase, publish: true);
         Add(db, "Device Repair Request", "Report a damaged or faulty school device and get a help desk ticket.", "Help Desk", "teal", Repair, publish: true);
         Add(db, "Escalate urgent tickets (example)", "Ticket-triggered example: adds a private note when an urgent ticket arrives. Unpublished — open it in the builder to see how it works.", "Help Desk", "rose", Escalate, publish: false);
-        Add(db, "Field Trip Request", "Plan a trip, choose who signs it off, and reuse last year's request as a starting point.", "Trips", "green", FieldTrip, publish: true);
+        // Its bus booking goes to the Transportation team, which a real site fills in first (Admin → Teams).
+        Add(db, "Field Trip Request", "Plan a trip, choose who signs it off, and reuse last year's request as a starting point.", "Trips", "green", FieldTrip, publish: sampleDepartments);
         // The approvers of the travel form are real people the school must name. With the example
         // people (development) it is published; otherwise it stays a draft until an admin fills them in.
         if (!db.Rates.Any())
@@ -51,7 +52,7 @@ public static class SeedData
         {
             // The people behind the travel form's steps. Real names are the district's to enter (Admin →
             // Teams), so a new site starts with empty teams and the travel form stays a draft until then.
-            foreach (var (name, example) in TravelTeams)
+            foreach (var (name, example) in StarterTeams)
                 db.Teams.Add(new Team { Name = name, Members = sampleDepartments ? ApprovalTask.Pack(new[] { example }) : "", UpdatedAt = DateTime.UtcNow });
         }
         Add(db, "Request for Work Related Travel", "Conference, workshop or meeting travel, with the estimated cost worksheet.", "Travel", "blue",
@@ -59,9 +60,10 @@ public static class SeedData
         db.SaveChanges();
     }
 
-    /// <summary>The teams the travel template names, with the development sign-in's example person for each.</summary>
-    public static readonly (string Name, string Example)[] TravelTeams =
+    /// <summary>The teams the starter forms name, with the development sign-in's example person for each.</summary>
+    public static readonly (string Name, string Example)[] StarterTeams =
     {
+        ("Transportation", "admin@example.org"),
         ("Central Office Administrator (Technical Schools)", "builder@example.org"),
         ("Central Office Administrator (Special Services)", "admin@example.org"),
         ("Business Administrator", "admin@example.org"),
@@ -246,21 +248,29 @@ public static class SeedData
           { "id": "signoff", "type": "approval_chain", "label": "Trip sign-off", "x": 290, "y": 150,
             "config": { "chainSource": "field", "chainField": "approvers", "departmentSource": "field", "departmentField": "department",
               "instructions": "{{submitter.name}} is planning a trip to {{destination}} on {{TEXT(trip_date, 'MMM d, yyyy')}} for {{students}} students with {{chaperones}} chaperones.\nTotal cost: {{TEXT(total_cost, 'C2')}}\n\n{{purpose}}" } },
-          { "id": "ticket", "type": "fs_create_ticket", "label": "Log the trip", "x": 290, "y": 320,
-            "config": { "subject": "Field trip: {{destination}} on {{TEXT(trip_date, 'MMM d')}}",
-              "description": "Organiser: {{submitter.name}} ({{submitter.email}})\nDepartment: {{department.name}}\nDate: {{TEXT(trip_date, 'MMM d, yyyy')}}\nStudents: {{students}}, chaperones: {{chaperones}}\nBus needed: {{IF(bus_needed, 'Yes', 'No')}}\nTotal cost: {{TEXT(total_cost, 'C2')}}\n\n{{purpose}}",
-              "priority": "2", "status": "2", "tags": "field-trip" } },
-          { "id": "tell", "type": "notify", "label": "Tell the organiser", "x": 290, "y": 470,
+          { "id": "needs_bus", "type": "condition", "label": "Bus needed?", "x": 290, "y": 300, "config": { "expression": "bus_needed" } },
+          { "id": "book_bus", "type": "task", "label": "Transportation: book the bus", "x": 30, "y": 440,
+            "config": { "assignees": "[Transportation]",
+              "instructions": "Please book a bus for {{submitter.name}}'s trip to {{destination}} on {{TEXT(trip_date, 'dddd, MMM d, yyyy')}}.\nStudents: {{students}}, chaperones: {{chaperones}}. Department: {{department.name}}.\nQuote given on the request: {{TEXT(bus_cost, 'C2')}}\n\n{{purpose}}" },
+            "fields": [
+              { "key": "bus_company", "label": "Bus company", "type": "text", "required": true },
+              { "key": "pickup_time", "label": "Pick-up time", "type": "time", "required": true },
+              { "key": "bus_confirmation", "label": "Confirmation number", "type": "text" },
+              { "key": "bus_final_cost", "label": "Final cost", "type": "currency", "min": 0, "default": "bus_cost" }
+            ] },
+          { "id": "tell", "type": "notify", "label": "Tell the organiser", "x": 290, "y": 590,
             "config": { "to": "{{submitter.email}}", "subject": "Your trip to {{destination}} is approved",
-              "message": "Final approval was given by {{approval.by}}.\nA help desk ticket (#{{ticket.id}}) has been opened for transport and logistics." } },
-          { "id": "done", "type": "end", "label": "Trip approved", "x": 290, "y": 610 },
-          { "id": "declined", "type": "end", "label": "Trip not approved", "x": 30, "y": 320, "config": { "outcome": "rejected" } }
+              "message": "Final approval was given by {{approval.by}}.\n{{IF(bus_needed, 'Your bus is booked with ' & bus_company & ', picking up at ' & pickup_time & IF(ISBLANK(bus_confirmation), '.', ' (confirmation ' & bus_confirmation & ').'), 'No bus was requested.')}}" } },
+          { "id": "done", "type": "end", "label": "Trip approved", "x": 290, "y": 730 },
+          { "id": "declined", "type": "end", "label": "Trip not approved", "x": 580, "y": 300, "config": { "outcome": "rejected" } }
         ],
         "edges": [
           { "from": "start", "port": "next", "to": "signoff" },
-          { "from": "signoff", "port": "approved", "to": "ticket" },
+          { "from": "signoff", "port": "approved", "to": "needs_bus" },
           { "from": "signoff", "port": "rejected", "to": "declined" },
-          { "from": "ticket", "port": "next", "to": "tell" },
+          { "from": "needs_bus", "port": "true", "to": "book_bus" },
+          { "from": "needs_bus", "port": "false", "to": "tell" },
+          { "from": "book_bus", "port": "next", "to": "tell" },
           { "from": "tell", "port": "next", "to": "done" }
         ]
       }
@@ -404,8 +414,9 @@ public static class SeedData
             "config": { "to": "{{submitter.email}}", "subject": "Travel approved: {{event_title}}",
               "message": "All approvals have been received for “{{event_title}}”. Travel arrangements, including registrations, may now be made.\nPO #: {{office_po}}\n\nAfter the trip, open this request and complete “After the trip”: your actual costs, original itemized receipts and your Professional Development Report. This must be done within 3 weeks of the travel to be eligible for reimbursement." } },
           { "id": "after_trip", "type": "task", "label": "After the trip: actual costs and receipts", "x": 290, "y": 1190,
-            "config": { "assignees": "{{submitter.email}}", "remindDays": "0",
-              "instructions": "Complete this within 3 weeks of returning from “{{event_title}}” ({{TEXT(to_date, 'MMM d, yyyy')}}).\nYour estimate was {{TEXT(total, 'C2')}}. All expenditures must be documented with original itemized receipts to be reimbursed." },
+            "config": { "assignees": "{{submitter.email}}", "remindDays": "0", "dueDate": "DATEADD(to_date, 21)",
+              "dueNotify": "{{IF(district == 'Bergen County Technical Schools', '[Business Office (Technical Schools)]', '[Business Office (Special Services)]')}}",
+              "instructions": "Complete this by {{TEXT(DATEADD(to_date, 21), 'dddd, MMM d, yyyy')}}, 3 weeks after returning from “{{event_title}}” ({{TEXT(to_date, 'MMM d, yyyy')}}). If it is not done by then, you and the business office are reminded.\nYour estimate was {{TEXT(total, 'C2')}}. All expenditures must be documented with original itemized receipts to be reimbursed." },
             "fields": [
               { "key": "actual_total", "label": "Actual total cost", "type": "currency", "required": true, "min": 0 },
               { "key": "receipts", "label": "Original itemized receipts", "type": "attachments", "maxFiles": 20, "requiredWhen": "actual_total > 0" },

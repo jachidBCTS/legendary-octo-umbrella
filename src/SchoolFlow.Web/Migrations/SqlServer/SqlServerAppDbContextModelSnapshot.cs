@@ -127,6 +127,16 @@ namespace SchoolFlow.Web.Migrations.SqlServer
                         .HasMaxLength(320)
                         .HasColumnType("nvarchar(320)");
 
+                    b.Property<string>("DueNotify")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("DueOn")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DueSoonSentAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<int>("EscalateDays")
                         .HasColumnType("int");
 
@@ -163,6 +173,9 @@ namespace SchoolFlow.Web.Migrations.SqlServer
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("OverdueSentAt")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("Position")
                         .IsRequired()

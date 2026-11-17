@@ -297,6 +297,7 @@ public static class DefinitionValidator
                     Text("approvers", "approvers", true);
                     Text("instructions", "instructions", false);
                     CheckFollowUp(n, name, Text, Error);
+                    Formula_("dueDate", "due date", false);
                     if (!flow.Edges.Any(e => e.From == n.Id && e.Port == "approved"))
                         Warn(n.Id, $"“{name}”: the Approved branch is not connected, so nothing happens after approval.");
                     break;
@@ -304,12 +305,14 @@ public static class DefinitionValidator
                     Text("assignees", "“Who does this”", true);
                     Text("instructions", "instructions", false);
                     CheckFollowUp(n, name, Text, Error);
+                    Formula_("dueDate", "due date", false);
                     if (!flow.Edges.Any(e => e.From == n.Id)) Warn(n.Id, $"“{name}”: nothing is connected after this task.");
                     break;
                 case NodeTypes.ApprovalChain:
                 {
                     Text("instructions", "instructions", false);
                     CheckFollowUp(n, name, Text, Error);
+                    Formula_("dueDate", "due date", false);
                     var chainSource = n.Get("chainSource");
                     var departmentSource = n.Get("departmentSource");
                     FieldDef? FieldOf(string key) => def.Form.Fields.FirstOrDefault(f => string.Equals(f.Key, key.Trim(), StringComparison.OrdinalIgnoreCase));
@@ -414,6 +417,7 @@ public static class DefinitionValidator
     private static void CheckFollowUp(NodeDef n, string name, Action<string, string, bool> text, Action<string?, string> error)
     {
         text("escalateTo", "escalate-to", false);
+        text("dueNotify", "“if overdue, also tell”", false);
         foreach (var (key, what) in new[] { ("remindDays", "Remind after"), ("escalateDays", "Escalate after") })
         {
             var value = n.Get(key).Trim();

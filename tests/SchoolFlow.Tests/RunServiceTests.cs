@@ -320,7 +320,7 @@ public sealed class RunServiceTests : IDisposable
         await using (var check = Db())
         {
             Assert.Equal(RunStatus.Completed, (await check.Runs.SingleAsync(r => r.Id == runId)).Status);
-            Assert.Single(_freshservice.Calls, c => c.Action == "create_ticket");
+            Assert.Empty(_freshservice.Calls);                                 // field trips no longer go to the help desk
             var mine = await check.Notifications.Where(n => n.UserEmail == "t@school.org").OrderBy(n => n.Id).Select(n => n.Title).ToListAsync();
             Assert.Equal(new[] { "Your trip to Science Museum is approved", $"Completed: Field Trip Request #{runId}" }, mine);
             Assert.Equal(3, await check.ApprovalTasks.CountAsync(t => t.Status == ApprovalStatus.Approved));
@@ -937,6 +937,91 @@ public sealed class RunServiceTests : IDisposable
         Assert.Contains("no team called “Nobody”", Assert.Throws<SchoolFlow.Core.Expressions.ExpressionException>(() => engine.ResolvePeople("[Nobody]", "Step")).Message);
     }
 
+    [Fact]
+    public async Task FieldTrip_WithABus_IsBookedByTheTransportationTeam_InTheApp()
+    {
+        int runId;
+        await using (var db = Db())
+        {
+            var workflow = await db.Workflows.SingleAsync(w => w.Name == "Field Trip Request");
+            var dept = await db.Departments.SingleAsync(d => d.Name == "Science");
+            var input = TripInput("Science", dept.Id, null);
+            input["bus_needed"] = true;
+            input["bus_cost"] = 450m;
+            var (form, id) = await Service(db).SubmitFormAsync(workflow, input, "t@school.org", "T Teacher", default);
+            Assert.True(form.IsValid);
+            runId = id!.Value;
+        }
+        await DecideAsync(runId, "principal@example.org");
+        await using (var db = Db())
+        {
+            Assert.Equal(RunStatus.WaitingTask, (await db.Runs.SingleAsync(r => r.Id == runId)).Status);
+            var task = await db.ApprovalTasks.SingleAsync(t => t.RunId == runId && t.Status == ApprovalStatus.Pending);
+            Assert.Equal(("Transportation: book the bus", TaskKinds.Task), (task.Title, task.Kind));
+            Assert.Equal(new[] { "admin@example.org" }, task.AssigneeList.ToArray());
+            Assert.Contains("Students: 40, chaperones: 4", task.Instructions);
+            var opened = await Service(db).EvaluateTaskAsync(task.Id, new Dictionary<string, object?>(), "admin@example.org", false, applyDefaults: true, default);
+            Assert.Equal(450m, opened!.Values["bus_final_cost"]);   // starts from the quote on the request
+        }
+        Assert.False((await DoTaskAsync(runId, "admin@example.org", new() { ["bus_company"] = "Coach USA" })).Result.Ok);   // pick-up time is required
+        Assert.True((await DoTaskAsync(runId, "admin@example.org", new() { ["bus_company"] = "Coach USA", ["pickup_time"] = "7:45 AM", ["bus_confirmation"] = "C-118" })).Result.Ok);
+
+        await using var done = Db();
+        Assert.Equal(RunStatus.Completed, (await done.Runs.SingleAsync(r => r.Id == runId)).Status);
+        var told = await done.Notifications.SingleAsync(n => n.UserEmail == "t@school.org" && n.Title.StartsWith("Your trip to"));
+        Assert.Contains("Your bus is booked with Coach USA, picking up at 07:45 (confirmation C-118).", told.Body);
+        Assert.Empty(_freshservice.Calls);
+    }
+
+    [Fact]
+    public async Task AfterTheTrip_IsDueThreeWeeksAfterReturning_AndTheBusinessOfficeIsToldIfItIsLate()
+    {
+        var (runId, _) = await SubmitTravelAsync("Bergen County Technical Schools", input => input["registration"] = 40m);   // under $150: no Board
+        await ApproveInTurnAsync(runId, TechApprovals);
+        Assert.True((await DoTaskAsync(runId, "admin@example.org", new() { ["office_budget"] = "11-000-223" })).Result.Ok);
+        await using (var db = Db())
+        {
+            var task = await db.ApprovalTasks.SingleAsync(t => t.RunId == runId && t.Status == ApprovalStatus.Pending);
+            Assert.Equal("After the trip: actual costs and receipts", task.Title);
+            Assert.Equal(new DateTime(2027, 4, 2), task.DueOn);                // returned Mar 12 + 21 days
+            Assert.Equal(new[] { "admin@example.org" }, task.DueNotifyList.ToArray());   // that district's business office
+            Assert.Contains("Complete this by Friday, Apr 2, 2027", task.Instructions);
+        }
+        async Task<int> At(int month, int day) { await using var db = Db(); return (await Service(db).FollowUpApprovalsAsync(new DateTime(2027, month, day, 15, 0, 0, DateTimeKind.Utc), default)).Reminded; }
+        async Task<List<Notification>> Sent() { await using var db = Db(); return await db.Notifications.Where(n => n.Title.Contains("After the trip")).OrderBy(n => n.Id).ToListAsync(); }
+
+        Assert.Equal(0, await At(3, 25));                                      // well before: nothing
+        Assert.Equal(1, await At(3, 30));                                      // 3 days before: a heads-up to the employee only
+        Assert.Equal(0, await At(3, 31));                                      // once
+        var soon = Assert.Single(await Sent());
+        Assert.Equal(("t@school.org", "Due Apr 2: After the trip: actual costs and receipts"), (soon.UserEmail, soon.Title.Split(" — ")[0]));
+
+        Assert.Equal(1, await At(4, 2));                                       // the due date: overdue
+        var overdue = (await Sent()).Skip(1).ToList();
+        Assert.Equal(new[] { "t@school.org", "admin@example.org" }, overdue.Select(n => n.UserEmail).ToArray());
+        Assert.All(overdue, n => Assert.StartsWith("Overdue:", n.Title));
+        Assert.Contains("waiting for t@school.org", overdue[1].Body);
+        Assert.Equal(0, await At(4, 9));                                       // told once, not every hour
+        await using var check = Db();
+        Assert.Contains(await check.RunEvents.Where(e => e.RunId == runId).ToListAsync(), e => e.Message.Contains("overdue (was due Apr 2, 2027)"));
+    }
+
+    [Fact]
+    public async Task Publishing_IsRefused_WhileATeamAStepNamesIsMissingOrEmpty()
+    {
+        await using var db = Db();
+        (await db.Teams.SingleAsync(t => t.Name == "Superintendent")).Members = "";
+        await db.SaveChangesAsync();
+        var def = Json.ParseDefinition(SeedData.Templates.Single(t => t.Name == "Travel").Json);
+        def.Flow.Nodes.Single(n => n.Id == "business").Config["approvers"] = "[Business Administrator], [Nobody Here]";
+        var issues = await TeamCheck.IssuesAsync(db, def);
+        Assert.All(issues, i => Assert.True(i.IsError));
+        Assert.Equal(new[] { "business", "superintendent" }, issues.Select(i => i.Target).OrderBy(t => t).ToArray());
+        Assert.Contains(issues, i => i.Message.Contains("no team called “Nobody Here”"));
+        Assert.Contains(issues, i => i.Message.Contains("the team “Superintendent” has nobody in it yet"));
+        Assert.Empty(await TeamCheck.IssuesAsync(db, Json.ParseDefinition(SeedData.Templates.Single(t => t.Name == "Purchase").Json)));   // names no team
+    }
+
     // ---- student information ---------------------------------------------------------------
 
     private async Task<Workflow> StudentFormAsync()
@@ -1089,7 +1174,8 @@ public sealed class RunServiceTests : IDisposable
             Assert.Null(travel.PublishedJson);                        // published by an admin once the teams have people
             Assert.Equal(5, travel.Id);                               // after the four existing starters
             Assert.Empty(DefinitionValidator.Validate(Json.ParseDefinition(travel.DraftJson)).Where(i => i.IsError));
-            Assert.Equal(6, db.Teams.Count());
+            Assert.Equal(7, db.Teams.Count());
+            Assert.Null(db.Workflows.Single(w => w.Name == "Field Trip Request").PublishedJson);   // waits for its Transportation team
             Assert.All(db.Teams.ToList(), t => Assert.Equal("", t.Members));
             Assert.Equal(4, db.Rates.Count());
             Assert.All(db.Rates.ToList(), r => Assert.Equal(0m, r.Value));
@@ -1097,6 +1183,7 @@ public sealed class RunServiceTests : IDisposable
 
         var json = SeedData.Templates.Single(t => t.Name == "Travel").Json;
         Assert.False(Json.ParseDefinition(json).UsesHelpDesk());                                   // stays in house
+        Assert.False(Json.ParseDefinition(SeedData.Templates.Single(t => t.Name == "FieldTrip").Json).UsesHelpDesk());
         Assert.True(Json.ParseDefinition(SeedData.Templates.Single(t => t.Name == "Purchase").Json).UsesHelpDesk());   // technology requests go to the help desk
 
         var def = Json.ParseDefinition(json);

@@ -1097,6 +1097,7 @@ async function login(page, email) {
   await page.goto(travelUrl);
   await page.waitForSelector('.task-box .sf-form');
   check((await page.locator('.task-box h2').textContent()).includes('After the trip'), 'the employee gets the after-the-trip task on the same request');
+  check((await page.locator('.task-box .pill').textContent()).includes('Due Friday, Apr 2, 2027'), 'the task shows its due date: 3 weeks after the return date');
   fs.writeFileSync(S + '/receipt.txt', 'Hotel receipt: $378.00\n');
   fs.writeFileSync(S + '/pd-report.txt', 'Professional development report\n');
   await field('Actual total cost').locator('input').fill('690.25');
@@ -1122,7 +1123,7 @@ async function login(page, email) {
   await page.screenshot({ path: S + '/shots/53-travel-complete.png', fullPage: true });
 
   await page.goto(base + '/Admin/Teams');
-  check(await page.locator('main section.panel h2').count() === 7 && (await page.locator('body').textContent()).includes('used by Request for Work Related Travel'), 'admins manage the six travel teams in one place');
+  check(await page.locator('main section.panel h2').count() === 8 && (await page.locator('body').textContent()).includes('used by Request for Work Related Travel'), 'admins manage the starter teams in one place');
   const superTeam = page.locator('section.panel:has(h2:has-text("Superintendent"))');
   await superTeam.locator('textarea').fill('not-an-email');
   await superTeam.locator('button:has-text("Save")').click();
@@ -1148,6 +1149,44 @@ async function login(page, email) {
     catch (e) { return e.message; }
   }, builderId);
   check(refused.includes('Only an administrator'), 'the server refuses help desk steps from a non-admin (' + refused.slice(0, 60) + ')');
+
+  note('13d-3. field trip with a bus: booked by the Transportation team, no help desk');
+  await login(page, 'teacher@example.org');
+  await page.goto(base + '/Start/4');
+  await page.waitForSelector('.sf-form');
+  await field('Where are you going?').locator('input').fill('Museum of Natural History');
+  await page.waitForFunction(() => document.querySelectorAll('.sf-field select option').length > 3);
+  await field('Department').locator('select').selectOption({ label: 'Science' });
+  await field('Date of trip').locator('input').fill(new Date(Date.now() + 60 * 864e5).toISOString().slice(0, 10));
+  await field('Number of students').locator('input').fill('30');
+  await field('Number of chaperones').locator('input').fill('3');
+  await page.locator('.sf-check:has-text("We need a bus") input').check();
+  await field('Bus quote').waitFor({ state: 'visible' });
+  await field('Bus quote').locator('input').fill('520');
+  await field('How does this trip').locator('textarea').fill('Evolution unit');
+  await page.click('button[type=submit]');
+  await page.waitForURL(/Requests\/Detail\/\d+/);
+  const busTrip = page.url();
+  await login(page, 'principal@example.org');
+  await page.goto(busTrip);
+  await page.click('button[name=decision][value=approve]');
+  await page.waitForSelector('.flash.ok');
+  check((await page.locator('.page-head .pill').textContent()) === 'Waiting on a task', 'an approved trip with a bus waits on Transportation');
+  await login(page, 'admin@example.org');
+  await page.goto(busTrip);
+  await page.waitForSelector('.task-box .sf-form');
+  check((await page.locator('.task-box').textContent()).includes('Students: 30, chaperones: 3'), 'the Transportation task has the trip details');
+  check((await field('Final cost').locator('input').inputValue()) === '520', 'the final cost starts from the quote');
+  await field('Bus company').locator('input').fill('Coach USA');
+  await field('Pick-up time').locator('input').fill('07:45');
+  await field('Confirmation number').locator('input').fill('C-118');
+  await page.screenshot({ path: S + '/shots/55-bus-task.png', fullPage: true });
+  await page.click('.task-box button[type=submit]');
+  await page.waitForFunction(() => document.querySelector('.page-head .pill')?.textContent === 'Completed', null, { timeout: 10000 });
+  check(!(await page.locator('.timeline').textContent()).includes('Freshservice'), 'no help desk ticket is created for a field trip');
+  await login(page, 'teacher@example.org');
+  await page.goto(base + '/Notifications');
+  check((await page.locator('body').textContent()).includes('Your bus is booked with Coach USA, picking up at 07:45 (confirmation C-118).'), 'the organiser is told the bus details');
 
   note('13e. student access, roster, student field, accessibility mode');
   await login(page, 'admin@example.org');

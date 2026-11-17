@@ -554,7 +554,9 @@ public sealed class BuilderController : ControllerBase
         var error = Apply(w, request, User.Email(), out var def) ?? HelpDeskRule(def!) ?? await ApplyAccessAsync(w, request);
         if (error is not null) return BadRequest(new { error });
         await _db.SaveChangesAsync(ct);
-        return Ok(new { ok = true, hasUnpublishedChanges = w.HasUnpublishedChanges, issues = IssueShape(DefinitionValidator.Validate(def!)) });
+        var saved = DefinitionValidator.Validate(def!);
+        saved.AddRange(await TeamCheck.IssuesAsync(_db, def!, ct));
+        return Ok(new { ok = true, hasUnpublishedChanges = w.HasUnpublishedChanges, issues = IssueShape(saved) });
     }
 
     [HttpPost("{id:int}/publish")]
@@ -566,6 +568,7 @@ public sealed class BuilderController : ControllerBase
         if (error is not null) return BadRequest(new { error });
 
         var issues = DefinitionValidator.Validate(def!);
+        issues.AddRange(await TeamCheck.IssuesAsync(_db, def!, ct));
         if (issues.Any(i => i.IsError))
         {
             // Keep the draft (so no work is lost) but do not publish something broken.

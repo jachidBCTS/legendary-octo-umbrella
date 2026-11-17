@@ -63,6 +63,11 @@
 {
     <section class="panel approve-box task-box">
         <h2><partial name="_Icons" model='"check"' /> Your task: @task.Title</h2>
+        @if (task.DueOn is DateTime due)
+        {
+            var late = due < DateTime.Now.Date;
+            <p><span class="pill @(late ? "bad" : "warn")">@(late ? "Overdue — was due" : "Due") @due.ToString("dddd, MMM d, yyyy")</span></p>
+        }
         @if (task.Instructions.Length > 0) { <p class="pre">@task.Instructions</p> }
         @if (task.StandsInFor(User.Email()) is { } coveringFor) { <p class="muted">You are doing this in place of @coveringFor, who is away.</p> }
         else if (task.IsEscalatedTo(User.Email())) { <p class="muted">This was escalated to you because it had not been done by @string.Join(", ", task.AssigneeList).</p> }

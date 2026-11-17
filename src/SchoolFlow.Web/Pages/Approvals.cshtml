@@ -16,7 +16,9 @@
     <section class="panel approve-box">
         <div class="row-between">
             <h2>@item.Task.Title @if (item.Task.Position.Length > 0) { <span class="pill info">@item.Task.Position</span> }</h2>
-            <span class="muted small">@Ui.When(item.Task.CreatedAt)</span>
+            <span class="muted small">
+                @if (item.Task.DueOn is DateTime due) { <span class="pill @(due < DateTime.Now.Date ? "bad" : "warn")">@(due < DateTime.Now.Date ? "Overdue" : "Due " + due.ToString("MMM d"))</span> }
+                @Ui.When(item.Task.CreatedAt)</span>
         </div>
         <p class="muted">@item.Run.WorkflowName #@item.Run.Id · from @item.Run.SubmitterName</p>
         @if (item.Task.Instructions.Length > 0) { <p class="pre">@item.Task.Instructions</p> }

@@ -38,6 +38,10 @@ public sealed class PendingApproval
     /// <summary>After this many school days unanswered, also let <see cref="EscalateTo"/> decide; 0 for never.</summary>
     public int EscalateDays { get; set; }
     public List<string> EscalateTo { get; set; } = new();
+    /// <summary>The day this should be done by (calendar date), if the step sets one.</summary>
+    public DateTime? DueOn { get; set; }
+    /// <summary>Who else is told if it is not done by <see cref="DueOn"/>.</summary>
+    public List<string> DueNotify { get; set; } = new();
 }
 
 /// <summary>A message the engine wants delivered (in the app and, where possible, by email).</summary>
@@ -703,6 +707,25 @@ public sealed class WorkflowEngine
         // People already asked are left out: escalating to someone who is ignoring it helps nobody.
         approval.EscalateTo = ResolvePeople(Template.Render(node.Get("escalateTo"), NewScope(state)), Name(node)).Except(approval.Assignees).ToList();
         if (approval.EscalateTo.Count == 0) approval.EscalateDays = 0;
+
+        // A due date is a reminder, not a rule: a formula that cannot be worked out is noted and skipped.
+        var dueFormula = node.Get("dueDate").Trim();
+        if (dueFormula.Length > 0)
+        {
+            try
+            {
+                var due = Formula.Evaluate(dueFormula, NewScope(state));
+                if (Values.IsBlank(due)) Log(state, node.Id, "info", $"{Name(node)}: no due date (the due-date formula gave nothing).");
+                else if (Values.TryToDate(due, out var date)) approval.DueOn = date.Date;
+                else Log(state, node.Id, "warning", $"{Name(node)}: the due date could not be worked out ('{Values.Describe(due)}' is not a date), so none was set.");
+            }
+            catch (ExpressionException ex)
+            {
+                Log(state, node.Id, "warning", $"{Name(node)}: the due date could not be worked out ({ex.Message}), so none was set.");
+            }
+        }
+        if (approval.DueOn is not null)
+            approval.DueNotify = ResolvePeople(Template.Render(node.Get("dueNotify"), NewScope(state)), Name(node)).Except(approval.Assignees).ToList();
     }
 
     /// <summary>

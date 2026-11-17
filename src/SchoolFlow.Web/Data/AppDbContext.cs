@@ -122,6 +122,15 @@ public class ApprovalTask
     public DateTime? LastReminderAt { get; set; }
     public int ReminderCount { get; set; }
     public DateTime? EscalatedAt { get; set; }
+    /// <summary>The day this should be done by (a calendar date, no time), if the step set one.</summary>
+    public DateTime? DueOn { get; set; }
+    /// <summary>Who else is told if it is not done by <see cref="DueOn"/>, packed like <see cref="Assignees"/>.</summary>
+    public string DueNotify { get; set; } = "";
+    /// <summary>When the "due soon" heads-up and the "overdue" notice were sent (each is sent once).</summary>
+    public DateTime? DueSoonSentAt { get; set; }
+    public DateTime? OverdueSentAt { get; set; }
+
+    public IEnumerable<string> DueNotifyList => DueNotify.Split(';', StringSplitOptions.RemoveEmptyEntries);
 
     public IEnumerable<string> EscalatedList => Escalated.Split(';', StringSplitOptions.RemoveEmptyEntries);
     public IEnumerable<string> EscalateToList => EscalateTo.Split(';', StringSplitOptions.RemoveEmptyEntries);

@@ -133,18 +133,31 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   `WorkflowEngine.ResumeWithTaskAsync` copies **only the step's own field keys** into the context
   (keys must be unique across the form and all tasks; `task` is reserved). Files uploaded in a task
   go through `/api/attachments` with `taskId`. Browser: `task.js` mounts the same `form-runtime.js`.
+- **Due dates**: any approval/task/chain step may set `dueDate` (a formula giving a date, worked
+  out when the step is reached; a bad result is a timeline warning, never a failed run) and
+  `dueNotify` (people/teams told if it is late). Stored on `ApprovalTask.DueOn/DueNotify`.
+  `FollowUpApprovalsAsync` sends one "due soon" heads-up `DueSoonDays` (3) calendar days before to
+  whoever owes it, and one "overdue" notice on the day to them and to `DueNotify`. Calendar days,
+  not school days (the owner's rule is "within 3 weeks of the travel").
 - **Teams** (`Teams` table, Admin → Teams): steps name a team as `[Team name]` in any "who"
   setting (approvers, task assignees, notify to, escalate to); `WorkflowEngine.ResolvePeople`
   expands it when the step is reached, so waiting items keep the people they were sent to. A
   missing or empty team fails the run with a message that says where to fix it (retry afterwards).
+  To prevent that, `TeamCheck.IssuesAsync` adds an error for every `[Team]` that is missing or
+  empty when a workflow is saved or published, so it cannot be published until the team has people.
+  Starter teams: `SeedData.StarterTeams` (Transportation + the six travel teams).
+- **Field Trip template** (workflow 4): no help desk (owner, Nov 17). After the approval chain, if
+  `bus_needed`, a task for `[Transportation]` (bus company, pick-up time, confirmation, final cost
+  defaulting to the quote); then the organiser is told. Seeds as a draft on a real site.
 - **Travel template** (`SeedData.Travel`, workflow 5): the owner's paper "Request for Work Related
   Travel" form, the first of the "templates needing a specific interface". No Freshservice.
   Route: department head (approval chain) → central office administrator (team chosen by district)
   → Business Administrator → Superintendent → business office task (budget account, PO, and for
   $150 or more the Board's decision and date; team chosen by district) → employee told → employee's
-  "After the trip" task (actual cost, receipts, PD report; no reminders) → business office
+  "After the trip" task (actual cost, receipts, PD report; no recurring reminders, due 21 days after
+  `to_date`, the district's business office told if late) → business office
   reconciles → done. Board "Not approved" ends it as rejected. On a real site the six teams
-  (`SeedData.TravelTeams`) are empty and the rates are 0, so it seeds as an unpublished draft; in
+  (`SeedData.StarterTeams`) are empty and the rates are 0, so it seeds as an unpublished draft; in
   Development they hold the example people. Defaults (today, name, "1 room") are applied when the
   form opens, not on submit.
 - **Rates** (`Rates` table, Admin → Rates): admin-kept amounts exposed to *form* formulas as the

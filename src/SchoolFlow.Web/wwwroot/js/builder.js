@@ -1216,14 +1216,6 @@
         h('p', { class: 'b-help' }, 'For a custom status, enter its number. Freshservice shows it in Admin → Field Manager → Ticket Fields → Status, or in ticket.status of a webhook event.'));
     };
     // Reminder and escalation settings shared by the two approval steps.
-    const followUp = () => [
-      h('h4', { class: 'b-section' }, 'If nobody decides'),
-      h('div', { class: 'b-pair' },
-        row('Remind every (school days)', textInput(c.remindDays, set('remindDays'), { inputmode: 'numeric', placeholder: '2' }), '0 for no reminders. Up to 5 are sent.'),
-        row('Escalate after (school days)', textInput(c.escalateDays, set('escalateDays'), { inputmode: 'numeric', placeholder: 'never' }))),
-      row('Escalate to', tpl('escalateTo', 1, 'e.g. principal@school.org'), 'After that long with no decision, these people can also decide the step. Leave both blank for no escalation.'),
-    ];
-    /** A "who" setting: emails, {{formulas}}, or a team picked from the list (written as [Team name]). */
     const people = (key, placeholder) => {
       const input = tpl(key, 1, placeholder);
       if (!state.teams.length) return input;
@@ -1236,6 +1228,18 @@
       pick.setAttribute('aria-label', 'Add a team');
       return h('div', { class: 'b-people' }, input, pick);
     };
+    const followUp = () => [
+      h('h4', { class: 'b-section' }, 'If nobody decides'),
+      h('div', { class: 'b-pair' },
+        row('Remind every (school days)', textInput(c.remindDays, set('remindDays'), { inputmode: 'numeric', placeholder: '2' }), '0 for no reminders. Up to 5 are sent.'),
+        row('Escalate after (school days)', textInput(c.escalateDays, set('escalateDays'), { inputmode: 'numeric', placeholder: 'never' }))),
+      row('Escalate to', tpl('escalateTo', 1, 'e.g. principal@school.org'), 'After that long with no decision, these people can also decide the step. Leave both blank for no escalation.'),
+      h('h4', { class: 'b-section' }, 'Due date'),
+      row('Due by (formula giving a date)', fx('dueDate', "e.g. DATEADD(to_date, 21) — 3 weeks after the return date"),
+        'Optional. Worked out when the step is reached. The person gets a heads-up 3 days before, and an overdue notice on the day if it is still not done.'),
+      row('If overdue, also tell', people('dueNotify', 'e.g. a team or office@school.org'), 'They are told once, on the due date. Leave blank to remind only the person who owes it.'),
+    ];
+    /** A "who" setting: emails, {{formulas}}, or a team picked from the list (written as [Team name]). */
     const WHO_HELP = 'Emails separated by commas, or a team from Admin → Teams (written as [Team name]). Any one of them can act.';
     const ticketRow = () => row('Which ticket', tpl('ticketId', 1, '{{ticket.id}}'), 'Leave blank to use the ticket this request created or was started by.');
 
