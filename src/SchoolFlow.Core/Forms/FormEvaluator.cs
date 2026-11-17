@@ -47,7 +47,8 @@ public static class FormEvaluator
     public static FormResult Evaluate(FormDefinition form, IDictionary<string, object?> input,
         IDictionary<string, object?>? ambient = null, bool applyDefaults = false, Func<DateTime>? now = null,
         IReadOnlyDictionary<long, string>? departments = null, IReadOnlyDictionary<long, string>? locations = null,
-        IReadOnlyDictionary<string, AttachmentInfo>? attachments = null, IReadOnlySet<DateTime>? closedDays = null)
+        IReadOnlyDictionary<string, AttachmentInfo>? attachments = null, IReadOnlySet<DateTime>? closedDays = null,
+        StudentDirectory? students = null)
     {
         var result = new FormResult();
         var submitterEmail = ambient is not null && ambient.TryGetValue("submitter", out var who) && who is Dictionary<string, object?> person
@@ -98,6 +99,7 @@ public static class FormEvaluator
                         FieldTypes.Department => NormalizeListed(raw, departments, "department", state.Errors),
                         FieldTypes.Location => NormalizeListed(raw, locations, "location", state.Errors),
                         FieldTypes.Attachments => NormalizeAttachments(field, raw, attachments, state.Errors),
+                        FieldTypes.Student => NormalizeStudent(raw, students, state.Errors),
                         FieldTypes.ApprovalChain => Workflows.ChainValue.Normalize(raw, submitterEmail.Length > 0 ? submitterEmail : null, state.Errors),
                         _ => NormalizeScalar(field.Type, field.Options, raw, state.Errors),
                     };
@@ -359,6 +361,47 @@ public static class FormEvaluator
         if (missing) errors.Add("One of the files could not be found. Remove it and upload it again.");
         if (files.Count > limit) errors.Add($"No more than {limit} file{(limit == 1 ? "" : "s")} can be added here.");
         return files.Take(AbsoluteMaxFiles).ToList();
+    }
+
+    /// <summary>The ID a student answer refers to, or "" — used by the server to look the student up before evaluating.</summary>
+    public static string StudentIdOf(object? raw) =>
+        Values.Normalize(raw) is Dictionary<string, object?> record ? Values.ToText(Member(record, "id")).Trim() : "";
+
+    /// <summary>
+    /// A student picked from the roster: stored as { id, name, first, last, school, grade, academy }.
+    /// Everything but the ID comes from the server's roster, and only for people allowed to use it.
+    /// </summary>
+    private static object? NormalizeStudent(object? raw, StudentDirectory? students, List<string> errors)
+    {
+        var id = StudentIdOf(raw);
+        if (id.Length == 0) return null;
+        StudentInfo info;
+        if (students is null)
+        {
+            // No roster to check against (the builder's preview, tests): keep what was given.
+            var given = (Dictionary<string, object?>)Values.Normalize(raw)!;
+            string Part(string key) => Truncate(Values.ToText(Member(given, key)).Trim(), 200);
+            info = new StudentInfo(Truncate(id, 40), Part("first"), Part("last"), Part("school"), Part("grade"), Part("academy"));
+        }
+        else if (!students.Allowed)
+        {
+            errors.Add("You do not have access to student information. Ask an administrator.");
+            return null;
+        }
+        else if (!students.Known.TryGetValue(id, out info!))
+        {
+            errors.Add("That student was not found. Search again.");
+            return null;
+        }
+        var clean = Values.NewDict();
+        clean["id"] = info.Id;
+        clean["name"] = info.Name;
+        clean["first"] = info.FirstName;
+        clean["last"] = info.LastName;
+        clean["school"] = info.School;
+        clean["grade"] = info.Grade;
+        clean["academy"] = info.Academy;
+        return clean;
     }
 
     /// <summary>A choice from a list the admins maintain (departments, locations): stored as { id, name }.</summary>

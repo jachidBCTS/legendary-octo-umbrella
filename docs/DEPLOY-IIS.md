@@ -189,9 +189,19 @@ If the site cannot read the file, `icacls <file> /reset` puts the normal inherit
     - Workflows → *Request for Work Related Travel* → **Flow**: click each step the checker lists
       (the two Central Office Administrators, the Business Administrator, the Superintendent, and
       the two business-office notifications) and enter the email address. Then **Publish**.
+    - Optional: to keep these tickets in your own Freshservice status (for example *Travel Pending*),
+      open the *Open the business office ticket* step, choose *A status you added in Freshservice…*
+      and enter that status's number. The request is released only when the ticket becomes
+      **Resolved**; a ticket that is **Closed** without being resolved tells the employee the travel
+      was not approved. Any other status, including your custom one, keeps it waiting.
     - Submit one request of $150 or more as a test. After the approvals a ticket should appear in
       Freshservice; resolving that ticket is what tells the employee the Board has approved, so
       the webhook (step 9) must be working first.
+
+13. **Student information**, if any form will use a *Student* field: Admin → Student access. Import
+    the roster as a CSV file with the headings Student ID, First Name, Last Name, School, Grade,
+    Academy (other columns are ignored), then add the staff who may look students up. Nobody has
+    this access until they are added, administrators included.
 
 ### What is deleted automatically
 

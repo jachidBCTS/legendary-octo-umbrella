@@ -232,6 +232,13 @@
         control.error.textContent = errors.join(' ');
         control.error.hidden = errors.length === 0;
         control.wrap.classList.toggle('has-error', errors.length > 0);
+        // Say the same things to a screen reader: required, wrong, and what the problem is.
+        const input = control.wrap.matches('input, select, textarea') ? control.wrap : control.wrap.querySelector('input, select, textarea');
+        if (input) {
+          if (fieldState.required) input.setAttribute('aria-required', 'true'); else input.removeAttribute('aria-required');
+          if (errors.length) { input.setAttribute('aria-invalid', 'true'); if (control.error.id) input.setAttribute('aria-describedby', control.error.id); }
+          else { input.removeAttribute('aria-invalid'); input.removeAttribute('aria-describedby'); }
+        }
       }
     }
 
@@ -390,6 +397,9 @@
         }
         case 'lookup':
           body = field.source === 'requesters' ? buildPersonLookup(field, id, control) : buildLookupSelect(field, id, control);
+          break;
+        case 'student':
+          body = buildStudentLookup(field, id, control);
           break;
         case 'department':
           body = buildListed(field, id, control, '/api/departments', 'No departments have been set up yet', 'departments');
@@ -739,6 +749,63 @@
         if (!touched.has(field.key)) changed(field.key, true);
       }, 180));
       return h('div', { class: 'sf-typeahead' }, box, list);
+    }
+
+    /** Search the student roster by name or ID. Only people an admin has given student access get results. */
+    function buildStudentLookup(field, id, control) {
+      const box = h('input', { id, type: 'text', autocomplete: 'off', placeholder: field.placeholder || 'Type a student\'s name or ID…', role: 'combobox', 'aria-expanded': 'false', 'aria-autocomplete': 'list' });
+      const list = h('div', { class: 'sf-suggest', hidden: true, role: 'listbox' });
+      const chosen = h('p', { class: 'sf-help sf-student', hidden: true });
+      const detail = (s) => ['ID ' + s.id, s.school, s.grade ? 'Grade ' + s.grade : '', s.academy].filter(Boolean).join(' · ');
+      const show = (s) => { chosen.textContent = s ? detail(s) : ''; chosen.hidden = !s; };
+      let latest = 0;
+      const search = debounce(async () => {
+        const query = box.value.trim();
+        const mine = ++latest;
+        if (query.length < 2) { list.hidden = true; return; }
+        try {
+          const items = (await api('GET', '/api/students?q=' + encodeURIComponent(query))).items || [];
+          if (mine !== latest) return;
+          list.textContent = '';
+          if (items.length === 0) list.appendChild(h('div', { class: 'sf-suggest-empty' }, 'No matches'));
+          for (const item of items) {
+            list.appendChild(h('button', { type: 'button', class: 'sf-suggest-item', role: 'option', onclick: () => choose(item) },
+              h('strong', null, item.name), h('small', null, detail(item))));
+          }
+          list.hidden = false;
+          box.setAttribute('aria-expanded', 'true');
+        } catch (e) {
+          // Most often: this person has not been given access to student information.
+          control.error.textContent = e.message;
+          control.error.hidden = false;
+        }
+      }, 250);
+      function choose(item) {
+        values[field.key] = { id: item.id, name: item.name, first: item.first, last: item.last, school: item.school, grade: item.grade, academy: item.academy };
+        box.value = item.name;
+        show(item);
+        close();
+        changed(field.key, true);
+      }
+      function close() { list.hidden = true; box.setAttribute('aria-expanded', 'false'); }
+      control.set = (v) => {
+        if (!v || typeof v !== 'object' || !v.id) return;
+        values[field.key] = v;
+        box.value = v.name || '';
+        show(v);
+      };
+      box.addEventListener('input', () => {
+        // Typing after a choice clears it: only a student picked from the roster counts.
+        if (values[field.key]) { values[field.key] = null; show(null); changed(field.key, false); }
+        search();
+      });
+      box.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+      box.addEventListener('blur', () => setTimeout(() => {
+        close();
+        if (!values[field.key]) box.value = '';
+        if (!touched.has(field.key)) changed(field.key, true);
+      }, 180));
+      return h('div', { class: 'sf-typeahead' }, box, list, chosen);
     }
 
     function buildTable(field, control) {

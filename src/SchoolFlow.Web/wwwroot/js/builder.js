@@ -23,6 +23,7 @@
     { type: 'time', label: 'Time', hint: 'e.g. departure time' },
     { type: 'phone', label: 'Phone number', hint: 'Checked for digits' },
     { type: 'lookup', label: 'Freshservice lookup', hint: 'Device, location…' },
+    { type: 'student', label: 'Student', hint: 'Needs student access' },
     { type: 'department', label: 'Department', hint: 'Sets the final approver' },
     { type: 'approval_chain', label: 'Approval chain', hint: 'Requester picks approvers' },
     { type: 'location', label: 'Location', hint: 'Building or room' },
@@ -195,8 +196,17 @@
 
   // ---- shared inputs -----------------------------------------------------------------
 
+  let rowIds = 0;
   function row(label, control, help) {
-    return h('div', { class: 'b-row' }, h('label', { class: 'b-label' }, label), control, help ? h('p', { class: 'b-help' }, help) : null);
+    const caption = h('label', { class: 'b-label' }, label);
+    // Tie the label to its control so screen readers announce it and clicking the label focuses it.
+    const target = control && control.matches && control.matches('input, select, textarea') ? control
+      : control && control.querySelector ? control.querySelector('input, select, textarea') : null;
+    if (target) {
+      if (!target.id) target.id = 'b-field-' + (++rowIds);
+      caption.setAttribute('for', target.id);
+    }
+    return h('div', { class: 'b-row' }, caption, control, help ? h('p', { class: 'b-help' }, help) : null);
   }
 
   function textInput(value, onChange, attrs) {
@@ -663,6 +673,8 @@
     }
     if (isPage)
       panel.append(h('p', { class: 'b-help' }, 'Everything below this starts a new page. People move between pages with Next and Back, and each page is checked before they go on. The title is shown in the step list at the top of the form.'));
+    if (field.type === 'student')
+      panel.append(h('p', { class: 'b-help' }, 'The person searches the student roster by name or ID. Only staff an admin has given student access (Admin → Student access) can fill this in, and only they see the student on the request afterwards — everyone else sees “Restricted”. In formulas and messages use ' + (field.key || 'field') + '.name, .id, .school, .grade and .academy. Be careful: anything you put in a ticket, email or approval message is seen by whoever receives it, with or without student access.'));
     if (field.type === 'signature')
       panel.append(h('p', { class: 'b-help' }, 'The person types their full name to sign. The request already records who submitted it and when; this adds their explicit agreement. It is never copied from a previous request.'));
     if (field.type === 'time')
@@ -821,7 +833,7 @@
     if (type === 'fs_create_ticket') Object.assign(node.config, { subject: '', priority: '2', status: '2', attachFiles: 'true' });
     if (type === 'fs_add_note') node.config.visibility = 'private';
     if (type === 'fs_lookup') Object.assign(node.config, { kind: 'requester', saveAs: 'person' });
-    if (type === 'wait_ticket') node.config.until = 'ticket.status >= 4';
+    if (type === 'wait_ticket') node.config.until = 'IN(ticket.status, 4, 5)';
     if (type === 'end') node.label = 'Done';
     if (type === 'approval_chain') {
       // Point at the form's chain and department fields when it has them.
@@ -1176,6 +1188,21 @@
     const fx = (key, placeholder) => formulaInput(c[key], set(key), { context: 'flow', placeholder });
     const PRIORITY = [['1', 'Low'], ['2', 'Medium'], ['3', 'High'], ['4', 'Urgent']];
     const STATUS = [['2', 'Open'], ['3', 'Pending'], ['4', 'Resolved'], ['5', 'Closed']];
+    /** The four standard statuses, or the number of a status you added in Freshservice (e.g. "Travel Pending"). */
+    const statusControl = (c, allowBlank) => {
+      const standard = STATUS.map((s) => s[0]);
+      const isCustom = () => !!c.status && !standard.includes(String(c.status));
+      const number = h('input', { type: 'number', min: 6, max: 999, step: 1, placeholder: 'Status number from Freshservice', value: isCustom() ? c.status : '', hidden: !isCustom(), 'aria-label': 'Custom status number' });
+      number.addEventListener('input', () => { c.status = number.value.trim(); markDirty(); });
+      const options = (allowBlank ? [['', 'Don\'t change']] : []).concat(STATUS, [['custom', 'A status you added in Freshservice…']]);
+      const choice = select(isCustom() ? 'custom' : (c.status || (allowBlank ? '' : '2')), options, (v) => {
+        number.hidden = v !== 'custom';
+        c.status = v === 'custom' ? number.value.trim() : v;
+        markDirty();
+      });
+      return h('div', { class: 'b-status' }, choice, number,
+        h('p', { class: 'b-help' }, 'For a custom status, enter its number. Freshservice shows it in Admin → Field Manager → Ticket Fields → Status, or in ticket.status of a webhook event.'));
+    };
     // Reminder and escalation settings shared by the two approval steps.
     const followUp = () => [
       h('h4', { class: 'b-section' }, 'If nobody decides'),
@@ -1259,7 +1286,7 @@
           row('Requester email', tpl('requesterEmail', 1, '{{submitter.email}}'), 'Leave blank for the person who submitted the form.'),
           h('div', { class: 'b-pair' },
             row('Priority', select(c.priority || '2', PRIORITY, set('priority'))),
-            row('Status', select(c.status || '2', STATUS, set('status')))),
+            row('Status', statusControl(c, false))),
           row('Priority formula (optional)', fx('priorityFormula', 'e.g. IF(total > 1000, 3, 2)'), 'Overrides Priority. Must give 1 (Low) to 4 (Urgent).'),
           row('Assign to group', lookupSelect('groups', c.groupId, set('groupId'), 'No group')),
           row('Department', tpl('departmentId', 1, 'e.g. {{department}}'), 'A Department lookup field, or a department ID.'),
@@ -1281,7 +1308,7 @@
       case 'fs_update_ticket':
         panel.append(ticketRow(),
           h('div', { class: 'b-pair' },
-            row('Status', select(c.status || '', [['', 'Don\'t change']].concat(STATUS), set('status'))),
+            row('Status', statusControl(c, true)),
             row('Priority', select(c.priority || '', [['', 'Don\'t change']].concat(PRIORITY), set('priority')))),
           row('Priority formula (optional)', fx('priorityFormula')),
           row('Move to group', lookupSelect('groups', c.groupId, set('groupId'), 'Don\'t change')),
@@ -1302,7 +1329,7 @@
         break;
       case 'wait_ticket':
         panel.append(ticketRow(),
-          row('Continue when', fx('until', 'e.g. ticket.status >= 4'), 'Checked each time Freshservice reports a change to the ticket. Leave blank to continue on any change.'),
+          row('Continue when', fx('until', 'e.g. IN(ticket.status, 4, 5)'), 'Checked each time Freshservice reports a change to the ticket. Leave blank to continue on any change.'),
           h('p', { class: 'b-help' }, 'Needs the Freshservice webhook to be set up (Admin → Settings).'));
         break;
       case 'end':

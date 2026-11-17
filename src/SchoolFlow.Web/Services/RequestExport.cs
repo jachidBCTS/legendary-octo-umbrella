@@ -10,7 +10,8 @@ public static class RequestExport
 {
     private static readonly string[] Fixed = { "Request #", "Form", "Status", "Submitted by", "Email", "Department", "Ticket", "Submitted", "Last updated" };
 
-    public static string ToCsv(IReadOnlyList<WorkflowRun> runs)
+    /// <param name="includeStudents">False for someone without student access: student answers are left out of the file.</param>
+    public static string ToCsv(IReadOnlyList<WorkflowRun> runs, bool includeStudents = true)
     {
         // Requests on different forms (or versions of a form) have different questions; a column is a question's label.
         var forms = new Dictionary<string, FormDefinition>();
@@ -41,7 +42,9 @@ public static class RequestExport
             var context = Json.ToValues(run.ContextJson);
             var answers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var field in FormOf(run).Fields.Where(HasAnswer))
-                answers.TryAdd(Header(field), Answer(field, context.GetValueOrDefault(field.Key)));
+                answers.TryAdd(Header(field), field.Type == FieldTypes.Student && !includeStudents
+                    ? (Values.IsBlank(context.GetValueOrDefault(field.Key)) ? "" : "(restricted)")
+                    : Answer(field, context.GetValueOrDefault(field.Key)));
             cells.AddRange(columns.Select(c => answers.GetValueOrDefault(c, "")));
             csv.AppendLine(string.Join(",", cells.Select(Cell)));
         }

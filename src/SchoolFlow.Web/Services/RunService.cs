@@ -72,7 +72,8 @@ public sealed class RunService
         var form = FormEvaluator.Evaluate(def.Form, input, ambient, departments: await ActiveDepartmentsAsync(ct),
             locations: await ActiveLocationsAsync(ct),
             attachments: await _attachments.PendingForAsync(email, workflow.Id, ct),
-            closedDays: await _calendar.ClosedDaysAsync(ct));
+            closedDays: await _calendar.ClosedDaysAsync(ct),
+            students: await new AccessService(_db).StudentsForAsync(def.Form, input, email, ct));
         if (!form.IsValid) return (form, null);
 
         var context = Values.NewDict();
@@ -276,7 +277,8 @@ public sealed class RunService
         ambient["submitter"] = SubmitterRecord(email, run.SubmitterName);
         ambient["rates"] = await _calendar.RatesAsync(ct);
         var form = FormEvaluator.Evaluate(def.Form, input, ambient, departments: await ActiveDepartmentsAsync(ct), locations: await ActiveLocationsAsync(ct),
-            attachments: await _attachments.UsableForRunAsync(email, run, ct), closedDays: await _calendar.ClosedDaysAsync(ct));
+            attachments: await _attachments.UsableForRunAsync(email, run, ct), closedDays: await _calendar.ClosedDaysAsync(ct),
+            students: await new AccessService(_db).StudentsForAsync(def.Form, input, email, ct));
         if (!form.IsValid) return (form, ActionResult.Fail("Please fix the highlighted fields."));
 
         var state = Load(run);

@@ -20,9 +20,10 @@
         unreadCount = await Db.Notifications.CountAsync(n => n.UserEmail == email && n.ReadAt == null);
     }
     var wide = ViewData["Wide"] as bool? == true;
+    var a11y = Context.Request.Cookies[SchoolFlow.Web.Pages.Account.DisplayModel.CookieName] == "1";
 }
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="@(a11y ? "a11y" : "")">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -35,6 +36,7 @@
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Cpath d='M9 10h8a4 4 0 0 1 0 8h-2a4 4 0 0 0 0 8h8' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' transform='translate(0 -2)'/%3E%3C/svg%3E" />
 </head>
 <body class="@(wide ? "wide" : "") @(signedIn ? "has-sidebar" : "")">
+<a class="skip-link" href="#main">Skip to main content</a>
 @if (signedIn)
 {
     <aside class="sidebar" id="sidebar">
@@ -54,6 +56,7 @@
             </a>
             <a class="@Active("/Chains")" href="/Chains"><partial name="_Icons" model='"chain"' /> Approval chains</a>
             <a class="@Active("/Away")" href="/Away"><partial name="_Icons" model='"clock"' /> Away / stand-in</a>
+            <a class="@Active("/Account/Display")" href="/Account/Display"><partial name="_Icons" model='"eye"' /> Accessibility@(a11y ? " (on)" : "")</a>
             @if (User.IsBuilder())
             {
                 <div class="nav-label">Build</div>
@@ -68,6 +71,7 @@
                 <a class="@Active("/Admin/Locations")" href="/Admin/Locations"><partial name="_Icons" model='"pin"' /> Locations</a>
                 <a class="@Active("/Admin/Calendar")" href="/Admin/Calendar"><partial name="_Icons" model='"calendar"' /> School calendar</a>
                 <a class="@Active("/Admin/Rates")" href="/Admin/Rates"><partial name="_Icons" model='"fx"' /> Rates</a>
+                <a class="@Active("/Admin/StudentAccess")" href="/Admin/StudentAccess"><partial name="_Icons" model='"check"' /> Student access</a>
                 <a class="@Active("/Admin/Audit")" href="/Admin/Audit"><partial name="_Icons" model='"clock"' /> Audit log</a>
                 <a class="@Active("/Admin/Settings")" href="/Admin/Settings"><partial name="_Icons" model='"gear"' /> Settings</a>
             }
@@ -96,7 +100,7 @@
             </div>
         }
     }
-    <main class="@(wide ? "main-wide" : "main")">
+    <main id="main" tabindex="-1" class="@(wide ? "main-wide" : "main")">
         @if (TempData["Flash"] is string flash)
         {
             <div class="flash @(TempData["FlashKind"] as string ?? "ok")" role="status">@flash</div>

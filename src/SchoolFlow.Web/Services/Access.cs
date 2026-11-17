@@ -49,6 +49,30 @@ public sealed class AccessService
     private readonly AppDbContext _db;
     public AccessService(AppDbContext db) => _db = db;
 
+    /// <summary>Whether this person has been given access to student information (a flag an admin sets per person).</summary>
+    public Task<bool> CanViewStudentsAsync(ClaimsPrincipal user, CancellationToken ct = default) => CanViewStudentsAsync(user.Email(), ct);
+
+    public async Task<bool> CanViewStudentsAsync(string email, CancellationToken ct = default) =>
+        email.Length > 0 && await _db.Users.AsNoTracking().AnyAsync(u => u.Email == email && u.StudentAccess, ct);
+
+    /// <summary>
+    /// The roster entries a form's answers refer to, for the evaluator — or null when the form has no
+    /// student field. Someone without access gets an empty directory, so their answer is refused.
+    /// </summary>
+    public async Task<SchoolFlow.Core.StudentDirectory?> StudentsForAsync(SchoolFlow.Core.FormDefinition form, IDictionary<string, object?> input, string email, CancellationToken ct = default)
+    {
+        var fields = form.Fields.Where(f => f.Type == SchoolFlow.Core.FieldTypes.Student).ToList();
+        if (fields.Count == 0) return null;
+        var known = new Dictionary<string, SchoolFlow.Core.StudentInfo>(StringComparer.OrdinalIgnoreCase);
+        if (!await CanViewStudentsAsync(email, ct)) return new SchoolFlow.Core.StudentDirectory(false, known);
+        var lookup = input.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
+        var ids = fields.Select(f => SchoolFlow.Core.Forms.FormEvaluator.StudentIdOf(lookup.GetValueOrDefault(f.Key))).Where(id => id.Length > 0).Distinct().ToList();
+        if (ids.Count > 0)
+            foreach (var student in await _db.Students.AsNoTracking().Where(s => ids.Contains(s.StudentId)).ToListAsync(ct))
+                known[student.StudentId] = student.ToInfo();
+        return new SchoolFlow.Core.StudentDirectory(true, known);
+    }
+
     public static bool CanManage(ClaimsPrincipal user, Workflow workflow) =>
         user.IsAdmin() || (user.IsBuilder() && workflow.IsOwnedBy(user.Email()));
 

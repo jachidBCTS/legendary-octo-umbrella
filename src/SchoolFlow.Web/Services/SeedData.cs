@@ -136,7 +136,7 @@ public static class SeedData
           { "id": "note", "type": "fs_add_note", "label": "Record approval", "x": 30, "y": 750,
             "config": { "body": "Approved by {{approval.by}}.\n{{approval.comment}}", "visibility": "private" } },
           { "id": "was_approved", "type": "condition", "label": "Was approval needed?", "x": 290, "y": 600, "config": { "expression": "NOT(ISBLANK(approval.by))" } },
-          { "id": "wait", "type": "wait_ticket", "label": "Wait until resolved", "x": 290, "y": 890, "config": { "until": "ticket.status >= 4" } },
+          { "id": "wait", "type": "wait_ticket", "label": "Wait until resolved", "x": 290, "y": 890, "config": { "until": "IN(ticket.status, 4, 5)" } },
           { "id": "done", "type": "end", "label": "Purchase complete", "x": 290, "y": 1020 },
           { "id": "declined", "type": "end", "label": "Not approved", "x": 30, "y": 450, "config": { "outcome": "rejected" } }
         ],
@@ -385,20 +385,24 @@ public static class SeedData
           { "id": "ticket", "type": "fs_create_ticket", "label": "Open the business office ticket", "x": 290, "y": 890,
             "config": {
               "subject": "Work related travel: {{employee_name}} — {{event_title}} ({{TEXT(total, 'C2')}})",
-              "description": "Approved by the administrators in SchoolFlow.\n\nDistrict: {{district}}\nEmployee: {{employee_name}} ({{submitter.email}})\nSchool/Department: {{department.name}}\nMeeting/Conference: {{event_title}}\nLocation: {{location}}\nFrom: {{TEXT(from_date, 'ddd, MMM d, yyyy')}} {{from_time}}\nTo: {{TEXT(to_date, 'ddd, MMM d, yyyy')}} {{to_time}}\nCost to be paid by: {{JOIN(paid_by, ', ')}} {{sponsor_name}}\nOther staff attending: {{other_staff}}\nBudget Acct. #: {{budget_account}}\nPO #: {{po_number}}\n\nTotal estimated expenses: {{TEXT(total, 'C2')}}\nBoard of Education approval required: {{IF(total >= 150, 'YES — record the Board approval date on this ticket, then resolve it', 'No')}}\n\nReasons for attending:\n{{reason_a}}\n{{reason_b}}\n{{reason_c}}",
+              "description": "Approved by the administrators in SchoolFlow.\n\nDistrict: {{district}}\nEmployee: {{employee_name}} ({{submitter.email}})\nSchool/Department: {{department.name}}\nMeeting/Conference: {{event_title}}\nLocation: {{location}}\nFrom: {{TEXT(from_date, 'ddd, MMM d, yyyy')}} {{from_time}}\nTo: {{TEXT(to_date, 'ddd, MMM d, yyyy')}} {{to_time}}\nCost to be paid by: {{JOIN(paid_by, ', ')}} {{sponsor_name}}\nOther staff attending: {{other_staff}}\nBudget Acct. #: {{budget_account}}\nPO #: {{po_number}}\n\nTotal estimated expenses: {{TEXT(total, 'C2')}}\nBoard of Education approval required: {{IF(total >= 150, 'YES — record the Board approval date on this ticket, then set it to Resolved. The employee is told to go ahead only when the ticket is Resolved; closing it any other way tells them the travel is not approved', 'No')}}\n\nReasons for attending:\n{{reason_a}}\n{{reason_b}}\n{{reason_c}}",
               "priority": "2", "status": "2", "tags": "work-travel", "attachFiles": "true" } },
           { "id": "which_office", "type": "condition", "label": "Technical Schools?", "x": 290, "y": 1040, "config": { "expression": "district == 'Bergen County Technical Schools'" } },
           { "id": "office_tech", "type": "notify", "label": "Tell the business office (Technical Schools)", "x": 30, "y": 1180,
             "config": { "to": "", "role": "office_tech", "subject": "Travel request to process: {{employee_name}} — {{event_title}}",
-              "message": "A work related travel request has been approved by the administrators.\nTotal estimated expenses: {{TEXT(total, 'C2')}}\nHelp desk ticket: #{{ticket.id}}\n{{IF(total >= 150, 'Board of Education approval is required. Record the approval date on the ticket and resolve it when the Board has approved.', 'Board of Education approval is not required (under $150).')}}" } },
+              "message": "A work related travel request has been approved by the administrators.\nTotal estimated expenses: {{TEXT(total, 'C2')}}\nHelp desk ticket: #{{ticket.id}}\n{{IF(total >= 150, 'Board of Education approval is required. Record the approval date on the ticket and set it to Resolved when the Board has approved. Closing the ticket without resolving it tells the employee the travel is not approved.', 'Board of Education approval is not required (under $150).')}}" } },
           { "id": "office_special", "type": "notify", "label": "Tell the business office (Special Services)", "x": 550, "y": 1180,
             "config": { "to": "", "role": "office_special", "subject": "Travel request to process: {{employee_name}} — {{event_title}}",
-              "message": "A work related travel request has been approved by the administrators.\nTotal estimated expenses: {{TEXT(total, 'C2')}}\nHelp desk ticket: #{{ticket.id}}\n{{IF(total >= 150, 'Board of Education approval is required. Record the approval date on the ticket and resolve it when the Board has approved.', 'Board of Education approval is not required (under $150).')}}" } },
+              "message": "A work related travel request has been approved by the administrators.\nTotal estimated expenses: {{TEXT(total, 'C2')}}\nHelp desk ticket: #{{ticket.id}}\n{{IF(total >= 150, 'Board of Education approval is required. Record the approval date on the ticket and set it to Resolved when the Board has approved. Closing the ticket without resolving it tells the employee the travel is not approved.', 'Board of Education approval is not required (under $150).')}}" } },
           { "id": "needs_board", "type": "condition", "label": "$150 or more?", "x": 290, "y": 1330, "config": { "expression": "total >= 150" } },
           { "id": "tell_pending", "type": "notify", "label": "Tell the employee: waiting for the Board", "x": 30, "y": 1470,
             "config": { "to": "{{submitter.email}}", "subject": "Travel approved by administrators — Board approval still needed: {{event_title}}",
               "message": "Your request has been approved by the administrators. Because it costs $150 or more it still needs Board of Education approval, which the business office is handling on help desk ticket #{{ticket.id}}.\n\nPlease do not make travel arrangements or register until you are told the Board has approved." } },
-          { "id": "wait_board", "type": "wait_ticket", "label": "Wait for Board approval (ticket resolved)", "x": 30, "y": 1620, "config": { "until": "ticket.status >= 4" } },
+          { "id": "wait_board", "type": "wait_ticket", "label": "Wait for Board approval (ticket resolved)", "x": 30, "y": 1620, "config": { "until": "IN(ticket.status, 4, 5)" } },
+          { "id": "board_ok", "type": "condition", "label": "Ticket resolved (Board approved)?", "x": 30, "y": 1770, "config": { "expression": "ticket.status == 4" } },
+          { "id": "tell_no_board", "type": "notify", "label": "Tell the employee: not approved", "x": 30, "y": 1920,
+            "config": { "to": "{{submitter.email}}", "subject": "Travel not approved: {{event_title}}",
+              "message": "Help desk ticket #{{ticket.id}} for this travel request was closed without Board of Education approval being recorded, so the travel is not approved. Please do not make travel arrangements. Contact the business office if you think this is a mistake." } },
           { "id": "tell", "type": "notify", "label": "Tell the employee", "x": 290, "y": 1770,
             "config": { "to": "{{submitter.email}}", "subject": "Travel approved: {{event_title}}",
               "message": "All approvals have been received for “{{event_title}}”. Travel arrangements, including registrations, may now be made.\n\nOn your return, file a Professional Development Report with your reimbursement claim, and reconcile the cost worksheet with the Business Office within 3 weeks of the travel, with original itemized receipts." } },
@@ -427,7 +431,10 @@ public static class SeedData
           { "from": "needs_board", "port": "true", "to": "tell_pending" },
           { "from": "needs_board", "port": "false", "to": "tell" },
           { "from": "tell_pending", "port": "next", "to": "wait_board" },
-          { "from": "wait_board", "port": "next", "to": "tell" },
+          { "from": "wait_board", "port": "next", "to": "board_ok" },
+          { "from": "board_ok", "port": "true", "to": "tell" },
+          { "from": "board_ok", "port": "false", "to": "tell_no_board" },
+          { "from": "tell_no_board", "port": "next", "to": "declined" },
           { "from": "tell", "port": "next", "to": "done" }
         ]
       }
@@ -443,7 +450,7 @@ public static class SeedData
           { "id": "start", "type": "start", "label": "Ticket event received", "x": 150, "y": 40 },
           { "id": "note", "type": "fs_add_note", "label": "Add escalation note", "x": 150, "y": 170,
             "config": { "body": "Urgent ticket received {{TEXT(NOW(), 'MMM d, h:mm tt')}}. Escalation workflow started.", "visibility": "private" } },
-          { "id": "wait", "type": "wait_ticket", "label": "Wait until resolved", "x": 150, "y": 310, "config": { "until": "ticket.status >= 4" } },
+          { "id": "wait", "type": "wait_ticket", "label": "Wait until resolved", "x": 150, "y": 310, "config": { "until": "IN(ticket.status, 4, 5)" } },
           { "id": "done", "type": "end", "label": "Resolved", "x": 150, "y": 440 }
         ],
         "edges": [

@@ -107,10 +107,16 @@ public class DetailModel : PageModel
                     status, Values.ToText(step.GetValueOrDefault("rule"))));
             }
         }
+        var seesStudents = def.Form.Fields.Any(f => f.Type == FieldTypes.Student) && await _access.CanViewStudentsAsync(User);
         foreach (var f in def.Form.Fields.Where(f => !FieldTypes.IsLayout(f.Type)))
         {
             var value = context.GetValueOrDefault(f.Key);
             if (Values.IsBlank(value)) continue; // hidden or unanswered (an unticked box is "No", not blank)
+            if (f.Type == FieldTypes.Student && !seesStudents)
+            {
+                Fields.Add(new Answer(f.Label, "Restricted — you do not have access to student information."));
+                continue;
+            }
             if (f.Type == FieldTypes.Attachments && value is List<object?> uploaded)
             {
                 Fields.Add(new Answer(f.Label, "", Files: uploaded.OfType<Dictionary<string, object?>>().Select(file => new FileLink(

@@ -47,6 +47,12 @@ public static class Ui
         if (ChainValue.IsChain(value)) return ChainValue.Describe(value);
         if (type == FieldTypes.Attachments && value is List<object?> files)
             return string.Join(", ", files.OfType<Dictionary<string, object?>>().Select(f => Values.ToText(f.GetValueOrDefault("name"))));
+        if (type == FieldTypes.Student && value is Dictionary<string, object?> student)
+        {
+            string Part(string key) => Values.ToText(student.GetValueOrDefault(key)).Trim();
+            var parts = new[] { Part("name"), "ID " + Part("id"), Part("school"), Part("grade").Length > 0 ? "Grade " + Part("grade") : "", Part("academy") };
+            return string.Join(" · ", parts.Where(p => p.Length > 0));
+        }
         if (value is bool b) return b ? "Yes" : "No";
         if (value is decimal d)
         {

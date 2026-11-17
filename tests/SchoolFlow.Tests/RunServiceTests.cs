@@ -835,6 +835,114 @@ public sealed class RunServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task TravelTemplate_TicketClosedWithoutBeingResolved_IsNotBoardApproval()
+    {
+        var (runId, _) = await SubmitTravelAsync("Bergen County Technical Schools", input => input["registration"] = 400m);
+        await ApproveInTurnAsync(runId, ("Final approval — Science", "principal@example.org"), ("Central Office Administrator (Technical Schools)", "builder@example.org"),
+            ("Business Administrator approval", "admin@example.org"), ("Superintendent approval", "principal@example.org"));
+        await using (var db = Db())
+        {
+            var run = await db.Runs.SingleAsync(r => r.Id == runId);
+            // Moving the ticket around (Open, Pending, a custom "Travel Pending" status) changes nothing.
+            foreach (var status in new[] { 3, 7, 2 })
+                await Service(db).HandleTicketEventAsync(Json.ToValues("{\"ticket\":{\"id\":" + run.TicketId + ",\"status\":" + status + "}}"), default);
+            Assert.Equal(RunStatus.WaitingTicket, (await db.Runs.AsNoTracking().SingleAsync(r => r.Id == runId)).Status);
+            await Service(db).HandleTicketEventAsync(Json.ToValues("{\"ticket\":{\"id\":" + run.TicketId + ",\"status\":5}}"), default);   // closed, never resolved
+        }
+        await using var done = Db();
+        Assert.Equal(RunStatus.Rejected, (await done.Runs.SingleAsync(r => r.Id == runId)).Status);
+        var mine = await done.Notifications.Where(n => n.UserEmail == "t@school.org").ToListAsync();
+        Assert.Contains(mine, n => n.Title.StartsWith("Travel not approved"));
+        Assert.DoesNotContain(mine, n => n.Title.StartsWith("Travel approved:"));
+    }
+
+    // ---- student information ---------------------------------------------------------------
+
+    private async Task<Workflow> StudentFormAsync()
+    {
+        await using var db = Db();
+        var def = new WorkflowDefinition
+        {
+            Form = { Fields =
+            {
+                new FieldDef { Key = "student", Label = "Student", Type = FieldTypes.Student, Required = true },
+                new FieldDef { Key = "reason", Label = "Reason", Type = "text" },
+                new FieldDef { Key = "label", Label = "Label", Type = "calculated", Formula = "student.last & ' (' & student.grade & ')'" },
+            } },
+            Flow = { Nodes = { new NodeDef { Id = "start", Type = NodeTypes.Start }, new NodeDef { Id = "end", Type = NodeTypes.End } }, Edges = { new EdgeDef { From = "start", To = "end" } } },
+        };
+        var json = Json.Serialize(def);
+        var workflow = new Workflow { Name = "Early dismissal", DraftJson = json, PublishedJson = json, PublishedVersion = 1, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
+        db.Workflows.Add(workflow);
+        db.Students.AddRange(
+            new Student { StudentId = "20451", FirstName = "Maya", LastName = "Okafor", School = "Teterboro", Grade = "10", Academy = "Aerospace" },
+            new Student { StudentId = "20452", FirstName = "Leo", LastName = "Okon", School = "Paramus", Grade = "11", Academy = "Culinary" });
+        db.Users.Add(new AppUser { Email = "nurse@school.org", Name = "N Nurse", StudentAccess = true });
+        await db.SaveChangesAsync();
+        return workflow;
+    }
+
+    [Fact]
+    public async Task StudentField_NeedsTheAccessFlag_AndTakesItsDetailsFromTheRoster()
+    {
+        var workflow = await StudentFormAsync();
+        // What a tampered browser might send: a real ID with invented details.
+        Dictionary<string, object?> Pick(string id) => new()
+        {
+            ["student"] = new Dictionary<string, object?> { ["id"] = id, ["name"] = "Someone Else", ["grade"] = "12", ["school"] = "Nowhere" },
+        };
+        await using var db = Db();
+        var (refused, none) = await Service(db).SubmitFormAsync(workflow, Pick("20451"), "t@school.org", "T Teacher", default);
+        Assert.Null(none);
+        Assert.Contains("do not have access to student information", refused.Fields["student"].Errors.Single());
+        Assert.Null(refused.Values["student"]);
+
+        var (unknown, none2) = await Service(db).SubmitFormAsync(workflow, Pick("99999"), "nurse@school.org", "N Nurse", default);
+        Assert.Null(none2);
+        Assert.Contains("was not found", unknown.Fields["student"].Errors.Single());
+
+        var (form, runId) = await Service(db).SubmitFormAsync(workflow, Pick("20451"), "nurse@school.org", "N Nurse", default);
+        Assert.NotNull(runId);
+        var student = Assert.IsType<Dictionary<string, object?>>(form.Values["student"]);
+        Assert.Equal("Okafor, Maya", student["name"]);                 // the roster's, not the browser's
+        Assert.Equal("10", student["grade"]);
+        Assert.Equal("Teterboro", student["school"]);
+        Assert.Equal(new[] { "id", "name", "first", "last", "school", "grade", "academy" }, student.Keys.ToArray());   // the six agreed facts (name is first + last) and nothing more
+        Assert.Equal("Okafor (10)", form.Values["label"]);
+
+        // On a request and in an export, only people with the flag see who the student is.
+        var runs = await db.Runs.AsNoTracking().ToListAsync();
+        Assert.Contains("Okafor, Maya · ID 20451 · Teterboro · Grade 10 · Aerospace", RequestExport.ToCsv(runs, includeStudents: true));
+        var masked = RequestExport.ToCsv(runs, includeStudents: false);
+        Assert.Contains("\"(restricted)\"", masked);
+        Assert.DoesNotContain("Maya", masked.Replace("\"Okafor (10)\"", ""));
+        Assert.True(await new AccessService(db).CanViewStudentsAsync("nurse@school.org"));
+        Assert.False(await new AccessService(db).CanViewStudentsAsync("t@school.org"));
+        Assert.False(await new AccessService(db).CanViewStudentsAsync("admin@example.org"));   // being an admin is not enough
+
+        // Never offered when someone starts from a previous request.
+        var copied = SchoolFlow.Core.Forms.FormCopy.Extract(Json.ParseDefinition(workflow.PublishedJson!).Form, Json.ToValues(runs.Single().ContextJson));
+        Assert.DoesNotContain("student", copied.Keys);
+    }
+
+    [Fact]
+    public void RosterFile_IsReadByItsHeadings_KeepingOnlyTheSixColumns()
+    {
+        var rows = SchoolFlow.Web.Pages.Admin.StudentCsv.Parse(
+            "Last Name,First Name,Student ID,Home Address,Grade Level,School,Academy\r\n" +
+            "\"O'Brien, Jr.\",Sam,30001,\"12 Elm St\nApt 4\",9,Teterboro,\"Law \"\"& Justice\"\"\"\r\n" +
+            "\r\n" +
+            "Diaz,Ana,30002,5 Oak Ave,12,Paramus,\n");
+        Assert.Equal(3, rows.Count);                                   // the blank line is ignored; the line break inside quotes is not a new row
+        var columns = SchoolFlow.Web.Pages.Admin.StudentCsv.MapColumns(rows[0]);
+        Assert.Equal(new[] { "academy", "first", "grade", "id", "last", "school" }, columns.Keys.OrderBy(k => k).ToArray());   // no "Home Address"
+        Assert.Equal("O'Brien, Jr.", rows[1][columns["last"]]);
+        Assert.Equal("Law \"& Justice\"", rows[1][columns["academy"]]);
+        Assert.Equal("30002", rows[2][columns["id"]]);
+        Assert.Empty(SchoolFlow.Web.Pages.Admin.StudentCsv.MapColumns(new List<string> { "Name", "DOB" }));
+    }
+
+    [Fact]
     public async Task TravelTemplate_SpecialServices_Under150_TakesItsOwnRoute_AndSkipsTheBoard()
     {
         var (runId, values) = await SubmitTravelAsync("Bergen County Special Services", input => { input["registration"] = 95m; input["parking"] = 20m; });

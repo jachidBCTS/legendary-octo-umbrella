@@ -54,7 +54,7 @@ public class IndexModel : PageModel
     {
         const int MaxRows = 5000;
         var runs = await (await FilteredAsync()).OrderByDescending(r => r.Id).Take(MaxRows).ToListAsync();
-        var csv = RequestExport.ToCsv(runs);
+        var csv = RequestExport.ToCsv(runs, includeStudents: await _access.CanViewStudentsAsync(User));
         if (Scope != "mine")
         {
             // Other people's answers are leaving the system: note who took them.

@@ -164,6 +164,22 @@ public class AppUser
     public string Groups { get; set; } = "";
     /// <summary>The role Entra itself assigned through an app role ("Admin"/"Builder"), if any, at last sign-in.</summary>
     public string EntraRole { get; set; } = "";
+    /// <summary>May look students up and see student details on requests. Off for everyone, admins included, until granted.</summary>
+    public bool StudentAccess { get; set; }
+}
+
+/// <summary>One student on the roster. Deliberately limited to these six facts.</summary>
+public class Student
+{
+    public int Id { get; set; }
+    public string StudentId { get; set; } = "";
+    public string FirstName { get; set; } = "";
+    public string LastName { get; set; } = "";
+    public string School { get; set; } = "";
+    public string Grade { get; set; } = "";
+    public string Academy { get; set; } = "";
+
+    public SchoolFlow.Core.StudentInfo ToInfo() => new(StudentId, FirstName, LastName, School, Grade, Academy);
 }
 
 /// <summary>
@@ -376,6 +392,7 @@ public class AppDbContext : DbContext
     public DbSet<RunComment> RunComments => Set<RunComment>();
     public DbSet<ClosedDay> ClosedDays => Set<ClosedDay>();
     public DbSet<Rate> Rates => Set<Rate>();
+    public DbSet<Student> Students => Set<Student>();
     public DbSet<WorkflowVersion> WorkflowVersions => Set<WorkflowVersion>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 
@@ -466,6 +483,17 @@ public class AppDbContext : DbContext
         {
             e.Property(x => x.PublishedBy).HasMaxLength(320);
             e.HasIndex(x => new { x.WorkflowId, x.Version }).IsUnique();
+        });
+        b.Entity<Student>(e =>
+        {
+            e.Property(x => x.StudentId).HasMaxLength(40);
+            e.Property(x => x.FirstName).HasMaxLength(100);
+            e.Property(x => x.LastName).HasMaxLength(100);
+            e.Property(x => x.School).HasMaxLength(200);
+            e.Property(x => x.Grade).HasMaxLength(20);
+            e.Property(x => x.Academy).HasMaxLength(200);
+            e.HasIndex(x => x.StudentId).IsUnique();
+            e.HasIndex(x => x.LastName);
         });
         b.Entity<Rate>(e =>
         {

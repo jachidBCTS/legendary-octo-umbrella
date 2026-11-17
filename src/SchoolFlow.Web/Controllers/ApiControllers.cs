@@ -146,7 +146,9 @@ public sealed class FormsController : ControllerBase
             departments: await _runs.ActiveDepartmentsAsync(ct), locations: await _runs.ActiveLocationsAsync(ct),
             // In the builder's preview there is no real form to upload to, so files are taken as given.
             attachments: usableFiles ?? (request.Definition is not null ? null : await _attachments.PendingForAsync(User.Email(), request.WorkflowId, ct)),
-            closedDays: await _calendar.ClosedDaysAsync(ct));
+            closedDays: await _calendar.ClosedDaysAsync(ct),
+            // The builder's preview is not checked against the roster (and cannot search it without access).
+            students: request.Definition is not null ? null : await new AccessService(_db).StudentsForAsync(form, Json.ToValues(request.Values), User.Email(), ct));
         return new JsonResult(Shape(result), Json.Options);
     }
 

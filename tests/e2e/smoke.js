@@ -1062,6 +1062,91 @@ async function login(page, email) {
   check((await page.locator('.bld-inspector textarea').first().inputValue()).includes('| Lodging |'), 'a builder can edit the worksheet rows');
   await page.screenshot({ path: S + '/shots/47-builder-worksheet.png' });
 
+  note('13e. student access, roster, student field, accessibility mode');
+  await login(page, 'admin@example.org');
+  await page.goto(base + '/Admin/StudentAccess');
+  fs.writeFileSync(S + '/roster.csv', 'Last Name,First Name,Student ID,Home Address,Grade,School,Academy\nOkafor,Maya,20451,12 Elm St,10,Teterboro,Aerospace\nOkon,Leo,20452,5 Oak Ave,11,Paramus,Culinary\n');
+  await page.setInputFiles('#sa-file', S + '/roster.csv');
+  page.once('dialog', (d) => d.accept());
+  await page.click('button:has-text("Import and replace")');
+  await page.waitForSelector('.flash.ok');
+  check((await page.locator('.flash.ok').textContent()).includes('2 added') && (await page.locator('body').textContent()).includes('2 students on the roster'), 'a roster file is imported');
+  check(!(await page.locator('body').textContent()).includes('Elm St'), 'columns outside the six agreed ones are not kept or shown');
+  await page.fill('#sa-email', 'principal@example.org');
+  await page.click('button:has-text("Give access")');
+  await page.waitForSelector('.flash.ok');
+  check(await page.locator('tr:has-text("principal@example.org") button:has-text("Remove access")').count() === 1, 'an admin gives a staff member student access');
+  await page.screenshot({ path: S + '/shots/49-student-access.png', fullPage: true });
+  const adminSearch = await page.evaluate(async () => (await fetch('/api/students?q=Oka')).status);
+  check(adminSearch === 403, 'an admin without the flag cannot search students (status ' + adminSearch + ')');
+
+  await page.goto(base + '/Builder');
+  fs.writeFileSync(S + '/dismissal.schoolflow.json', JSON.stringify({
+    schoolflow: 1, name: 'Early Dismissal', description: 'Record an early dismissal', category: 'Students', color: 'amber',
+    definition: {
+      trigger: { type: 'form' },
+      form: { fields: [{ key: 'student', label: 'Student', type: 'student', required: true }, { key: 'reason', label: 'Reason', type: 'text', required: true }] },
+      flow: { nodes: [{ id: 'start', type: 'start', label: 'Form submitted', x: 150, y: 40 }, { id: 'end', type: 'end', label: 'Done', x: 150, y: 320 }], edges: [{ from: 'start', to: 'end' }] },
+    },
+  }));
+  await page.setInputFiles('#import-file', S + '/dismissal.schoolflow.json');
+  await page.waitForURL(/Builder\/Edit\/\d+/);
+  const dismissalId = Number(page.url().split('/').pop());
+  await page.waitForSelector('.bld-title');
+  const published = await page.evaluate(async (id) => {
+    const w = await window.SF.api('GET', '/api/builder/' + id);
+    return window.SF.api('POST', '/api/builder/' + id + '/publish', { name: w.name, description: w.description, category: w.category, color: w.color, definition: w.definition });
+  }, dismissalId);
+  check(published.ok === true, 'a form with a Student field publishes');
+
+  await login(page, 'teacher@example.org');
+  await page.goto(base + '/Start/' + dismissalId);
+  await page.waitForSelector('.sf-form');
+  await field('Student').locator('input').pressSequentially('Oka', { delay: 40 });
+  await page.waitForFunction(() => [...document.querySelectorAll('.sf-error')].some((e) => !e.hidden && /do not have access to student information/.test(e.textContent)), null, { timeout: 6000 }).catch(() => {});
+  check((await field('Student').locator('.sf-error').textContent()).includes('do not have access to student information') && await page.locator('.sf-suggest-item').count() === 0, 'staff without access cannot look students up');
+
+  await login(page, 'principal@example.org');
+  await page.goto(base + '/Start/' + dismissalId);
+  await page.waitForSelector('.sf-form');
+  await field('Student').locator('input').pressSequentially('oka', { delay: 40 });
+  await page.waitForSelector('.sf-suggest-item');
+  check(await page.locator('.sf-suggest-item').count() === 1 && (await page.locator('.sf-suggest-item').textContent()).includes('Okafor, Maya'), 'staff with access find a student by name');
+  await page.locator('.sf-suggest-item').click();
+  check((await page.locator('.sf-student').textContent()).includes('ID 20451') && (await page.locator('.sf-student').textContent()).includes('Grade 10'), 'the chosen student shows ID, school, grade and academy');
+  await field('Reason').locator('input').fill('Medical appointment');
+  await page.screenshot({ path: S + '/shots/50-student-field.png', fullPage: true });
+  await page.click('button[type=submit]');
+  await page.waitForURL(/Requests\/Detail\/\d+/);
+  const dismissalUrl = page.url();
+  check((await page.locator('.answers').textContent()).includes('Okafor, Maya · ID 20451 · Teterboro · Grade 10 · Aerospace'), 'someone with access sees the student on the request');
+  await login(page, 'admin@example.org');
+  await page.goto(dismissalUrl);
+  const restricted = await page.locator('.answers').textContent();
+  check(restricted.includes('Restricted') && !restricted.includes('Okafor') && restricted.includes('Medical appointment'), 'someone without access sees “Restricted” in place of the student');
+  await page.goto(base + '/Admin/Audit');
+  const audit5 = await page.locator('.table tbody').textContent();
+  check(audit5.includes('Student access given') && audit5.includes('Student roster imported') && !audit5.includes('Okafor'), 'access changes and imports are audited, without student details');
+
+  await login(page, 'teacher@example.org');
+  await page.keyboard.press('Tab');
+  check((await page.evaluate(() => document.activeElement.textContent.trim())) === 'Skip to main content', 'the first Tab stop is “Skip to main content”');
+  await page.goto(base + '/Account/Display');
+  await page.click('main form button');
+  await page.waitForSelector('.flash.ok');
+  check(await page.evaluate(() => document.documentElement.classList.contains('a11y')), 'accessibility mode switches on');
+  await page.goto(base + '/Start/1');
+  await page.waitForSelector('.sf-form');
+  check(await page.evaluate(() => document.documentElement.classList.contains('a11y') && parseFloat(getComputedStyle(document.body).fontSize) > 17), 'it stays on from page to page, with larger text');
+  await page.click('button[type=submit]');
+  await page.waitForSelector('.sf-banner:not([hidden])');
+  check(await field('What do you need?').locator('input').getAttribute('aria-invalid') === 'true' && !!(await field('What do you need?').locator('input').getAttribute('aria-describedby')), 'a problem is tied to its field for screen readers');
+  await page.screenshot({ path: S + '/shots/51-accessibility-mode.png', fullPage: true });
+  await page.goto(base + '/Account/Display');
+  await page.click('main form button');
+  await page.waitForSelector('.flash.ok');
+  check(await page.evaluate(() => !document.documentElement.classList.contains('a11y')), 'accessibility mode switches off again');
+
   note('14. admin + help + mobile');
   await login(page, 'admin@example.org');
   await page.goto(base + '/Admin/Settings');

@@ -1,0 +1,53 @@
+@page
+@model SchoolFlow.Web.Pages.Admin.StudentAccessModel
+@{
+    ViewData["Title"] = "Student access";
+}
+<div class="page-head">
+    <div><h1>Student access</h1><p class="sub">Who may look students up on forms and see student details on requests. Nobody can until they are added here — administrators included.</p></div>
+</div>
+
+<section class="panel">
+    <h2>People with access</h2>
+    <form method="post" asp-page-handler="Grant" class="dept-form">
+        <div><label class="lbl" for="sa-email">Staff member's email</label><input id="sa-email" name="email" type="email" required maxlength="320" placeholder="name@bergen.org" /></div>
+        <div class="dept-save"><button class="btn primary">Give access</button></div>
+    </form>
+    @if (Model.Allowed.Count == 0) { <p class="muted">Nobody has access to student information yet.</p> }
+    else
+    {
+        <div class="table-wrap"><table class="table stack">
+            <thead><tr><th>Person</th><th>Email</th><th>Last signed in</th><th></th></tr></thead>
+            <tbody>
+            @foreach (var u in Model.Allowed)
+            {
+                <tr>
+                    <td><strong>@(u.Name.Length > 0 ? u.Name : "—")</strong></td>
+                    <td data-label="Email">@u.Email</td>
+                    <td data-label="Last signed in" class="muted">@(u.LastSeenAt.Year < 2000 ? "Has not signed in yet" : Ui.When(u.LastSeenAt))</td>
+                    <td class="actions"><form method="post" asp-page-handler="Revoke" data-confirm="Remove student access from @u.Email?"><input type="hidden" name="email" value="@u.Email" /><button class="btn small ghost-danger">Remove access</button></form></td>
+                </tr>
+            }
+            </tbody>
+        </table></div>
+    }
+    <p class="muted small">With access, a person can search the roster in a <em>Student</em> field, and sees the student on requests they are allowed to open and in spreadsheet exports.
+        Without it, a Student field cannot be filled in and student answers show as “Restricted”. Every change here is recorded in the audit log.</p>
+</section>
+
+<section class="panel">
+    <h2>Student roster</h2>
+    <p>@(Model.StudentCount == 0 ? "No students have been loaded yet." : $"{Model.StudentCount:N0} students on the roster.")
+        @if (Model.BySchool.Count > 1) { <span class="muted">@string.Join(" · ", Model.BySchool.Select(s => $"{s.School}: {s.Count:N0}"))</span> }</p>
+    <form method="post" asp-page-handler="Import" enctype="multipart/form-data" class="dept-form" data-confirm="Replace the roster with this file? Students not in the file are removed from the roster.">
+        <div><label class="lbl" for="sa-file">Roster file (CSV)</label><input id="sa-file" type="file" name="file" accept=".csv,text/csv" required /></div>
+        <div class="dept-save"><button class="btn">Import and replace</button></div>
+    </form>
+    <p class="muted small">The file needs a heading row with <strong>Student ID</strong>, <strong>First Name</strong>, <strong>Last Name</strong>, and optionally <strong>School</strong>, <strong>Grade</strong> and <strong>Academy</strong>.
+        Those six columns are all that is kept; any other column in the file is ignored. The file replaces the roster: students in it are added or updated, students not in it are removed.
+        Requests already submitted keep the student details they were submitted with.</p>
+    @if (Model.FormsUsingStudents.Count > 0)
+    {
+        <p class="muted small">Forms with a Student field: @string.Join(", ", Model.FormsUsingStudents).</p>
+    }
+</section>

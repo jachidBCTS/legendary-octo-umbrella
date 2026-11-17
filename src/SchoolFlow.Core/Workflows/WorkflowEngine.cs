@@ -458,7 +458,7 @@ public sealed class WorkflowEngine
                     DescriptionHtml = RenderHtml(node.Get("description"), scope),
                     RequesterEmail = Template.Render(Default(node.Get("requesterEmail"), "{{submitter.email}}"), scope).Trim(),
                     Priority = ResolveInt(node, "priority", "priorityFormula", scope, 2, 1, 4, "Priority"),
-                    Status = ResolveInt(node, "status", null, scope, 2, 2, 5, "Status"),
+                    Status = ResolveInt(node, "status", null, scope, 2, 2, 999, "Status"),   // above 5 = a custom Freshservice status
                     Type = NullIfBlank(node.Get("type")),
                     GroupId = ResolveId(node.Get("groupId"), scope, "Group"),
                     DepartmentId = ResolveId(node.Get("departmentId"), scope, "Department"),
@@ -501,7 +501,7 @@ public sealed class WorkflowEngine
                 {
                     Priority = string.IsNullOrWhiteSpace(node.Get("priority")) && string.IsNullOrWhiteSpace(node.Get("priorityFormula"))
                         ? null : ResolveInt(node, "priority", "priorityFormula", scope, 2, 1, 4, "Priority"),
-                    Status = string.IsNullOrWhiteSpace(node.Get("status")) ? null : ResolveInt(node, "status", null, scope, 2, 2, 5, "Status"),
+                    Status = string.IsNullOrWhiteSpace(node.Get("status")) ? null : ResolveInt(node, "status", null, scope, 2, 2, 999, "Status"),
                     GroupId = ResolveId(node.Get("groupId"), scope, "Group"),
                     ResponderId = ResolveId(node.Get("responderId"), scope, "Agent"),
                     CustomFields = ResolveCustomFields(node, scope),

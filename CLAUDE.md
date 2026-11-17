@@ -134,6 +134,27 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   a calculated field (`"formula": "rates.mileage"`), so the browser cannot set it, and a submitted
   request keeps the amounts it was submitted with. A new site seeds the travel rates at 0 and the
   form's rules refuse to cost anything with a 0 rate. Changes are audited.
+- **Student information** (owner's rule: at most student ID, first name, last name, school,
+  grade, academy; access by a per-person flag an admin sets). `Students` table, loaded by CSV on
+  Admin → Student access (replace-all import; only those six columns are read). `AppUser.StudentAccess`
+  is the flag — **not** implied by Admin. `FieldTypes.Student`: the browser sends only an ID;
+  `AccessService.StudentsForAsync` looks it up and `FormEvaluator.NormalizeStudent` takes every
+  detail from the roster, refusing people without the flag. `/api/students` returns 403 without it
+  and never lists the roster (2+ characters, 15 results). Viewers without the flag see
+  "Restricted" on the request, print view and CSV export; student answers are never copied to a
+  new request; the audit log records access changes and import counts, never student details.
+  Not covered: text a builder puts into a ticket, email or approval message is seen by whoever
+  receives it. Open: whether the roster should come from the owner's SQL Server instead of CSV.
+- **Accessibility**: `tests`-independent check with axe-core (WCAG 2.1 A/AA) over the main screens
+  found only contrast, unlabeled builder inputs and non-underlined text links; all fixed, zero
+  violations now. Keep: `--muted` at #5a607a or darker, `row()` in `builder.js` ties labels to
+  controls, the skip link and `main#main`, `aria-invalid`/`aria-describedby` set in
+  `form-runtime.js apply()`. Accessibility mode = cookie `sf_a11y` → `html.a11y` (CSS only),
+  toggled on `/Account/Display`. The flow canvas is still mouse/touch only.
+- **Waiting on a ticket**: use `IN(ticket.status, 4, 5)`, not `ticket.status >= 4` — custom
+  Freshservice statuses have numbers above 5 and would end the wait. Create/Update ticket accept
+  custom status numbers (6–999). In the travel template Resolved = Board approved, Closed without
+  resolving = not approved (owner keeps such tickets in a custom "Travel Pending" status).
 - **Form opening dates** (`FormDefinition.OpensOn/ClosesOn`, `ClosedMessage`) are part of the
   definition, so they are versioned and take effect on publish. Enforced on the Start page and in
   `forms/submit`; resubmitting a sent-back request is deliberately still allowed after closing.
@@ -234,6 +255,9 @@ Known gaps (not requested yet, worth raising):
   original work branch).
 
 ## Working agreements with the owner
+
+- The school has a .NET developer on staff who can maintain this; the app is used alongside
+  Freshservice and Microsoft 365, not instead of them. Seven-year retention matches state rules.
 
 - They asked for clarifying questions before big features and for bug checking throughout: run
   the unit tests and the browser smoke test after changes, and look at screenshots (desktop and

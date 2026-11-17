@@ -70,12 +70,12 @@ public static class FieldTypes
         Date = "date", Select = "select", Radio = "radio", MultiSelect = "multiselect", Checkbox = "checkbox",
         Lookup = "lookup", Calculated = "calculated", Table = "table", Section = "section",
         Department = "department", ApprovalChain = "approval_chain", Location = "location", Attachments = "attachments",
-        Time = "time", Phone = "phone", Signature = "signature", Page = "page", Worksheet = "worksheet";
+        Time = "time", Phone = "phone", Signature = "signature", Page = "page", Worksheet = "worksheet", Student = "student";
 
     public static readonly string[] All =
     {
         Text, TextArea, Email, Number, Currency, Date, Select, Radio, MultiSelect, Checkbox, Lookup, Calculated, Table, Section,
-        Department, ApprovalChain, Location, Attachments, Time, Phone, Signature, Page, Worksheet,
+        Department, ApprovalChain, Location, Attachments, Time, Phone, Signature, Page, Worksheet, Student,
     };
 
     /// <summary>Field types that can be placed inside a worksheet row.</summary>
@@ -154,6 +154,18 @@ public sealed class WorksheetRow
         if (!string.IsNullOrWhiteSpace(Cost)) yield return Cost.Trim();
     }
 }
+
+/// <summary>The only facts about a student the system holds.</summary>
+public sealed record StudentInfo(string Id, string FirstName, string LastName, string School, string Grade, string Academy)
+{
+    public string Name => string.Join(", ", new[] { LastName, FirstName }.Where(p => !string.IsNullOrWhiteSpace(p)));
+}
+
+/// <summary>
+/// What the person filling in a form may use from the student roster: whether they are allowed to at
+/// all, and the roster entries for the student IDs their answers mention (looked up by the server).
+/// </summary>
+public sealed record StudentDirectory(bool Allowed, IReadOnlyDictionary<string, StudentInfo> Known);
 
 public sealed record AttachmentInfo(string Id, string Name, long Size);
 
