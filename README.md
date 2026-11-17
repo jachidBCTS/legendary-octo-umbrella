@@ -132,7 +132,7 @@ Roles and permissions are described under [Permissions](#permissions) below.
 | --- | --- |
 | Staff (everyone who signs in) | Submit the forms open to them; see their own requests and drafts; approve what is sent to them; keep their own approval chains |
 | Builder | Use shared approval chain templates and the Reports and Formula guide pages. The role on its own gives no access to any workflow |
-| Admin | Everything, everywhere. **Only admins create, copy, import or delete forms, change a form's questions, name or audience, and choose its owners.** Admins also manage departments, teams, locations, groups, roles, rates, student access, settings and the audit log, and can approve on behalf of the assigned approvers |
+| Admin | Everything, everywhere. **Only admins create, copy, import, delete or switch forms on and off, change a form's questions, name or audience, and choose its owners.** Admins also manage departments, teams, locations, groups, roles, rates, student access, settings and the audit log, and can approve on behalf of the assigned approvers |
 | Workflow owner (any staff member an admin names on a workflow) | Change that workflow's steps — approvals, tasks, notifications, due dates — on the Flow tab, and publish them; see, retry and cancel its requests. Owners cannot change the form, and cannot add help desk steps |
 
 A person's role is the **highest** of: the role set by hand under Admin → Settings; any registered

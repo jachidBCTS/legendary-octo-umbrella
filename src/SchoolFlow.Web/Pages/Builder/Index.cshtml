@@ -43,7 +43,7 @@
                 <form method="post" asp-page-handler="Duplicate"><input type="hidden" name="id" value="@w.Id" /><button class="btn small">Duplicate</button></form>
             }
             <a class="btn small" href="/Builder?handler=Export&id=@w.Id" download>Export</a>
-            @if (w.PublishedJson is not null)
+            @if (w.PublishedJson is not null && User.IsAdmin())
             {
                 <form method="post" asp-page-handler="Toggle"><input type="hidden" name="id" value="@w.Id" /><button class="btn small">@(w.IsEnabled ? "Switch off" : "Switch on")</button></form>
             }

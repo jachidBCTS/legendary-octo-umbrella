@@ -39,7 +39,7 @@ public class IndexModel : PageModel
 
     private IActionResult AdminsOnly()
     {
-        TempData["Flash"] = "Only an administrator can create, copy, import or delete forms.";
+        TempData["Flash"] = "Only an administrator can create, copy, import, delete, or switch forms on and off.";
         TempData["FlashKind"] = "bad";
         return RedirectToPage();
     }
@@ -175,6 +175,8 @@ public class IndexModel : PageModel
     {
         var w = await ManagedAsync(id);
         if (w is null) return NotFound();
+        // Whether a form is available at all is the administrators' decision, like the form itself.
+        if (!AccessService.CanEditForm(User)) return AdminsOnly();
         w.IsEnabled = !w.IsEnabled;
         _audit.Record(User, w.IsEnabled ? "workflow.switched-on" : "workflow.switched-off", w.Name);
         await _db.SaveChangesAsync();

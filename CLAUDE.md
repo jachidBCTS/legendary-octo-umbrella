@@ -119,8 +119,8 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   `aria-label`) and `buildWorksheet` places them. `FormDefinition.Style = "paper"` is CSS only
   (`.sf-paper`). Intro lines that all start with `•` render as a notice list.
 - **Who builds what (owner, Nov 17, 2026): forms are admin-only; flows can be changed by staff.**
-  `AccessService.CanEditForm` (= admin) gates creating, duplicating, importing and deleting
-  workflows and any change to the form, trigger, name/description/category/colour, owners or
+  `AccessService.CanEditForm` (= admin) gates creating, duplicating, importing, deleting and
+  switching on/off workflows and any change to the form, trigger, name/description/category/colour, owners or
   audience. `CanManage` = admin **or listed owner** (the Builder role is no longer required, and on
   its own grants nothing). An owner who is not an admin gets the Flow, Preview and a read-only
   Settings tab; `BuilderController.FormRule` compares the saved form/meta against a snapshot taken

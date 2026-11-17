@@ -671,6 +671,13 @@ async function login(page, email) {
   await page.goto(base + '/Builder');
   check(await page.locator('.wf-tile').count() === 1 && await page.locator('.wf-tile button:has-text("Delete")').count() === 0 && await page.locator('.wf-tile button:has-text("Duplicate")').count() === 0,
     'the owner sees the workflow they were given, without Duplicate or Delete');
+  check(await page.locator('.wf-tile button:has-text("Switch off")').count() === 0, 'and without Switch off: only admins take a form offline');
+  const toggled = await page.evaluate(async (id) => {
+    const body = new URLSearchParams({ id: String(id), __RequestVerificationToken: document.querySelector('meta[name=csrf-token]').content });
+    await fetch('/Builder?handler=Toggle', { method: 'POST', body });
+    return (await fetch('/Start/' + id)).status;
+  }, labId);
+  check(toggled === 200, 'the server refuses a switch-off sent by an owner (form still opens: ' + toggled + ')');
   await page.click('.wf-tile a:has-text("Edit steps")');
   await page.waitForSelector('.bld-title');
   check(await page.locator('.bld-tabs button:has-text("Form")').count() === 0 && (await page.locator('.bld-tabs button.on').textContent()) === 'Flow', 'the owner gets the Flow tab, and no Form tab');
