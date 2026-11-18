@@ -27,8 +27,11 @@ public sealed class PeopleController : ControllerBase
     private readonly IMemoryCache _cache;
     private readonly ILogger<PeopleController> _log;
 
-    public PeopleController(AppDbContext db, IFreshserviceClient freshservice, DomainPolicy domains, IMemoryCache cache, ILogger<PeopleController> log)
+    private readonly IStaffDirectory _staff;
+
+    public PeopleController(AppDbContext db, IFreshserviceClient freshservice, DomainPolicy domains, IMemoryCache cache, ILogger<PeopleController> log, IStaffDirectory staff)
     {
+        _staff = staff;
         _db = db;
         _freshservice = freshservice;
         _domains = domains;
@@ -65,7 +68,20 @@ public sealed class PeopleController : ControllerBase
         foreach (var email in lists.SelectMany(l => l.Split(';', StringSplitOptions.RemoveEmptyEntries)).Where(e => e.Contains(q, StringComparison.OrdinalIgnoreCase)))
             Add(email, null);
 
-        if (_freshservice.IsLive && found.Count < MaxResults)
+        // The district's staff list comes first; Freshservice is only asked when there is no staff list.
+        if (_staff.IsConfigured)
+        {
+            try
+            {
+                var words = q.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries).Take(3).ToList();
+                foreach (var person in await _staff.SearchAsync(words, MaxResults, ct)) Add(person.Email, person.Name);
+            }
+            catch (Exception ex) when (ex is Microsoft.Data.SqlClient.SqlException or InvalidOperationException)
+            {
+                _log.LogWarning(ex, "Staff list search failed");
+            }
+        }
+        else if (_freshservice.IsLive && found.Count < MaxResults)
         {
             try
             {

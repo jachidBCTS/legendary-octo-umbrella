@@ -162,12 +162,21 @@ public class DetailModel : PageModel
 
         // Student fields, and anything worked out from them, are hidden from people without student access.
         var studentKeys = SchoolFlow.Core.Forms.StudentData.KeysOf(def);
-        var seesStudents = studentKeys.Count == 0 || await _access.CanViewStudentsAsync(User);
-        // A request keeps only the student number; someone with student access sees the details, looked up now.
-        if (studentKeys.Count > 0 && seesStudents)
+        // A request keeps only the student number. The details are looked up now, for people who may see
+        // this student: anyone asked to act on the request, the requester if they have student access, and
+        // otherwise people whose student access covers the student's location or district.
+        var seesStudents = studentKeys.Count == 0;
+        if (!seesStudents)
         {
-            try { await new StudentAnswers(_roster, _calendar).RestoreAsync(def, context, HttpContext.RequestAborted); }
+            var actsOnIt = tasks.Any(t => StudentVisibility.Involves(t, email));
+            var filter = await HttpContext.RequestServices.GetRequiredService<StudentScopeService>().FilterForAsync(email, HttpContext.RequestAborted);
+            var answers = new StudentAnswers(_roster, _calendar);
+            var ids = StudentAnswers.IdsOf(def, context).ToList();
+            IReadOnlyDictionary<string, SchoolFlow.Core.StudentInfo> known = new Dictionary<string, SchoolFlow.Core.StudentInfo>();
+            try { known = await answers.LookupAsync(ids, HttpContext.RequestAborted); }
             catch (Exception ex) when (ex is Microsoft.Data.SqlClient.SqlException or InvalidOperationException) { RosterProblem = true; }
+            seesStudents = StudentVisibility.MaySee(actsOnIt, isSubmitter, filter, ids, known);
+            if (seesStudents && !RosterProblem) await answers.RestoreAsync(def, context, known, HttpContext.RequestAborted);
         }
         // How answers read before the latest change ("Edited · was: …").
         var previous = context.GetValueOrDefault("_previous") as Dictionary<string, object?>;

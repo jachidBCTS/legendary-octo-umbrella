@@ -15,8 +15,11 @@ public sealed class StudentsController : ControllerBase
     private readonly AccessService _access;
     private readonly ILogger<StudentsController> _log;
 
-    public StudentsController(IStudentRoster roster, AccessService access, ILogger<StudentsController> log)
+    private readonly StudentScopeService _scope;
+
+    public StudentsController(IStudentRoster roster, AccessService access, ILogger<StudentsController> log, StudentScopeService scope)
     {
+        _scope = scope;
         _roster = roster;
         _access = access;
         _log = log;
@@ -37,7 +40,14 @@ public sealed class StudentsController : ControllerBase
 
         var words = q.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries).Take(3).ToList();
         IReadOnlyList<SchoolFlow.Core.StudentInfo> rows;
-        try { rows = await _roster.SearchAsync(words, 15, ct); }
+        // Only the students this person may see: their location, their district, or all districts.
+        try
+        {
+            var filter = await _scope.FilterForAsync(User.Email(), ct) ?? StudentFilter.Nobody;
+            if (filter.IsEmpty)
+                return StatusCode(StatusCodes.Status403Forbidden, new { error = "You are not on the staff list with a location, so no students can be shown. Ask an administrator." });
+            rows = await _roster.SearchAsync(words, 15, filter, ct);
+        }
         catch (Exception ex) when (ex is Microsoft.Data.SqlClient.SqlException or InvalidOperationException)
         {
             _log.LogError(ex, "Student roster search failed");

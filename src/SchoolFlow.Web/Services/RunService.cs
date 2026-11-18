@@ -27,8 +27,9 @@ public sealed class RunService
 
     public RunService(AppDbContext db, IFreshserviceClient freshservice, NotificationService notifications, AttachmentService attachments,
         SchoolCalendar calendar, ILogger<RunService> log, DomainPolicy? domains = null, PerDiemService? perDiem = null,
-        IStudentRoster? roster = null)
+        IStudentRoster? roster = null, StudentScopeService? scope = null)
     {
+        _scope = scope;
         _roster = roster;
         _perDiem = perDiem;
         _domains = domains?.Domains;
@@ -42,6 +43,7 @@ public sealed class RunService
 
     private readonly PerDiemService? _perDiem;
     private readonly IStudentRoster? _roster;
+    private readonly StudentScopeService? _scope;
 
     /// <summary>District email domains approvers chosen on a form must use; null or empty for any.</summary>
     private readonly IReadOnlyList<string>? _domains;
@@ -88,7 +90,7 @@ public sealed class RunService
             locations: await ActiveLocationsAsync(ct),
             attachments: await _attachments.PendingForAsync(email, workflow.Id, ct),
             closedDays: await _calendar.ClosedDaysAsync(ct),
-            students: await new AccessService(_db, _roster).StudentsForAsync(def.Form, input, email, ct), allowedDomains: _domains,
+            students: await new AccessService(_db, _roster).StudentsForAsync(def.Form, input, email, ct, _scope), allowedDomains: _domains,
             perDiem: _perDiem is null ? null : await _perDiem.DirectoryForAsync(def.Form, input, ct));
         DistrictAddresses.Check(def, form, _domains);
         if (!form.IsValid) return (form, null);
@@ -583,7 +585,7 @@ public sealed class RunService
         ambient["rates"] = await _calendar.RatesAsync(ct);
         var form = FormEvaluator.Evaluate(def.Form, input, ambient, departments: await ActiveDepartmentsAsync(ct), locations: await ActiveLocationsAsync(ct),
             attachments: await _attachments.UsableForRunAsync(email, run, ct), closedDays: await _calendar.ClosedDaysAsync(ct),
-            students: await new AccessService(_db, _roster).StudentsForAsync(def.Form, input, email, ct), allowedDomains: _domains,
+            students: await new AccessService(_db, _roster).StudentsForAsync(def.Form, input, email, ct, _scope), allowedDomains: _domains,
             perDiem: _perDiem is null ? null : await _perDiem.DirectoryForAsync(def.Form, input, ct));
         DistrictAddresses.Check(def, form, _domains);
         if (!form.IsValid) return (form, ActionResult.Fail("Please fix the highlighted fields."));

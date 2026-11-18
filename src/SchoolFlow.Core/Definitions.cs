@@ -185,6 +185,9 @@ public sealed class WorksheetRow
 /// <summary>The only facts about a student the system holds.</summary>
 public sealed record StudentInfo(string Id, string FirstName, string LastName, string School, string Grade, string Academy)
 {
+    /// <summary>The student's district. Used only to decide who may see the student; never shown or stored.</summary>
+    public string District { get; init; } = "";
+
     public string Name => string.Join(", ", new[] { LastName, FirstName }.Where(p => !string.IsNullOrWhiteSpace(p)));
 }
 

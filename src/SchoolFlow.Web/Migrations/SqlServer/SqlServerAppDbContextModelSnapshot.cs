@@ -56,6 +56,13 @@ namespace SchoolFlow.Web.Migrations.SqlServer
                     b.Property<bool>("StudentAccess")
                         .HasColumnType("bit");
 
+                    b.Property<string>("StudentScope")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("location");
+
                     b.HasKey("Email");
 
                     b.ToTable("Users");

@@ -51,6 +51,13 @@ namespace SchoolFlow.Web.Migrations.Sqlite
                     b.Property<bool>("StudentAccess")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("StudentScope")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("location");
+
                     b.HasKey("Email");
 
                     b.ToTable("Users");

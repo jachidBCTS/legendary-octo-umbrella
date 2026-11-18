@@ -165,6 +165,14 @@ public static class ApprovalStatus
         Done = "Done";
 }
 
+/// <summary>How far a person's student access reaches.</summary>
+public static class StudentScopes
+{
+    public const string Location = "location", District = "district", All = "all";
+    public static string Normalize(string? value) => value is District or All ? value : Location;
+    public static string Describe(string? value) => Normalize(value) switch { District => "Whole district", All => "All districts", _ => "Own location" };
+}
+
 /// <summary>What a pending item asks its assignee to do.</summary>
 public static class TaskKinds
 {
@@ -201,6 +209,11 @@ public class AppUser
     public string EntraRole { get; set; } = "";
     /// <summary>May look students up and see student details on requests. Off for everyone, admins included, until granted.</summary>
     public bool StudentAccess { get; set; }
+    /// <summary>
+    /// With <see cref="StudentAccess"/>: which students the person may see — those at their own
+    /// location (from the staff list), their whole district, or every district. See <see cref="StudentScopes"/>.
+    /// </summary>
+    public string StudentScope { get; set; } = StudentScopes.Location;
 }
 
 /// <summary>
@@ -476,6 +489,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.Name).HasMaxLength(300);
             e.Property(x => x.Role).HasMaxLength(20);
             e.Property(x => x.EntraRole).HasMaxLength(20);
+            e.Property(x => x.StudentScope).HasMaxLength(20).HasDefaultValue(StudentScopes.Location);
         });
         b.Entity<Department>(e =>
         {

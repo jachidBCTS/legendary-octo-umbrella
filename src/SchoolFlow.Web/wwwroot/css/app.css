@@ -842,3 +842,6 @@ html.a11y .train-stop-body { font-size: 15px; }
 .nav-group > summary.nav-label:focus-visible { outline: 2px solid #a5a0ff; outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .nav-group > summary.nav-label::after { transition: none; } }
 html.a11y .nav-group > summary.nav-label { font-size: 13px; padding-top: 18px; padding-bottom: 8px; }
+
+.scope-form { flex-wrap: wrap; }
+.scope-form select { min-width: 0; }

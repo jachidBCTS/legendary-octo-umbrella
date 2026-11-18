@@ -13,8 +13,13 @@ public class StudentAccessModel : PageModel
     private readonly AuditService _audit;
     private readonly IStudentRoster _roster;
 
-    public StudentAccessModel(AppDbContext db, AuditService audit, IStudentRoster roster)
+    private readonly StudentScopeService _scope;
+    private readonly IStaffDirectory _staff;
+
+    public StudentAccessModel(AppDbContext db, AuditService audit, IStudentRoster roster, StudentScopeService scope, IStaffDirectory staff)
     {
+        _scope = scope;
+        _staff = staff;
         _db = db;
         _audit = audit;
         _roster = roster;
@@ -24,11 +29,25 @@ public class StudentAccessModel : PageModel
     /// <summary>Whether a roster is connected (Students:ConnectionString), and the result of "Check the connection".</summary>
     public bool RosterConfigured => _roster.IsConfigured;
     public string? RosterCheck { get; private set; }
+    public string? StaffCheck { get; private set; }
+    public bool StaffConfigured => _staff.IsConfigured;
+    /// <summary>Where the staff list says each person with access works ("Teterboro (BCTS)"), or why it is unknown.</summary>
+    public Dictionary<string, string> WorksAt { get; } = new(StringComparer.OrdinalIgnoreCase);
     public List<string> FormsUsingStudents { get; private set; } = new();
 
     public async Task OnGetAsync()
     {
         Allowed = await _db.Users.AsNoTracking().Where(u => u.StudentAccess).OrderBy(u => u.Name).ThenBy(u => u.Email).ToListAsync();
+        foreach (var u in Allowed)
+        {
+            try
+            {
+                var places = await _scope.PlacesAsync(u.Email);
+                WorksAt[u.Email] = places.Count == 0 ? "Not on the staff list"
+                    : string.Join(", ", places.Select(p => $"{p.Location} ({p.District})").Distinct());
+            }
+            catch (Exception ex) when (ex is Microsoft.Data.SqlClient.SqlException or InvalidOperationException) { WorksAt[u.Email] = "Staff list could not be read"; }
+        }
         FormsUsingStudents = (await _db.Workflows.AsNoTracking().Select(w => new { w.Name, w.DraftJson, w.PublishedJson }).ToListAsync())
             .Where(w => (w.DraftJson + w.PublishedJson).Contains("\"type\":\"student\"")).Select(w => w.Name).OrderBy(n => n).ToList();
     }
@@ -38,6 +57,7 @@ public class StudentAccessModel : PageModel
     {
         await OnGetAsync();
         RosterCheck = await _roster.TestAsync(ct);
+        StaffCheck = await _staff.TestAsync(ct);
         return Page();
     }
 
@@ -48,8 +68,9 @@ public class StudentAccessModel : PageModel
         return RedirectToPage();
     }
 
-    public async Task<IActionResult> OnPostGrantAsync(string? email)
+    public async Task<IActionResult> OnPostGrantAsync(string? email, string? scope)
     {
+        scope = StudentScopes.Normalize(scope);
         email = (email ?? "").Trim().ToLowerInvariant();
         if (email.Length == 0 || email.Length > 320 || !System.Text.RegularExpressions.Regex.IsMatch(email, @"^[^@\s]+@[^@\s]+\.[^@\s]+$"))
             return Flash("Enter the person's email address.", false);
@@ -60,11 +81,26 @@ public class StudentAccessModel : PageModel
             user = new AppUser { Email = email, Name = "", Role = Roles.Staff };
             _db.Users.Add(user);
         }
-        if (user.StudentAccess) return Flash($"{email} already has access to student information.", true);
+        if (user.StudentAccess) return Flash($"{email} already has access to student information. Change how far it reaches in the list below.", true);
         user.StudentAccess = true;
-        _audit.Record(User, "students.access-granted", email);
+        user.StudentScope = scope;
+        _audit.Record(User, "students.access-granted", email, StudentScopes.Describe(scope));
         await _db.SaveChangesAsync();
-        return Flash($"{email} can now look up students and see student details on requests.", true);
+        return Flash($"{email} can now look up students ({StudentScopes.Describe(scope).ToLowerInvariant()}) and see them on requests.", true);
+    }
+
+    /// <summary>Changes how far a person's student access reaches: own location, whole district or all districts.</summary>
+    public async Task<IActionResult> OnPostScopeAsync(string? email, string? scope)
+    {
+        email = (email ?? "").Trim().ToLowerInvariant();
+        scope = StudentScopes.Normalize(scope);
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == email);
+        if (user is null || !user.StudentAccess) return RedirectToPage();
+        if (user.StudentScope == scope) return Flash("Nothing changed.", true);
+        _audit.Record(User, "students.access-scope", email, $"{StudentScopes.Describe(user.StudentScope)} → {StudentScopes.Describe(scope)}");
+        user.StudentScope = scope;
+        await _db.SaveChangesAsync();
+        return Flash($"{email} now sees students: {StudentScopes.Describe(scope).ToLowerInvariant()}.", true);
     }
 
     public async Task<IActionResult> OnPostRevokeAsync(string? email)

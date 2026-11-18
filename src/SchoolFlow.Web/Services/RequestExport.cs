@@ -12,7 +12,9 @@ public static class RequestExport
 
     /// <param name="includeStudents">False for someone without student access: student answers are left out of the file.</param>
     /// <param name="contexts">Answers to use instead of the stored ones (requests whose students were looked up again).</param>
-    public static string ToCsv(IReadOnlyList<WorkflowRun> runs, bool includeStudents = true, IReadOnlyDictionary<int, Dictionary<string, object?>>? contexts = null)
+    /// <param name="hiddenStudents">Requests whose students this person may not see (shown as restricted even when <paramref name="includeStudents"/> is true).</param>
+    public static string ToCsv(IReadOnlyList<WorkflowRun> runs, bool includeStudents = true, IReadOnlyDictionary<int, Dictionary<string, object?>>? contexts = null,
+        IReadOnlySet<int>? hiddenStudents = null)
     {
         // Requests on different forms (or versions of a form) have different questions; a column is a question's label.
         var forms = new Dictionary<string, FormDefinition>();
@@ -49,7 +51,7 @@ public static class RequestExport
             var context = contexts is not null && contexts.TryGetValue(run.Id, out var restored) ? restored : Json.ToValues(run.ContextJson);
             var answers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var field in FormOf(run).Fields.Where(HasAnswer))
-                answers.TryAdd(Header(field), !includeStudents && StudentKeysOf(run).Contains(field.Key)
+                answers.TryAdd(Header(field), (!includeStudents || hiddenStudents?.Contains(run.Id) == true) && StudentKeysOf(run).Contains(field.Key)
                     ? (Values.IsBlank(context.GetValueOrDefault(field.Key)) ? "" : "(restricted)")
                     : Answer(field, context.GetValueOrDefault(field.Key)));
             cells.AddRange(columns.Select(c => answers.GetValueOrDefault(c, "")));

@@ -30,6 +30,7 @@ public class AuditModel : PageModel
         "workflow.deleted" => "Workflow deleted",
         "students.access-granted" => "Student access given",
         "students.access-removed" => "Student access removed",
+        "students.access-scope" => "Student access changed",
         "students.imported" => "Student roster imported",
         "team.added" => "Team added",
         "team.changed" => "Team members changed",

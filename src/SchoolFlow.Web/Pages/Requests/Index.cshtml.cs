@@ -55,30 +55,36 @@ public class IndexModel : PageModel
     }
 
     /// <summary>Downloads what the list is showing (same scope and filters) as a spreadsheet file, one column per form answer.</summary>
-    public async Task<IActionResult> OnGetExportAsync([FromServices] AuditService audit, [FromServices] IStudentRoster roster)
+    public async Task<IActionResult> OnGetExportAsync([FromServices] AuditService audit, [FromServices] IStudentRoster roster, [FromServices] StudentScopeService scope)
     {
         const int MaxRows = 5000;
         var runs = await (await FilteredAsync()).OrderByDescending(r => r.Id).Take(MaxRows).ToListAsync();
-        var includeStudents = await _access.CanViewStudentsAsync(User);
-        // Requests keep only student numbers: for someone with access, the details are looked up now, all at once.
-        Dictionary<int, Dictionary<string, object?>>? contexts = null;
-        if (includeStudents)
+        // Requests keep only student numbers. Each request's students are looked up now (all at once) and shown
+        // only to people who may see them: those asked to act on it, its requester with student access, or
+        // people whose student access covers the students' location or district.
+        var email = User.Email();
+        var filter = await scope.FilterForAsync(email, HttpContext.RequestAborted);
+        var contexts = new Dictionary<int, Dictionary<string, object?>>();
+        var hidden = new HashSet<int>();
+        var answers = new StudentAnswers(roster, _calendar);
+        var withStudents = runs.Select(r => (Run: r, Def: SchoolFlow.Core.Json.ParseDefinition(r.DefinitionJson), Context: SchoolFlow.Core.Json.ToValues(r.ContextJson)))
+            .Where(x => StudentAnswers.IdsOf(x.Def, x.Context).Any()).ToList();
+        if (withStudents.Count > 0)
         {
-            var answers = new StudentAnswers(roster, _calendar);
-            var withStudents = runs.Select(r => (Run: r, Def: SchoolFlow.Core.Json.ParseDefinition(r.DefinitionJson), Context: SchoolFlow.Core.Json.ToValues(r.ContextJson)))
-                .Where(x => StudentAnswers.IdsOf(x.Def, x.Context).Any()).ToList();
-            if (withStudents.Count > 0)
+            var runIds = withStudents.Select(x => x.Run.Id).ToList();
+            var involved = (await _db.ApprovalTasks.AsNoTracking().Where(t => runIds.Contains(t.RunId)).ToListAsync())
+                .Where(t => StudentVisibility.Involves(t, email)).Select(t => t.RunId).ToHashSet();
+            var known = await answers.LookupAsync(withStudents.SelectMany(x => StudentAnswers.IdsOf(x.Def, x.Context)), HttpContext.RequestAborted);
+            foreach (var (run, def, context) in withStudents)
             {
-                var known = await answers.LookupAsync(withStudents.SelectMany(x => StudentAnswers.IdsOf(x.Def, x.Context)), HttpContext.RequestAborted);
-                contexts = new();
-                foreach (var (run, def, context) in withStudents)
-                {
-                    await answers.RestoreAsync(def, context, known, HttpContext.RequestAborted);
-                    contexts[run.Id] = context;
-                }
+                var ids = StudentAnswers.IdsOf(def, context).ToList();
+                if (!StudentVisibility.MaySee(involved.Contains(run.Id), run.SubmitterEmail == email && email.Length > 0, filter, ids, known)) { hidden.Add(run.Id); continue; }
+                await answers.RestoreAsync(def, context, known, HttpContext.RequestAborted);
+                contexts[run.Id] = context;
             }
         }
-        var csv = RequestExport.ToCsv(runs, includeStudents, contexts);
+        var includeStudents = true;
+        var csv = RequestExport.ToCsv(runs, includeStudents, contexts, hidden);
         if (Scope != "mine")
         {
             // Other people's answers are leaving the system: note who took them.

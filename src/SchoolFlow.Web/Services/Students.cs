@@ -13,8 +13,11 @@ public interface IStudentRoster
 {
     /// <summary>False when no roster is connected (the Student field then finds nobody).</summary>
     bool IsConfigured { get; }
-    /// <summary>Students whose last name, first name or ID starts with every one of the words (at most <paramref name="max"/>).</summary>
-    Task<IReadOnlyList<StudentInfo>> SearchAsync(IReadOnlyList<string> words, int max, CancellationToken ct);
+    /// <summary>
+    /// Students whose last name, first name or ID starts with every one of the words (at most
+    /// <paramref name="max"/>), among those <paramref name="filter"/> allows.
+    /// </summary>
+    Task<IReadOnlyList<StudentInfo>> SearchAsync(IReadOnlyList<string> words, int max, StudentFilter filter, CancellationToken ct);
     /// <summary>The students with these IDs (unknown IDs are simply missing).</summary>
     Task<IReadOnlyDictionary<string, StudentInfo>> FindAsync(IReadOnlyCollection<string> ids, CancellationToken ct);
     /// <summary>A short check for Admin → Student access: how many students the roster offers, or why it cannot be read.</summary>
@@ -22,17 +25,33 @@ public interface IStudentRoster
 }
 
 /// <summary>
+/// Which students someone may see: everyone, or those at certain locations or in certain districts
+/// (values as the student roster writes them). Empty = nobody.
+/// </summary>
+public sealed record StudentFilter(bool All, IReadOnlyCollection<string> Locations, IReadOnlyCollection<string> Districts)
+{
+    public static readonly StudentFilter Everyone = new(true, Array.Empty<string>(), Array.Empty<string>());
+    public static readonly StudentFilter Nobody = new(false, Array.Empty<string>(), Array.Empty<string>());
+    public bool IsEmpty => !All && Locations.Count == 0 && Districts.Count == 0;
+
+    private static bool In(IReadOnlyCollection<string> list, string value) =>
+        value.Trim().Length > 0 && list.Any(v => string.Equals(v.Trim(), value.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    public bool Allows(StudentInfo student) => All || In(Locations, student.School) || In(Districts, student.District);
+}
+
+/// <summary>
 /// Reads the roster from SQL Server: <c>Students:ConnectionString</c> (Windows sign-in as the web
 /// server's account), <c>Students:View</c>, and the view's column names under <c>Students:Columns</c>
-/// (StudentId, FirstName, LastName, School, Grade, Academy — each defaults to that name). No other
-/// column is ever read. See docs/DEPLOY-IIS.md.
+/// (StudentId, FirstName, LastName, School, Grade, Academy, District — each defaults to that name). No
+/// other column is ever read; District only decides who may see a student. See docs/DEPLOY-IIS.md.
 /// </summary>
 public sealed class SqlServerStudentRoster : IStudentRoster
 {
     public const string DefaultView = "dbo.BergenFormsStudents";
     private static readonly Regex SafeName = new(@"^(\[[A-Za-z0-9_ ]+\]|[A-Za-z0-9_]+)(\.(\[[A-Za-z0-9_ ]+\]|[A-Za-z0-9_]+)){0,2}$");
     private static readonly Regex SafeColumn = new(@"^[A-Za-z0-9_ ]{1,128}$");
-    public static readonly string[] Parts = { "StudentId", "FirstName", "LastName", "School", "Grade", "Academy" };
+    public static readonly string[] Parts = { "StudentId", "FirstName", "LastName", "School", "Grade", "Academy", "District" };
     private readonly string _connectionString;
     private readonly string _view;
     private readonly Dictionary<string, string> _col;   // part → [column]
@@ -52,7 +71,7 @@ public sealed class SqlServerStudentRoster : IStudentRoster
             _col[part] = "[" + name + "]";
         }
         _columns = $"CAST({_col["StudentId"]} AS nvarchar(40)), CAST({_col["FirstName"]} AS nvarchar(100)), CAST({_col["LastName"]} AS nvarchar(100)), " +
-                   $"CAST({_col["School"]} AS nvarchar(200)), CAST({_col["Grade"]} AS nvarchar(20)), CAST({_col["Academy"]} AS nvarchar(200))";
+                   $"CAST({_col["School"]} AS nvarchar(200)), CAST({_col["Grade"]} AS nvarchar(20)), CAST({_col["Academy"]} AS nvarchar(200)), CAST({_col["District"]} AS nvarchar(200))";
     }
 
     public bool IsConfigured => true;
@@ -60,13 +79,25 @@ public sealed class SqlServerStudentRoster : IStudentRoster
     /// <summary>Makes typed text safe inside LIKE: %, _ and [ match only themselves.</summary>
     private static string Like(string word) => word.Replace("[", "[[]").Replace("%", "[%]").Replace("_", "[_]") + "%";
 
-    public async Task<IReadOnlyList<StudentInfo>> SearchAsync(IReadOnlyList<string> words, int max, CancellationToken ct)
+    public async Task<IReadOnlyList<StudentInfo>> SearchAsync(IReadOnlyList<string> words, int max, StudentFilter filter, CancellationToken ct)
     {
-        if (words.Count == 0) return Array.Empty<StudentInfo>();
+        if (words.Count == 0 || filter.IsEmpty) return Array.Empty<StudentInfo>();
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(ct);
         await using var command = connection.CreateCommand();
         var where = string.Join(" AND ", words.Select((_, i) => $"({_col["LastName"]} LIKE @w{i} OR {_col["FirstName"]} LIKE @w{i} OR CAST({_col["StudentId"]} AS nvarchar(40)) LIKE @w{i})"));
+        if (!filter.All)
+        {
+            // Only students at the person's own location(s), or in their district(s).
+            var places = new List<string>();
+            var locations = filter.Locations.Take(20).ToList();
+            var districts = filter.Districts.Take(20).ToList();
+            if (locations.Count > 0) places.Add($"{_col["School"]} IN ({string.Join(", ", locations.Select((_, i) => "@l" + i))})");
+            if (districts.Count > 0) places.Add($"{_col["District"]} IN ({string.Join(", ", districts.Select((_, i) => "@d" + i))})");
+            where += " AND (" + string.Join(" OR ", places) + ")";
+            for (var i = 0; i < locations.Count; i++) command.Parameters.Add(new SqlParameter("@l" + i, System.Data.SqlDbType.NVarChar, 200) { Value = locations[i] });
+            for (var i = 0; i < districts.Count; i++) command.Parameters.Add(new SqlParameter("@d" + i, System.Data.SqlDbType.NVarChar, 200) { Value = districts[i] });
+        }
         command.CommandText = $"SELECT TOP (@max) {_columns} FROM {_view} WHERE {where} ORDER BY {_col["LastName"]}, {_col["FirstName"]}";
         command.CommandTimeout = 10;
         command.Parameters.AddWithValue("@max", Math.Clamp(max, 1, 50));
@@ -119,7 +150,7 @@ public sealed class SqlServerStudentRoster : IStudentRoster
         while (await reader.ReadAsync(ct))
         {
             var id = Text(0);
-            if (id.Length > 0) list.Add(new StudentInfo(id, Text(1), Text(2), Text(3), Text(4), Text(5)));
+            if (id.Length > 0) list.Add(new StudentInfo(id, Text(1), Text(2), Text(3), Text(4), Text(5)) { District = Text(6) });
         }
         return list;
     }
@@ -130,15 +161,16 @@ public sealed class SampleStudentRoster : IStudentRoster
 {
     private static readonly StudentInfo[] Students =
     {
-        new("20451", "Maya", "Okafor", "Teterboro", "10", "Aerospace"),
-        new("20452", "Leo", "Okon", "Paramus", "11", "Culinary"),
-        new("20453", "Ana", "Ruiz", "Hackensack", "9", "Health Sciences"),
+        new("20451", "Maya", "Okafor", "Teterboro", "10", "Aerospace") { District = "Bergen County Technical Schools" },
+        new("20452", "Leo", "Okon", "Paramus", "11", "Culinary") { District = "Bergen County Technical Schools" },
+        new("20453", "Ana", "Ruiz", "Hackensack", "9", "Health Sciences") { District = "Bergen County Special Services" },
     };
 
     public bool IsConfigured => true;
 
-    public Task<IReadOnlyList<StudentInfo>> SearchAsync(IReadOnlyList<string> words, int max, CancellationToken ct) =>
+    public Task<IReadOnlyList<StudentInfo>> SearchAsync(IReadOnlyList<string> words, int max, StudentFilter filter, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<StudentInfo>>(Students
+            .Where(filter.Allows)
             .Where(s => words.All(w => s.LastName.StartsWith(w, StringComparison.OrdinalIgnoreCase) || s.FirstName.StartsWith(w, StringComparison.OrdinalIgnoreCase) || s.Id.StartsWith(w, StringComparison.OrdinalIgnoreCase)))
             .OrderBy(s => s.LastName).ThenBy(s => s.FirstName).Take(max).ToList());
 
@@ -153,7 +185,7 @@ public sealed class SampleStudentRoster : IStudentRoster
 public sealed class NoStudentRoster : IStudentRoster
 {
     public bool IsConfigured => false;
-    public Task<IReadOnlyList<StudentInfo>> SearchAsync(IReadOnlyList<string> words, int max, CancellationToken ct) => Task.FromResult<IReadOnlyList<StudentInfo>>(Array.Empty<StudentInfo>());
+    public Task<IReadOnlyList<StudentInfo>> SearchAsync(IReadOnlyList<string> words, int max, StudentFilter filter, CancellationToken ct) => Task.FromResult<IReadOnlyList<StudentInfo>>(Array.Empty<StudentInfo>());
     public Task<IReadOnlyDictionary<string, StudentInfo>> FindAsync(IReadOnlyCollection<string> ids, CancellationToken ct) =>
         Task.FromResult<IReadOnlyDictionary<string, StudentInfo>>(new Dictionary<string, StudentInfo>());
     public Task<string> TestAsync(CancellationToken ct) => Task.FromResult("Not connected: Students:ConnectionString is not set in the settings file.");

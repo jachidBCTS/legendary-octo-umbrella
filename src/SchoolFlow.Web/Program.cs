@@ -91,6 +91,18 @@ else if (builder.Environment.IsDevelopment())
     builder.Services.AddSingleton<IStudentRoster, SampleStudentRoster>();
 else
     builder.Services.AddSingleton<IStudentRoster, NoStudentRoster>();
+// The staff list (same SQL Server; Staff:ConnectionString defaults to the roster's) says where each
+// person works, which decides the students they may see, and supplies staff email suggestions.
+var staffConnection = config["Staff:ConnectionString"];
+if (string.IsNullOrWhiteSpace(staffConnection)) staffConnection = rosterConnection;
+if (!string.IsNullOrWhiteSpace(staffConnection))
+    builder.Services.AddSingleton<IStaffDirectory>(new SqlServerStaffDirectory(staffConnection, config["Staff:View"],
+        SqlServerStaffDirectory.Parts.ToDictionary(p => p.Part, p => config[$"Staff:Columns:{p.Part}"])));
+else if (builder.Environment.IsDevelopment())
+    builder.Services.AddSingleton<IStaffDirectory, SampleStaffDirectory>();
+else
+    builder.Services.AddSingleton<IStaffDirectory, NoStaffDirectory>();
+builder.Services.AddScoped<StudentScopeService>();
 builder.Services.AddSingleton<DomainPolicy>();
 builder.Services.AddScoped<AuditService>();
 builder.Services.AddScoped<SchoolCalendar>();

@@ -1,7 +1,8 @@
--- Lets Bergen Forms read the student roster on your SQL Server (run once, in SQL Server Management Studio).
--- Bergen Forms reads only six columns of the view: student number, first name, last name, school
--- (Location), grade and academy. It never reads any other column (District is not read), and it stores
--- nothing but the student number on a request: everything else is looked up live when it is shown.
+-- Lets Bergen Forms read the student roster and the staff list on your SQL Server (run once, in SQL Server
+-- Management Studio). From ActiveStudents it reads student number, first name, last name, school (Location),
+-- grade, academy and district (district only decides who may see a student). From ActiveStaff it reads where
+-- each person works (Location, DistrictShort), their name, title, department and work email. A request
+-- stores nothing about a student but the student number.
 
 USE [ThingsOfBergen];
 GO
@@ -11,7 +12,13 @@ GO
 IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'BERGEN\WEBSERVER$')   -- <<< CHANGE if the account name differs
     CREATE USER [BERGEN\WEBSERVER$] FOR LOGIN [BERGEN\WEBSERVER$];
 GRANT SELECT ON dbo.ActiveStudents TO [BERGEN\WEBSERVER$];
+GRANT SELECT ON dbo.ActiveStaff TO [BERGEN\WEBSERVER$];
 GO
+
+-- The two views write places differently (e.g. staff DistrictShort "BCTS" vs the students' District).
+-- Run these and send the results, so the matching list in the settings file can be filled in:
+SELECT DISTINCT DistrictShort, Location FROM dbo.ActiveStaff ORDER BY DistrictShort, Location;
+SELECT DISTINCT District, Location FROM dbo.ActiveStudents ORDER BY District, Location;
 
 -- Check: a few students, with the columns Bergen Forms uses.
 SELECT TOP (5) StudentNumber, FirstName, LastName, Location, Grade, [Academy or Major]
@@ -21,6 +28,8 @@ FROM dbo.ActiveStudents ORDER BY LastName, FirstName;
 --   "Students": {
 --     "ConnectionString": "Server=YOUR-SQL-SERVER;Database=ThingsOfBergen;Integrated Security=True;Encrypt=True;TrustServerCertificate=True;Application Name=Bergen Forms",
 --     "View": "dbo.ActiveStudents",
---     "Columns": { "StudentId": "StudentNumber", "School": "Location", "Academy": "Academy or Major" }
+--     "Columns": { "StudentId": "StudentNumber", "School": "Location", "Academy": "Academy or Major", "District": "District" },
+--     "Match": { "Districts": { ... }, "Locations": { ... } }      (filled in from the two lists above)
 --   },
+--   "Staff": { "View": "dbo.ActiveStaff" },     (uses the same connection as Students)
 -- and use Admin > Student access > Check the connection.

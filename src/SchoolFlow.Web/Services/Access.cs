@@ -65,7 +65,8 @@ public sealed class AccessService
     /// The roster entries a form's answers refer to, for the evaluator — or null when the form has no
     /// student field. Someone without access gets an empty directory, so their answer is refused.
     /// </summary>
-    public async Task<SchoolFlow.Core.StudentDirectory?> StudentsForAsync(SchoolFlow.Core.FormDefinition form, IDictionary<string, object?> input, string email, CancellationToken ct = default)
+    public async Task<SchoolFlow.Core.StudentDirectory?> StudentsForAsync(SchoolFlow.Core.FormDefinition form, IDictionary<string, object?> input, string email, CancellationToken ct = default,
+        StudentScopeService? scope = null)
     {
         var fields = form.Fields.Where(f => f.Type == SchoolFlow.Core.FieldTypes.Student).ToList();
         if (fields.Count == 0) return null;
@@ -74,9 +75,11 @@ public sealed class AccessService
         var lookup = input.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
         var ids = fields.Select(f => SchoolFlow.Core.Forms.FormEvaluator.StudentIdOf(lookup.GetValueOrDefault(f.Key))).Where(id => id.Length > 0).Distinct().ToList();
         // Looked up live in the district's roster; nothing about students is stored here except what a request keeps.
+        // Only students this person may see count as found (their location, district, or all districts).
+        var filter = scope is null ? StudentFilter.Everyone : await scope.FilterForAsync(email, ct) ?? StudentFilter.Nobody;
         if (ids.Count > 0)
             foreach (var (id, student) in await _roster.FindAsync(ids, ct))
-                known[id] = student;
+                if (filter.Allows(student)) known[id] = student;
         return new SchoolFlow.Core.StudentDirectory(true, known);
     }
 

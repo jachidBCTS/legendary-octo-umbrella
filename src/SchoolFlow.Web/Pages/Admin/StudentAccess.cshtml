@@ -11,19 +11,31 @@
     <h2>People with access</h2>
     <form method="post" asp-page-handler="Grant" class="dept-form">
         <div><label class="lbl" for="sa-email">Staff member's email</label><input id="sa-email" name="email" type="email" required maxlength="320" placeholder="name@bergen.org" autocomplete="off" data-people /></div>
+        <div><label class="lbl" for="sa-scope">Which students</label><select id="sa-scope" name="scope"><option value="location">Own location</option><option value="district">Whole district</option><option value="all">All districts</option></select></div>
         <div class="dept-save"><button class="btn primary">Give access</button></div>
     </form>
     @if (Model.Allowed.Count == 0) { <p class="muted">Nobody has access to student information yet.</p> }
     else
     {
         <div class="table-wrap"><table class="table stack">
-            <thead><tr><th>Person</th><th>Email</th><th>Last signed in</th><th></th></tr></thead>
+            <thead><tr><th>Person</th><th>Works at (staff list)</th><th>Which students</th><th>Last signed in</th><th></th></tr></thead>
             <tbody>
             @foreach (var u in Model.Allowed)
             {
                 <tr>
-                    <td><strong>@(u.Name.Length > 0 ? u.Name : "—")</strong></td>
-                    <td data-label="Email">@u.Email</td>
+                    <td><strong>@(u.Name.Length > 0 ? u.Name : "—")</strong><div class="muted small">@u.Email</div></td>
+                    <td data-label="Works at">@(Model.WorksAt.TryGetValue(u.Email, out var at) ? at : "—")</td>
+                    <td data-label="Which students">
+                        <form method="post" asp-page-handler="Scope" class="row scope-form">
+                            <input type="hidden" name="email" value="@u.Email" />
+                            <select name="scope" aria-label="Which students @u.Email may see">
+                                <option value="location" selected="@(StudentScopes.Normalize(u.StudentScope) == StudentScopes.Location)">Own location</option>
+                                <option value="district" selected="@(u.StudentScope == StudentScopes.District)">Whole district</option>
+                                <option value="all" selected="@(u.StudentScope == StudentScopes.All)">All districts</option>
+                            </select>
+                            <button class="btn small">Save</button>
+                        </form>
+                    </td>
                     <td data-label="Last signed in" class="muted">@(u.LastSeenAt.Year < 2000 ? "Has not signed in yet" : Ui.When(u.LastSeenAt))</td>
                     <td class="actions"><form method="post" asp-page-handler="Revoke" data-confirm="Remove student access from @u.Email?"><input type="hidden" name="email" value="@u.Email" /><button class="btn small ghost-danger">Remove access</button></form></td>
                 </tr>
@@ -31,6 +43,8 @@
             </tbody>
         </table></div>
     }
+    <p class="muted small"><strong>Own location</strong>: students at the location(s) the staff list gives for the person. <strong>Whole district</strong>: every student in their district (e.g. athletics). <strong>All districts</strong>: everyone.
+        People asked to act on a request (approvers, task owners) see its student whatever their access.</p>
     <p class="muted small">With access, a person can search the roster in a <em>Student</em> field, and sees the student on requests they are allowed to open and in spreadsheet exports.
         Without it, a Student field cannot be filled in and student answers show as “Restricted”. Every change here is recorded in the audit log.</p>
 </section>
@@ -40,11 +54,16 @@
     @if (Model.RosterConfigured)
     {
         <p>Students are looked up live in the district's student database each time someone searches; nothing is copied into Bergen Forms.
-            Only student ID, first name, last name, school, grade and academy are read.</p>
+            Only student ID, first name, last name, school, grade and academy are read, plus the district, which only decides who may see the student.
+            Where each person works comes from the district's staff list.</p>
         <form method="post" asp-page-handler="Check"><button class="btn">Check the connection</button></form>
         @if (Model.RosterCheck is { } check)
         {
-            <div class="flash @(check.StartsWith("Could not") ? "bad" : "ok")" role="status">@check</div>
+            <div class="flash @(check.StartsWith("Could not") ? "bad" : "ok")" role="status">Students — @check</div>
+        }
+        @if (Model.StaffCheck is { } staffCheck)
+        {
+            <div class="flash @(staffCheck.StartsWith("Could not") || staffCheck.StartsWith("Not connected") ? "bad" : "ok")" role="status">Staff — @staffCheck</div>
         }
     }
     else

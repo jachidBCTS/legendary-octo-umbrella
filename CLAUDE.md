@@ -276,6 +276,20 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   are never copied to a new request; the audit log records access changes, never student details.
   Not covered: text a builder puts into a ticket, email or approval message is seen by whoever
   receives it. **Not verified against the owner's SQL Server yet.**
+- **Who sees which students (owner, Nov 18, 2026):** the on/off flag stays; `AppUser.StudentScope` =
+  `location` (default) | `district` | `all` (migration `AddStudentScope`; Admin → Student access).
+  Where a person works comes from the district's **staff list** (`IStaffDirectory` in `Services/Staff.cs`:
+  `SqlServerStaffDirectory` over `ThingsOfBergen.dbo.ActiveStaff` — StaffID, FirstName, LastName, Title,
+  DistrictShort, Location, Department, WorkEmail; `Staff:ConnectionString` defaults to the roster's;
+  `SampleStaffDirectory` in Development). Staff and student place names differ, so
+  `Students:Match:Districts`/`Locations` map staff values to roster values (unmapped = as is).
+  `StudentScopeService.FilterForAsync(email)` → `StudentFilter` (null = no access; empty = not on the
+  staff list → nobody). Applied to `/api/students` (in the SQL), to form submission (out-of-reach =
+  "not found"), and to viewing (`StudentVisibility.MaySee`): people **asked to act on the request**
+  (assignee, stand-in, escalation, decided) see its students even without access (owner's choice); the
+  requester with access sees their own; otherwise access must cover every student on it. Exports apply
+  it per request. The staff list also feeds email suggestions (`/api/people`; Freshservice only when there
+  is no staff list). **Not verified against the owner's SQL Server yet.**
 - **Name (owner, Nov 18, 2026):** the site is called **Bergen Forms** everywhere people see it. Code,
   namespaces, the `X-SchoolFlow-Secret` webhook header and the workflow file marker keep "SchoolFlow".
 - **Sidebar:** Build and Admin are `<details class="nav-group">`; the group holding the current page is
@@ -382,7 +396,7 @@ Known gaps (not requested yet, worth raising):
 - The owner has Entra groups but did not have their IDs to hand; none are registered yet.
 - Reminders, escalation and the missed-ticket check run inside the web process: the IIS app pool
   must be AlwaysRunning (see the deploy guide) or they are late.
-- No student/staff picker field — waiting on the SQL Server data.
+- No staff picker field yet (the staff list is now connected; build one when asked).
 - Departments cannot be deleted (only switched off); chain templates in use by a workflow cannot
   be deleted.
 - The flow builder works on a phone but is cramped; fine on tablet/desktop.

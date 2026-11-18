@@ -140,7 +140,10 @@ On the server, copy `appsettings.Production.example.json` (in the package) to
   that holds it (Windows sign-in as the web server's account), `View` (e.g. `dbo.ActiveStudents`) and,
   under `Columns`, the view's names for StudentId, FirstName, LastName, School, Grade and Academy
   (only those six are ever read). `deploy/student-roster-view.sql` gives the web server's account read
-  access to that view and nothing else. Requests store only the student number.
+  access to that view and nothing else. Requests store only the student number. `Students:Columns:District`
+  and `Staff` (the staff list, `dbo.ActiveStaff`, same connection unless `Staff:ConnectionString` is set)
+  decide who sees which students; `Students:Match:Districts`/`Locations` translate the staff list's
+  place names into the roster's where they differ.
   Then use **Admin → Student access → Check the connection**. Leave it out and Student fields find nobody.
 - `Gsa:ApiKey` — the api.data.gov key for GSA's per diem rates (travel form). Without it the travel
   form uses the "GSA fallback" amounts on Admin → Rates and flags each request.

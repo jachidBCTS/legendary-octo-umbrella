@@ -1315,11 +1315,13 @@ async function login(page, email) {
   check(await page.locator('#sa-file').count() === 0 && !(await page.locator('body').textContent()).includes('Import'), 'there is no roster import: students are read from the district\'s database');
   await page.click('button:has-text("Check the connection")');
   await page.waitForSelector('.flash.ok');
-  check((await page.locator('.flash.ok').textContent()).includes('Example roster'), 'admins can check the roster connection');
+  check((await page.locator('.flash.ok').allTextContents()).join(' ').includes('Example roster') && (await page.locator('.flash.ok').allTextContents()).join(' ').includes('Example staff list'), 'admins can check the roster and staff list connections');
   await page.fill('#sa-email', 'principal@example.org');
   await page.click('button:has-text("Give access")');
   await page.waitForSelector('.flash.ok');
   check(await page.locator('tr:has-text("principal@example.org") button:has-text("Remove access")').count() === 1, 'an admin gives a staff member student access');
+  check((await page.locator('tr:has-text("principal@example.org")').textContent()).includes('Teterboro (BCTS)'), 'the page shows where the staff list says the person works');
+  check(await page.locator('tr:has-text("principal@example.org") select[name=scope]').inputValue() === 'location', 'access starts at the person\'s own location');
   await page.screenshot({ path: S + '/shots/49-student-access.png', fullPage: true });
   const adminSearch = await page.evaluate(async () => (await fetch('/api/students?q=Oka')).status);
   check(adminSearch === 403, 'an admin without the flag cannot search students (status ' + adminSearch + ')');
@@ -1356,6 +1358,8 @@ async function login(page, email) {
   await field('Student').locator('input').pressSequentially('oka', { delay: 40 });
   await page.waitForSelector('.sf-suggest-item');
   check(await page.locator('.sf-suggest-item').count() === 1 && (await page.locator('.sf-suggest-item').textContent()).includes('Okafor, Maya'), 'staff with access find a student by name');
+  const okon = await page.evaluate(async () => (await (await fetch('/api/students?q=Okon')).json()).items.length);
+  check(okon === 0, 'a teacher with "own location" access does not find students at another building (' + okon + ')');
   await page.locator('.sf-suggest-item').click();
   check((await page.locator('.sf-student').textContent()).includes('ID 20451') && (await page.locator('.sf-student').textContent()).includes('Grade 10'), 'the chosen student shows ID, school, grade and academy');
   await field('Reason').locator('input').fill('Medical appointment');

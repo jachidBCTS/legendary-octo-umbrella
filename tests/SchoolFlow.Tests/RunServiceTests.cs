@@ -52,11 +52,11 @@ public sealed class RunServiceTests : IDisposable
         new AttachmentSettings(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Attachments:Path"] = _uploads, ["Attachments:MaxFileMb"] = "1" }).Build(), _uploads),
         NullLogger<AttachmentService>.Instance);
 
-    private RunService Service(AppDbContext db, IFreshserviceClient? freshservice = null, IPerDiemSource? perDiem = null)
+    private RunService Service(AppDbContext db, IFreshserviceClient? freshservice = null, IPerDiemSource? perDiem = null, StudentScopeService? scope = null)
     {
         var calendar = new SchoolCalendar(db, new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()));
         return new(db, freshservice ?? _freshservice, new NotificationService(db, new EmailSettings(Config), Config), Files(db), calendar,
-            NullLogger<RunService>.Instance, roster: new SampleStudentRoster(), perDiem: new PerDiemService(new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()),
+            NullLogger<RunService>.Instance, roster: new SampleStudentRoster(), scope: scope, perDiem: new PerDiemService(new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()),
                 calendar, NullLogger<PerDiemService>.Instance, perDiem ?? new FixedPerDiem()));
     }
 
@@ -2113,5 +2113,66 @@ public sealed class RunServiceTests : IDisposable
         Assert.Null(Record.Exception(() => new SqlServerStudentRoster("Server=x;Database=y;Integrated Security=True", "dbo.ActiveStudents", columns)));
         columns["Grade"] = "Grade]; DROP TABLE x;--";
         Assert.NotNull(Record.Exception(() => new SqlServerStudentRoster("Server=x;Database=y;Integrated Security=True", "dbo.ActiveStudents", columns)));
+    }
+
+    // ---- who may see which students: location, district, all ---------------------------------
+
+    private static StudentScopeService Scope(AppDbContext db) => new(db, new SampleStaffDirectory(),
+        new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()),
+        new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            // The staff list writes districts short; the roster writes them in full.
+            ["Students:Match:Districts:BCTS"] = "Bergen County Technical Schools", ["Students:Match:Districts:BCSS"] = "Bergen County Special Services",
+        }).Build());
+
+    [Fact]
+    public async Task StudentAccess_ReachesOwnLocation_WholeDistrict_OrEverywhere()
+    {
+        await using var db = Db();
+        db.Users.AddRange(
+            new AppUser { Email = "teacher@example.org", Name = "Taylor Teacher", StudentAccess = true },                                    // Teterboro (BCTS)
+            new AppUser { Email = "builder@example.org", Name = "Bailey Builder", StudentAccess = true, StudentScope = StudentScopes.District }, // BCSS
+            new AppUser { Email = "admin@example.org", Name = "Avery Admin", StudentAccess = true, StudentScope = StudentScopes.All },
+            new AppUser { Email = "principal@example.org", Name = "Pat Principal" });                                                         // no access
+        db.Users.Add(new AppUser { Email = "nobody@example.org", Name = "Not On Staff List", StudentAccess = true });
+        await db.SaveChangesAsync();
+        var scope = Scope(db);
+        var roster = new SampleStudentRoster();
+        async Task<string[]> Sees(string email) =>
+            (await roster.SearchAsync(new[] { "o" }.Concat(new string[0]).ToList(), 15, await scope.FilterForAsync(email) ?? StudentFilter.Nobody, default))
+            .Select(x => x.LastName).OrderBy(n => n).ToArray();
+        // (the sample roster: Okafor at Teterboro and Okon at Paramus, both BCTS; Ruiz at Hackensack, BCSS)
+        Assert.Equal(new[] { "Okafor" }, await Sees("teacher@example.org"));                 // own location only, not Okon at Paramus
+        Assert.Empty(await Sees("builder@example.org"));                                     // whole BCSS district: Ruiz, who does not match "o"
+        Assert.Equal(new[] { "Ruiz" }, (await roster.SearchAsync(new[] { "r" }, 15, (await scope.FilterForAsync("builder@example.org"))!, default)).Select(x => x.LastName).ToArray());
+        Assert.Equal(new[] { "Okafor", "Okon" }, await Sees("admin@example.org"));            // all districts
+        Assert.Null(await scope.FilterForAsync("principal@example.org"));                    // no access at all
+        Assert.True((await scope.FilterForAsync("nobody@example.org"))!.IsEmpty);            // access, but not on the staff list: nobody
+
+        // Submitting a student outside your reach is refused like an unknown one.
+        var workflow = await StudentFormAsync();
+        var pick = (string id) => new Dictionary<string, object?> { ["student"] = new Dictionary<string, object?> { ["id"] = id } };
+        var (outside, none) = await Service(db, scope: scope).SubmitFormAsync(workflow, pick("20452"), "teacher@example.org", "Taylor Teacher", default);
+        Assert.Null(none);
+        Assert.Contains("was not found", outside.Fields["student"].Errors.Single());
+        var (_, ok) = await Service(db, scope: scope).SubmitFormAsync(workflow, pick("20451"), "teacher@example.org", "Taylor Teacher", default);
+        Assert.NotNull(ok);
+    }
+
+    [Fact]
+    public void StudentOnARequest_IsSeenByThoseActingOnIt_TheRequester_OrAccessThatCoversIt()
+    {
+        var known = new Dictionary<string, SchoolFlow.Core.StudentInfo>
+        {
+            ["20452"] = new("20452", "Leo", "Okon", "Paramus", "11", "Culinary") { District = "Bergen County Technical Schools" },
+        };
+        var teterboro = new StudentFilter(false, new[] { "Teterboro" }, Array.Empty<string>());
+        var bcts = new StudentFilter(false, Array.Empty<string>(), new[] { "Bergen County Technical Schools" });
+        Assert.True(StudentVisibility.MaySee(actsOnIt: true, isRequester: false, filter: null, new[] { "20452" }, known));   // an approver, even without access
+        Assert.False(StudentVisibility.MaySee(false, false, null, new[] { "20452" }, known));
+        Assert.False(StudentVisibility.MaySee(false, false, teterboro, new[] { "20452" }, known));                       // another building
+        Assert.True(StudentVisibility.MaySee(false, false, bcts, new[] { "20452" }, known));                             // the whole district
+        Assert.True(StudentVisibility.MaySee(false, true, teterboro, new[] { "20452" }, known));                          // their own request
+        Assert.False(StudentVisibility.MaySee(false, false, bcts, new[] { "99999" }, known));                             // not on the roster: cannot tell
     }
 }
