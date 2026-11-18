@@ -1,5 +1,5 @@
 {
-  "//": "Staff list location (ActiveStaff.Location) -> student roster location (ActiveStudents.Location). Goes inside \"Students\": { ... \"Match\": { \"Locations\": { ... } } } in appsettings.Production.json. Districts (BCSS, BCTS) are the same in both views, so they need no match. BCTS student locations are number codes (owner, Nov 18): 20 Academy, 300 Applied Technology HS, 301 Northern Valley IDT, 302 Career Innovation HS, 70 Teterboro, 75 Paramus (Voc and Tec).",
+  "//": "Staff list location (ActiveStaff.Location) -> student roster location (ActiveStudents.Location). Goes inside \"Students\": { ... \"Match\": { \"Locations\": { ... } } } in appsettings.Production.json. Districts (BCSS, BCTS) are the same in both views, so they need no match. BCTS student locations are number codes (owner, Nov 18): 20 Academy, 300 Applied Technology HS, 301 Northern Valley IDT, 302 Career Innovation HS, 70 Teterboro, 75 Paramus (Voc and Tec). Confirmed by the owner: DELTA PROGRAM @ IHHS = Delta Program-RIH. GATEWAY is left as it is (no student location of that name today). Bergen JDC students are not the district's and are deliberately matched to no staff location.",
   "Locations": {
     "BLESHMAN": "N. A. Bleshman Regional Day School",
     "BROWNSTONE": "Brownstone School",
