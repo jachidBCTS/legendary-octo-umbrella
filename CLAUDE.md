@@ -257,8 +257,8 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   owner's SQL Server** (owner, Nov 18, 2026; the CSV import and the `Students` table were removed —
   migration `RemoveStudentRoster`): `IStudentRoster` (`Services/Students.cs`) — `SqlServerStudentRoster`
   (`Students:ConnectionString`, `Students:View`, `Students:Columns:{StudentId,FirstName,LastName,School,
-  Grade,Academy}` — the owner's view is `ThingsOfBergen.dbo.ActiveStudents` with StudentNumber, Location,
-  [Academy or Major]; its District column is deliberately not read; `deploy/student-roster-view.sql`;
+  Grade,Academy,District}` — the owner's view is `ThingsOfBergen.dbo.ActiveStudents` with StudentNumber, Location,
+  [Academy or Major], District (read only to decide who may see a student — see below; never shown or stored); `deploy/student-roster-view.sql`;
   parameterised queries, LIKE wildcards escaped, view/column names checked, lookups in batches of 100), `SampleStudentRoster` in Development (Okafor 20451,
   Okon 20452, Ruiz 20453), `NoStudentRoster` otherwise. Admin → Student access keeps the per-person flag
   and has "Check the connection". `AppUser.StudentAccess` is the flag — **not** implied by Admin.
@@ -282,7 +282,9 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   `SqlServerStaffDirectory` over `ThingsOfBergen.dbo.ActiveStaff` — StaffID, FirstName, LastName, Title,
   DistrictShort, Location, Department, WorkEmail; `Staff:ConnectionString` defaults to the roster's;
   `SampleStaffDirectory` in Development). Staff and student place names differ, so
-  `Students:Match:Districts`/`Locations` map staff values to roster values (unmapped = as is).
+  `Students:Match:Districts`/`Locations` map staff values to roster values (unmapped = as is). The
+  district's full list (52 locations; BCTS students use codes 20/300/301/302/70/75) is in
+  `deploy/student-location-match.json` and goes into the owner's settings file.
   `StudentScopeService.FilterForAsync(email)` → `StudentFilter` (null = no access; empty = not on the
   staff list → nobody). Applied to `/api/students` (in the SQL), to form submission (out-of-reach =
   "not found"), and to viewing (`StudentVisibility.MaySee`): people **asked to act on the request**
