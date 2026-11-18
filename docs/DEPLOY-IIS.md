@@ -136,6 +136,8 @@ On the server, copy `appsettings.Production.example.json` (in the package) to
 - `Freshservice` — your domain, the API key, and a webhook secret you make up (16+ characters).
   Leaving `Domain` or `ApiKey` empty runs the site in simulation mode, which is a safe way to do
   the very first start.
+- `Gsa:ApiKey` — the api.data.gov key for GSA's per diem rates (travel form). Without it the travel
+  form uses the "GSA fallback" amounts on Admin → Rates and flags each request.
 - `Email` — leave `Mode` as `Off` until sign-in works; see the README to turn it on.
 
 This file contains secrets. Restrict it to administrators and the app pool account:
