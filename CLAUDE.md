@@ -111,8 +111,13 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
 - **Task send-back / passing on**: `RunService.ReturnTaskAsync` goes back to the latest *Done* task
   step (engine `ReturnToTaskAsync`; steps between run again; the note is prepended to the task's
   instructions, and the task is prefilled from the context) or, if none, to the requester
-  (`ChangesRequested`; resubmit re-asks the task). `ForwardAsync`: an assignee replaces themself; an
-  owner/admin/stand-in/escalation replaces everyone; never the requester; `Auth:AllowedDomains`
+  (`ChangesRequested`; resubmit re-asks the task). Completing a task rebuilds the `attachments`
+  list from the form and every task (`AllFiles`, as resubmit does); when the task was *Done* before,
+  files no longer referenced are deleted (rows, then files after the save). A task's usable files
+  include every file already on the request, whoever uploaded it, so a stand-in or admin redoing it
+  keeps the original receipts. `ForwardAsync`: an assignee hands over their own place, a stand-in
+  the place of the person they cover (others on an "all must approve" step stay); an
+  owner/admin/escalation replaces everyone; never the requester; `Auth:AllowedDomains`
   applies; chain record and stand-ins updated; audit `approval.forwarded`/`task.forwarded`.
 - **People suggestions**: `/api/people?q=` (`PeopleController`, 2+ characters, 20 results, allowed
   domains only). Any `<input data-people>` gets a datalist from `common.js` (`data-people="multi"`

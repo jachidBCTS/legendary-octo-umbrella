@@ -1851,4 +1851,68 @@ public sealed class RunServiceTests : IDisposable
         Assert.Equal("A (2).pdf", SchoolFlow.Web.Controllers.FilesController.UniqueName("A.pdf", used));
         Assert.Equal("a (3).pdf", SchoolFlow.Web.Controllers.FilesController.UniqueName("a.pdf", used));
     }
+
+    private static List<string> FileIdsOf(WorkflowRun run) =>
+        (Json.ToValues(run.ContextJson).GetValueOrDefault("attachments") as List<object?> ?? new())
+            .OfType<Dictionary<string, object?>>().Select(f => SchoolFlow.Core.Expressions.Values.ToText(f.GetValueOrDefault("id"))).ToList();
+
+    [Fact]
+    public async Task Task_DoneAgain_ListsEachFileOnce_AndDeletesFilesTakenOff()
+    {
+        var runId = await TravelToReconcileAsync();
+        Assert.True((await ReturnTaskAsync(runId, "admin@example.org", "Wrong receipt")).Ok);
+        Directory.CreateDirectory(_uploads);
+        await using (var db = Db())
+        {
+            var run = await db.Runs.SingleAsync(r => r.Id == runId);
+            db.Attachments.Add(new Attachment { PublicId = "r2", StoredName = "r2.bin", FileName = "right.pdf", Size = 10, WorkflowId = run.WorkflowId, OwnerEmail = "t@school.org", CreatedAt = DateTime.UtcNow });
+            await db.SaveChangesAsync();
+        }
+        await File.WriteAllTextAsync(Path.Combine(_uploads, "r1.bin"), "x");
+        object Files(params string[] ids) => ids.Select(id => (object?)new Dictionary<string, object?> { ["id"] = id }).ToList();
+        Assert.True((await DoTaskAsync(runId, "t@school.org", new() { ["actual_total"] = 90m, ["receipts"] = Files("r2"), ["pd_report"] = Files("p1") })).Result.Ok);
+
+        await using var check = Db();
+        var after = await check.Runs.SingleAsync(r => r.Id == runId);
+        Assert.Equal(new[] { "p1", "r2" }, FileIdsOf(after).OrderBy(x => x).ToArray());          // no duplicates, the old receipt gone
+        Assert.False(await check.Attachments.AnyAsync(a => a.PublicId == "r1"));
+        Assert.False(File.Exists(Path.Combine(_uploads, "r1.bin")));
+        Assert.Equal(runId, (await check.Attachments.SingleAsync(a => a.PublicId == "r2")).RunId);
+        Assert.Contains(await check.RunEvents.Where(e => e.RunId == runId).ToListAsync(), e => e.Message.Contains("Removed 1 file taken off the task: r1.pdf"));
+    }
+
+    [Fact]
+    public async Task Task_DoneAgain_ByAnAdminOnTheirBehalf_KeepsTheFilesTheEmployeeAttached()
+    {
+        var runId = await TravelToReconcileAsync();
+        Assert.True((await ReturnTaskAsync(runId, "admin@example.org", "Check the total")).Ok);
+        object File(string id) => new List<object?> { new Dictionary<string, object?> { ["id"] = id } };
+        var (form, result) = await DoTaskAsync(runId, "admin@example.org", new() { ["actual_total"] = 95m, ["receipts"] = File("r1"), ["pd_report"] = File("p1") }, admin: true);
+        Assert.True(result.Ok, result.Error);
+        await using var check = Db();
+        Assert.Equal(new[] { "p1", "r1" }, FileIdsOf(await check.Runs.SingleAsync(r => r.Id == runId)).OrderBy(x => x).ToArray());
+        Assert.Equal(2, await check.Attachments.CountAsync(a => a.RunId == runId));
+    }
+
+    [Fact]
+    public async Task Forward_ByAStandIn_OnAStepEveryoneMustApprove_ReplacesOnlyThePersonTheyCover()
+    {
+        await using (var db = Db())
+        {
+            db.Delegations.Add(new Delegation { FromEmail = "principal@example.org", ToEmail = "deputy@school.org", StartsOn = DateTime.Today.AddDays(-1), EndsOn = DateTime.Today.AddDays(5), CreatedAt = DateTime.UtcNow });
+            await db.SaveChangesAsync();
+        }
+        var runId = await SubmitTripAsync("Mathematics");                                         // admin and principal must both approve
+        await using (var db = Db())
+        {
+            var task = await db.ApprovalTasks.SingleAsync(t => t.RunId == runId && t.Status == ApprovalStatus.Pending);
+            Assert.Equal(ApprovalRules.All, task.Rule);
+            Assert.Equal("principal@example.org", task.StandsInFor("deputy@school.org"));
+        }
+        Assert.True((await ForwardAsync(runId, "deputy@school.org", "head@school.org")).Ok);
+        await using var check = Db();
+        var after = await check.ApprovalTasks.SingleAsync(t => t.RunId == runId && t.Status == ApprovalStatus.Pending);
+        Assert.Equal(new[] { "admin@example.org", "head@school.org" }, after.AssigneeList.OrderBy(a => a).ToArray());
+        Assert.Contains(await check.RunEvents.Where(e => e.RunId == runId).ToListAsync(), e => e.Message.Contains("passed from principal@example.org to head@school.org"));
+    }
 }

@@ -183,8 +183,14 @@ public sealed class RunService
         // earlier steps), so "required when total >= 150" works here too.
         var ambient = Json.ToValues(run.ContextJson);
         ambient["rates"] = await _calendar.RatesAsync(ct);
+        // Files already on the request stay usable whoever uploaded them: a task done again by a stand-in
+        // or an admin must be able to keep the receipts the first person attached.
+        var usable = await _attachments.UsableForRunAsync(email, run, ct);
+        foreach (var a in await _db.Attachments.AsNoTracking().Where(a => a.RunId == run.Id)
+                     .Select(a => new { a.PublicId, a.FileName, a.Size }).ToListAsync(ct))
+            usable.TryAdd(a.PublicId, new AttachmentInfo(a.PublicId, a.FileName, a.Size));
         var result = FormEvaluator.Evaluate(TaskForm(node), input, ambient, applyDefaults: applyDefaults,
-            attachments: await _attachments.UsableForRunAsync(email, run, ct), closedDays: await _calendar.ClosedDaysAsync(ct));
+            attachments: usable, closedDays: await _calendar.ClosedDaysAsync(ct));
         DistrictAddresses.Check(Json.ParseDefinition(run.DefinitionJson), result, _domains);
         return result;
     }
@@ -224,8 +230,9 @@ public sealed class RunService
         var def = Json.ParseDefinition(run.DefinitionJson);
         var state = Load(run);
         // A task done before (and sent back since) shows what changed, like a resubmitted form.
-        if (await _db.ApprovalTasks.AnyAsync(t => t.RunId == run.Id && t.NodeId == node.Id && t.Id != task.Id && t.Kind == TaskKinds.Task
-                && t.Status == ApprovalStatus.Done, ct))
+        var doneBefore = await _db.ApprovalTasks.AnyAsync(t => t.RunId == run.Id && t.NodeId == node.Id && t.Id != task.Id && t.Kind == TaskKinds.Task
+            && t.Status == ApprovalStatus.Done, ct);
+        if (doneBefore)
         {
             var fields = node.Fields ?? new List<FieldDef>();
             var (adjusted, previous) = Changes(fields, state.Context, form.Values, StudentData.KeysOf(def));
@@ -233,21 +240,31 @@ public sealed class RunService
             if (adjusted.Count > 0)
                 state.NewEvents.Add(new RunEvent(DateTime.Now, node.Id, "info", $"{task.Title}: answers updated{Adjusted(adjusted)}."));
         }
-        // Files uploaded for this task now belong to the request, like the ones sent with the form.
-        var files = CollectFiles(TaskForm(node), form.Values);
+        // The request's files, worked out again from the form and every task (with this task's new
+        // answers), so a task done twice never lists a file twice. New uploads now belong to the request.
+        var answers = new Dictionary<string, object?>(state.Context, StringComparer.OrdinalIgnoreCase);
+        foreach (var field in (node.Fields ?? new List<FieldDef>()).Where(f => !FieldTypes.IsLayout(f.Type) && !string.IsNullOrWhiteSpace(f.Key)))
+            answers[field.Key] = form.Values.TryGetValue(field.Key, out var v) ? v : null;
+        var files = AllFiles(def, answers);
+        state.Context["attachments"] = files;
         var fileIds = files.OfType<Dictionary<string, object?>>().Select(f => Values.ToText(f.GetValueOrDefault("id"))).ToList();
         foreach (var attachment in await _db.Attachments.Where(a => fileIds.Contains(a.PublicId) && a.OwnerEmail == email && a.RunId == null).ToListAsync(ct))
             attachment.RunId = run.Id;
-        if (files.Count > 0)
+        // Done again after being sent back: files taken off the task are deleted, not left downloadable.
+        var removedFiles = doneBefore
+            ? await _db.Attachments.Where(a => a.RunId == run.Id && !fileIds.Contains(a.PublicId)).ToListAsync(ct)
+            : new List<Attachment>();
+        if (removedFiles.Count > 0)
         {
-            var all = state.Context.GetValueOrDefault("attachments") as List<object?> ?? new List<object?>();
-            all.AddRange(files);
-            state.Context["attachments"] = all;
+            _db.Attachments.RemoveRange(removedFiles);
+            state.NewEvents.Add(new RunEvent(DateTime.Now, node.Id, "info",
+                $"Removed {removedFiles.Count} file{(removedFiles.Count == 1 ? "" : "s")} taken off the task: {string.Join(", ", removedFiles.Select(f => f.FileName))}."));
         }
         await (await EngineAsync(ct)).ResumeWithTaskAsync(def.Flow, state, who, form.Values, ct);
-        return await TrySaveAsync(run, state, ct)
-            ? (form, new ActionResult(true, RunId: run.Id))
-            : (form, ActionResult.Fail("Someone else acted on this request at the same moment. Refresh to see the latest."));
+        if (!await TrySaveAsync(run, state, ct))
+            return (form, ActionResult.Fail("Someone else acted on this request at the same moment. Refresh to see the latest."));
+        _attachments.DeleteFiles(removedFiles);   // only once the database agrees they are gone
+        return (form, new ActionResult(true, RunId: run.Id));
     }
 
     /// <summary>
@@ -456,10 +473,13 @@ public sealed class RunService
         if (task.IsAssignedTo(to)) return ActionResult.Fail($"{to} is already being asked.");
 
         var isTask = task.Kind == TaskKinds.Task;
-        var ownPlace = task.IsAssignedTo(email);
-        if (ownPlace && task.HasApproved(email)) return ActionResult.Fail("You have already approved this, so there is nothing to pass on.");
+        // The place being handed over: the person's own, or the one they stand in for. Owners, admins and
+        // people it was escalated to have no place of their own, so they replace everyone.
+        var slot = task.IsAssignedTo(email) ? email.ToLowerInvariant() : task.StandsInFor(email)?.ToLowerInvariant();
+        var ownPlace = slot is not null;
+        if (ownPlace && task.HasApproved(slot!)) return ActionResult.Fail("This step has already been approved for your place, so there is nothing to pass on.");
         var before = task.AssigneeList.ToList();
-        var after = ownPlace ? before.Select(a => a == email.ToLowerInvariant() ? to : a).Distinct().ToList() : new List<string> { to };
+        var after = ownPlace ? before.Select(a => a == slot ? to : a).Distinct().ToList() : new List<string> { to };
         task.Assignees = ApprovalTask.Pack(after);
         task.ApprovedBy = ApprovalTask.Pack(task.ApprovedByList.Where(after.Contains));
         if (task.ApprovedBy == ";;") task.ApprovedBy = "";
@@ -478,7 +498,7 @@ public sealed class RunService
             step["approvers"] = after.Cast<object?>().ToList();
 
         var who = string.IsNullOrWhiteSpace(name) ? email : $"{name} ({email})";
-        var replaced = ownPlace ? email.ToLowerInvariant() : string.Join(", ", before);
+        var replaced = slot ?? string.Join(", ", before);
         state.NewEvents.Add(new RunEvent(DateTime.Now, task.NodeId, "info",
             $"{task.Title}: passed from {replaced} to {to} by {who}{(note is null ? "" : $" — “{note}”")}"));
         _db.AuditEntries.Add(new AuditEntry
@@ -566,9 +586,7 @@ public sealed class RunService
         foreach (var kv in form.Values) state.Context[kv.Key] = kv.Value;
         RememberPrevious(state.Context, def.Form.Fields, previous);
         // The request's files: the form's (as resubmitted) and any that completed tasks added.
-        var files = CollectFiles(def.Form, form.Values);
-        var taskFields = new FormDefinition { Fields = def.Flow.Nodes.Where(n => n.Type == NodeTypes.Task).SelectMany(n => n.Fields ?? new List<FieldDef>()).ToList() };
-        files.AddRange(CollectFiles(taskFields, state.Context));
+        var files = AllFiles(def, state.Context);
         state.Context["attachments"] = files;
         var fileIds = files.OfType<Dictionary<string, object?>>().Select(f => Values.ToText(f.GetValueOrDefault("id"))).ToList();
         foreach (var attachment in await _db.Attachments.Where(a => fileIds.Contains(a.PublicId) && a.OwnerEmail == email && a.RunId == null).ToListAsync(ct))
@@ -637,6 +655,15 @@ public sealed class RunService
             $"{name} wrote:\n\n{(body.Length > 600 ? body[..600] + "…" : body)}", $"/Requests/Detail/{run.Id}", ct);
         await _db.SaveChangesAsync(ct);
         return new ActionResult(true, RunId: run.Id);
+    }
+
+    /// <summary>Every file on the request: the form's answers and every task's, as the flat list flow steps use.</summary>
+    private static List<object?> AllFiles(WorkflowDefinition def, IDictionary<string, object?> answers)
+    {
+        var files = CollectFiles(def.Form, answers);
+        var taskFields = new FormDefinition { Fields = def.Flow.Nodes.Where(n => n.Type == NodeTypes.Task).SelectMany(n => n.Fields ?? new List<FieldDef>()).ToList() };
+        files.AddRange(CollectFiles(taskFields, answers));
+        return files;
     }
 
     /// <summary>Every uploaded file among the form's answers, as the flat list flow steps use.</summary>
