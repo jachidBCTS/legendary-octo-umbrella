@@ -826,3 +826,8 @@ html.a11y .train-stop-body { font-size: 15px; }
 .train-scroll.more-left { -webkit-mask-image: linear-gradient(90deg, transparent, #000 15%); mask-image: linear-gradient(90deg, transparent, #000 15%); }
 .train-scroll.more-left.more-right { -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); }
 @media (max-width: 720px) { .train-scroll.more-left, .train-scroll.more-right { -webkit-mask-image: none; mask-image: none; } }
+
+/* GSA per diem rates box on a form */
+.sf-perdiem { display: grid; gap: 3px; padding: 10px 12px; border: 1px solid var(--line); border-left: 4px solid var(--info); border-radius: 10px; background: var(--info-soft); font-size: 14px; }
+.sf-perdiem.is-fallback { border-left-color: var(--warn); background: var(--warn-soft); }
+.sf-perdiem .small { font-size: 12.5px; }

@@ -79,12 +79,14 @@ public static class FieldTypes
         Date = "date", Select = "select", Radio = "radio", MultiSelect = "multiselect", Checkbox = "checkbox",
         Lookup = "lookup", Calculated = "calculated", Table = "table", Section = "section",
         Department = "department", ApprovalChain = "approval_chain", Location = "location", Attachments = "attachments",
-        Time = "time", Phone = "phone", Signature = "signature", Page = "page", Worksheet = "worksheet", Student = "student";
+        Time = "time", Phone = "phone", Signature = "signature", Page = "page", Worksheet = "worksheet", Student = "student",
+        /// <summary>GSA per diem rates for a destination ZIP code and travel dates, looked up by the server.</summary>
+        PerDiem = "perdiem";
 
     public static readonly string[] All =
     {
         Text, TextArea, Email, Number, Currency, Date, Select, Radio, MultiSelect, Checkbox, Lookup, Calculated, Table, Section,
-        Department, ApprovalChain, Location, Attachments, Time, Phone, Signature, Page, Worksheet, Student,
+        Department, ApprovalChain, Location, Attachments, Time, Phone, Signature, Page, Worksheet, Student, PerDiem,
     };
 
     /// <summary>Field types a Task step can ask its assignee for.</summary>
@@ -145,6 +147,16 @@ public sealed class FieldDef
     public int? MaxFiles { get; set; }
     /// <summary>Worksheet only: the rows of the table. Other fields of the form are drawn inside them.</summary>
     public List<WorksheetRow>? Rows { get; set; }
+    /// <summary>Per diem fields only: which fields of the form hold the destination ZIP code and the travel dates.</summary>
+    public PerDiemSettings? PerDiem { get; set; }
+}
+
+/// <summary>The fields a per diem field reads: the destination ZIP code, and the first and last day of travel.</summary>
+public sealed class PerDiemSettings
+{
+    public string? Zip { get; set; }
+    public string? From { get; set; }
+    public string? To { get; set; }
 }
 
 /// <summary>An uploaded file as the form sees it. The file itself is kept by the web app.</summary>

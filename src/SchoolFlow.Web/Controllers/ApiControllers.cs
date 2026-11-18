@@ -170,7 +170,8 @@ public sealed class FormsController : ControllerBase
             closedDays: await _calendar.ClosedDaysAsync(ct),
             // The builder's preview is not checked against the roster (and cannot search it without access).
             students: request.Definition is not null ? null : await new AccessService(_db).StudentsForAsync(form, Json.ToValues(request.Values), User.Email(), ct),
-            allowedDomains: _domains.Domains);
+            allowedDomains: _domains.Domains,
+            perDiem: await HttpContext.RequestServices.GetRequiredService<PerDiemService>().DirectoryForAsync(form, Json.ToValues(request.Values), ct));
         if (whole is not null) DistrictAddresses.Check(whole, result, _domains.Domains);
         return new JsonResult(Shape(result), Json.Options);
     }

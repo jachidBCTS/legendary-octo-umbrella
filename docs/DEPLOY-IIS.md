@@ -26,7 +26,7 @@ Replace `schoolflow.yourschool.org`, `YOUR-SQL-SERVER` and `YOURDOMAIN` with you
 | An empty SQL Server database | Created by your DBA (section 3) |
 | A Microsoft Entra app registration | Section 5 |
 | A Freshservice API key | From a dedicated Freshservice agent account |
-| Outbound internet from the server (port 443) | To `login.microsoftonline.com`, `graph.microsoft.com` and `yourschool.freshservice.com` |
+| Outbound internet from the server (port 443) | To `login.microsoftonline.com`, `graph.microsoft.com`, `yourschool.freshservice.com` and `api.gsa.gov` (travel per diem rates) |
 | Inbound 443 from the internet | For staff off-site and for the Freshservice webhook |
 
 ## 2. Getting the package

@@ -86,6 +86,26 @@ builder.Services.AddScoped<AuditService>();
 builder.Services.AddScoped<SchoolCalendar>();
 builder.Services.AddHostedService<FollowUpWorker>();
 
+// ---- GSA per diem rates (travel forms) --------------------------------------------------------
+// With a key (Gsa:ApiKey) rates come from GSA; a development site without one uses example rates;
+// a real site without one uses the standard rate kept under Admin → Rates, and says so.
+var gsaKey = config["Gsa:ApiKey"];
+if (!string.IsNullOrWhiteSpace(gsaKey))
+{
+    var gsaBase = config["Gsa:BaseUrl"];
+    builder.Services.AddSingleton<IPerDiemSource>(_ => new GsaPerDiemClient(new HttpClient
+    {
+        BaseAddress = new Uri((string.IsNullOrWhiteSpace(gsaBase) ? "https://api.gsa.gov/travel/perdiem" : gsaBase.TrimEnd('/')) + "/"),
+        Timeout = TimeSpan.FromSeconds(10),
+        DefaultRequestHeaders = { { "X-API-KEY", gsaKey.Trim() }, { "Accept", "application/json" } },
+    }));
+}
+else if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddSingleton<IPerDiemSource, SimulatedPerDiemSource>();
+}
+builder.Services.AddScoped<PerDiemService>();
+
 // ---- Freshservice -----------------------------------------------------------------------
 var fsDomain = config["Freshservice:Domain"];
 var fsKey = config["Freshservice:ApiKey"];

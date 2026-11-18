@@ -24,6 +24,7 @@
     { type: 'phone', label: 'Phone number', hint: 'Checked for digits' },
     { type: 'lookup', label: 'Freshservice lookup', hint: 'Device, location…' },
     { type: 'student', label: 'Student', hint: 'Needs student access' },
+    { type: 'perdiem', label: 'GSA per diem rates', hint: 'Meals and hotel limit by ZIP' },
     { type: 'department', label: 'Department', hint: 'Sets the final approver' },
     { type: 'approval_chain', label: 'Approval chain', hint: 'Requester picks approvers' },
     { type: 'location', label: 'Location', hint: 'Building or room' },
@@ -365,6 +366,10 @@
           items.push([f.key + '.name', (f.label || f.key) + ' (name)']);
         } else if (f.type === 'attachments') {
           items.push(['COUNT(' + f.key + ')', 'Number of files in ' + (f.label || f.key)]);
+        } else if (f.type === 'perdiem') {
+          items.push([f.key + '.meals', (f.label || f.key) + ': meals & incidentals a day']);
+          items.push([f.key + '.first_last_day', (f.label || f.key) + ': first / last day meals (75%)']);
+          items.push([f.key + '.lodging', (f.label || f.key) + ': hotel limit a night']);
         } else if (f.type === 'approval_chain') {
           // A chain is not a simple value; it is used by the "Approval chain" flow step.
         } else {
@@ -723,6 +728,17 @@
       panel.append(h('p', { class: 'b-help' }, 'Everything below this starts a new page. People move between pages with Next and Back, and each page is checked before they go on. The title is shown in the step list at the top of the form.'));
     if (field.type === 'student')
       panel.append(h('p', { class: 'b-help' }, 'The person searches the student roster by name or ID. Only staff an admin has given student access (Admin → Student access) can fill this in, and only they see the student on the request afterwards — everyone else sees “Restricted”. In formulas and messages use ' + (field.key || 'field') + '.name, .id, .school, .grade and .academy. Be careful: anything you put in a ticket, email or approval message is seen by whoever receives it, with or without student access.'));
+    if (field.type === 'perdiem') {
+      const pick = (types) => [['', 'Choose a field…']].concat(state.def.form.fields
+        .filter((f) => f.key && f !== field && types.includes(f.type)).map((f) => [f.key, (f.label || f.key) + ' (' + f.key + ')']));
+      field.perDiem = field.perDiem || {};
+      panel.append(
+        row('Destination ZIP code field', select(field.perDiem.zip || '', pick(['text', 'number']), (v) => { field.perDiem.zip = clean(v); refresh(); })),
+        h('div', { class: 'b-pair' },
+          row('First day of travel', select(field.perDiem.from || '', pick(['date']), (v) => { field.perDiem.from = clean(v); refresh(); })),
+          row('Last day of travel', select(field.perDiem.to || '', pick(['date']), (v) => { field.perDiem.to = clean(v); refresh(); }))),
+        h('p', { class: 'b-help' }, 'Looks up GSA\'s per diem rates for the ZIP code and dates: ' + (field.key || 'field') + '.meals (meals & incidentals a day), .first_last_day (75% for the first and last day of travel) and .lodging (the highest nightly hotel limit for the months of the stay). Use them in calculated fields and checks, e.g. lodging_rate <= ' + (field.key || 'field') + '.lodging. If GSA cannot be reached, the standard rate under Admin → Rates is used and the request is marked so the business office checks it.'));
+    }
     if (field.type === 'signature')
       panel.append(h('p', { class: 'b-help' }, 'The person types their full name to sign. The request already records who submitted it and when; this adds their explicit agreement. It is never copied from a previous request.'));
     if (field.type === 'time')
@@ -765,7 +781,7 @@
 
     if (field.type === 'table') renderColumnsEditor(panel, field);
 
-    if (!isSection && !isCalc && !['table', 'lookup', 'department', 'approval_chain', 'location', 'attachments'].includes(field.type))
+    if (!isSection && !isCalc && !['table', 'lookup', 'department', 'approval_chain', 'location', 'attachments', 'perdiem'].includes(field.type))
       panel.append(row('Default value (formula)', formulaInput(field.default, (v) => { field.default = clean(v); }, { placeholder: field.type === 'date' ? 'TODAY()' : 'e.g. submitter.email' }),
         'Worked out once when the form opens. Put plain text in quotes.'));
 

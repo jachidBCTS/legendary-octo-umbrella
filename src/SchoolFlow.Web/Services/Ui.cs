@@ -57,6 +57,22 @@ public static class Ui
         return "form";
     }
 
+    /// <summary>"Princeton, Mercer County, NJ · Meals $74.00/day ($55.50 first and last day) · Hotel up to $190.00/night · GSA FY2027".</summary>
+    public static string PerDiemText(Dictionary<string, object?> r)
+    {
+        string T(string k) => Values.ToText(r.GetValueOrDefault(k)).Trim();
+        string Money(string k) => Values.TryToNumber(r.GetValueOrDefault(k), out var d) ? d.ToString("C2", Values.DisplayCulture) : "—";
+        var source = T("source");
+        var place = string.Join(", ", new[] { T("city"), T("county").Length > 0 ? T("county") + " County" : "", T("state") }.Where(p => p.Length > 0));
+        var rates = $"Meals & incidentals {Money("meals")}/day ({Money("first_last_day")} first and last day) · Hotel up to {Money("lodging")}/night";
+        return source switch
+        {
+            "fallback" => $"Standard rate used — {T("note")} · ZIP {T("zip")} · {rates}",
+            "simulated" => $"{place} · {rates} · Example rates (GSA not connected)",
+            _ => $"{(place.Length > 0 ? place : "ZIP " + T("zip"))}{(r.GetValueOrDefault("standard") is true ? " (standard rate area)" : "")} · {rates} · GSA FY{T("fiscal_year")}",
+        };
+    }
+
     /// <summary>Formats a stored field value for read-only display.</summary>
     private static readonly System.Text.RegularExpressions.Regex DateOnlyText = new(@"^\d{4}-\d{2}-\d{2}$");
 
@@ -72,6 +88,7 @@ public static class Ui
             var parts = new[] { Part("name"), "ID " + Part("id"), Part("school"), Part("grade").Length > 0 ? "Grade " + Part("grade") : "", Part("academy") };
             return string.Join(" · ", parts.Where(p => p.Length > 0));
         }
+        if (type == FieldTypes.PerDiem && value is Dictionary<string, object?> perDiem) return PerDiemText(perDiem);
         if (value is bool b) return b ? "Yes" : "No";
         if (value is decimal d)
         {

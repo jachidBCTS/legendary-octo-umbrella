@@ -48,7 +48,7 @@ public static class FormEvaluator
         IDictionary<string, object?>? ambient = null, bool applyDefaults = false, Func<DateTime>? now = null,
         IReadOnlyDictionary<long, string>? departments = null, IReadOnlyDictionary<long, string>? locations = null,
         IReadOnlyDictionary<string, AttachmentInfo>? attachments = null, IReadOnlySet<DateTime>? closedDays = null,
-        StudentDirectory? students = null, IReadOnlyCollection<string>? allowedDomains = null)
+        StudentDirectory? students = null, IReadOnlyCollection<string>? allowedDomains = null, PerDiemDirectory? perDiem = null)
     {
         var result = new FormResult();
         var submitterEmail = ambient is not null && ambient.TryGetValue("submitter", out var who) && who is Dictionary<string, object?> person
@@ -100,6 +100,8 @@ public static class FormEvaluator
                         FieldTypes.Location => NormalizeListed(raw, locations, "location", state.Errors),
                         FieldTypes.Attachments => NormalizeAttachments(field, raw, attachments, state.Errors),
                         FieldTypes.Student => NormalizeStudent(raw, students, state.Errors),
+                        // Worked out by the server from the ZIP code and dates; whatever the browser sends is ignored.
+                        FieldTypes.PerDiem => PerDiemValue(field, result.Values, perDiem),
                         FieldTypes.ApprovalChain => Workflows.ChainValue.Normalize(raw, submitterEmail.Length > 0 ? submitterEmail : null, state.Errors, allowedDomains),
                         _ => NormalizeScalar(field.Type, field.Options, raw, state.Errors),
                     };
@@ -113,7 +115,7 @@ public static class FormEvaluator
         foreach (var field in fields)
         {
             var state = result.Fields[field.Key];
-            if (!state.Visible || FieldTypes.IsLayout(field.Type) || field.Type == FieldTypes.Calculated) continue;
+            if (!state.Visible || FieldTypes.IsLayout(field.Type) || field.Type == FieldTypes.Calculated || field.Type == FieldTypes.PerDiem) continue;
 
             state.Required = field.Required || EvaluateFlag(field.RequiredWhen, scope, false, state, "Required-when formula");
             var blank = field.Type == FieldTypes.Checkbox ? state.Value is not true : Values.IsBlank(state.Value);
@@ -157,6 +159,10 @@ public static class FormEvaluator
             if (Formula.TryParse(source, out var formula, out _))
                 refs.UnionWith(formula!.References);
         }
+        // A per diem field reads the ZIP code and date fields it names.
+        if (field.Type == FieldTypes.PerDiem && field.PerDiem is { } settings)
+            foreach (var key in new[] { settings.Zip, settings.From, settings.To })
+                if (!string.IsNullOrWhiteSpace(key)) refs.Add(key.Trim());
         if (field.Type == FieldTypes.Table)
         {
             // Row formulas may read fields outside the table.
@@ -372,6 +378,17 @@ public static class FormEvaluator
     /// A student picked from the roster: stored as { id, name, first, last, school, grade, academy }.
     /// Everything but the ID comes from the server's roster, and only for people allowed to use it.
     /// </summary>
+    /// <summary>The per diem rates for the ZIP code and dates already answered, or blank until they are.</summary>
+    private static object? PerDiemValue(FieldDef field, IDictionary<string, object?> values, PerDiemDirectory? directory)
+    {
+        if (directory is null || field.PerDiem is not { } settings) return null;
+        object? Get(string? key) => !string.IsNullOrWhiteSpace(key) && values.TryGetValue(key.Trim(), out var v) ? v : null;
+        var zip = PerDiemDirectory.CleanZip(Get(settings.Zip));
+        if (zip is null || !Values.TryToDate(Get(settings.From), out var from)) return null;
+        DateTime? to = Values.TryToDate(Get(settings.To), out var end) ? end : null;
+        return directory.Quote(zip, from, to);
+    }
+
     private static object? NormalizeStudent(object? raw, StudentDirectory? students, List<string> errors)
     {
         var id = StudentIdOf(raw);

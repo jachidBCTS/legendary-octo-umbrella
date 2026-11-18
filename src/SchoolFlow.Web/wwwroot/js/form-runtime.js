@@ -441,6 +441,29 @@
           body = out;
           break;
         }
+        case 'perdiem': {
+          // GSA rates for the destination ZIP code and dates, looked up by the server. Read-only.
+          labelFor = null;
+          const box = h('div', { class: 'sf-perdiem', 'aria-live': 'polite' });
+          const money = (v) => formatValue(v, 'currency', 2);
+          control.update = (value) => {
+            box.textContent = '';
+            box.classList.toggle('is-fallback', !!value && value.source === 'fallback');
+            if (!value) {
+              box.appendChild(h('span', { class: 'muted' }, 'Enter the destination ZIP code and travel dates to look up the GSA rates.'));
+              return;
+            }
+            const place = [value.city, value.county ? value.county + ' County' : '', value.state].filter(Boolean).join(', ');
+            box.append(
+              h('strong', null, value.source === 'fallback' ? 'Standard rate used' : (place || 'ZIP ' + value.zip) + (value.standard ? ' (standard rate area)' : '')),
+              h('span', null, 'Meals & incidentals: ' + money(value.meals) + ' a day, ' + money(value.first_last_day) + ' on the first and last day'),
+              h('span', null, 'Hotel: up to ' + money(value.lodging) + ' a night'),
+              h('span', { class: 'muted small' }, value.source === 'fallback' ? value.note
+                : value.source === 'simulated' ? value.note : 'GSA per diem rates, fiscal year ' + value.fiscal_year));
+          };
+          body = box;
+          break;
+        }
         case 'table':
           labelFor = null;
           body = buildTable(field, control);

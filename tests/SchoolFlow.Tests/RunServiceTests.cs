@@ -52,10 +52,27 @@ public sealed class RunServiceTests : IDisposable
         new AttachmentSettings(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Attachments:Path"] = _uploads, ["Attachments:MaxFileMb"] = "1" }).Build(), _uploads),
         NullLogger<AttachmentService>.Instance);
 
-    private RunService Service(AppDbContext db, IFreshserviceClient? freshservice = null) =>
-        new(db, freshservice ?? _freshservice, new NotificationService(db, new EmailSettings(Config), Config), Files(db),
-            new SchoolCalendar(db, new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions())),
-            NullLogger<RunService>.Instance);
+    private RunService Service(AppDbContext db, IFreshserviceClient? freshservice = null, IPerDiemSource? perDiem = null)
+    {
+        var calendar = new SchoolCalendar(db, new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()));
+        return new(db, freshservice ?? _freshservice, new NotificationService(db, new EmailSettings(Config), Config), Files(db), calendar,
+            NullLogger<RunService>.Instance, perDiem: new PerDiemService(new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()),
+                calendar, NullLogger<PerDiemService>.Instance, perDiem ?? new FixedPerDiem()));
+    }
+
+    /// <summary>A stand-in for GSA: $59 a day for meals and a $200 hotel limit everywhere (the rates the travel tests were written with).</summary>
+    private sealed class FixedPerDiem : IPerDiemSource
+    {
+        public int Calls;
+        public string Source => "gsa";
+        public Task<SchoolFlow.Core.Forms.PerDiemArea?> GetAsync(string zip, int fiscalYear, CancellationToken ct)
+        {
+            Calls++;
+            if (zip == "99999") throw new HttpRequestException("down");
+            return Task.FromResult<SchoolFlow.Core.Forms.PerDiemArea?>(new SchoolFlow.Core.Forms.PerDiemArea("Princeton", "Mercer", "NJ", 59m,
+                Enumerable.Range(1, 12).ToDictionary(m => m, m => m == 3 ? 220m : 200m), false));
+        }
+    }
 
     private static Dictionary<string, object?> PurchaseInput(decimal price) => new()
     {
@@ -893,7 +910,7 @@ public sealed class RunServiceTests : IDisposable
             ["request_date"] = "2027-01-15", ["employee_name"] = "T Teacher", ["meal_day_people"] = 1m, ["lodging_rooms"] = 1m,
             ["district"] = district,
             ["department"] = new Dictionary<string, object?> { ["id"] = (decimal)dept.Id, ["name"] = "Science" },
-            ["event_title"] = "NJ Science Convention", ["location"] = "Princeton, NJ",
+            ["event_title"] = "NJ Science Convention", ["location"] = "Princeton, NJ", ["dest_zip"] = "08540",
             ["from_date"] = "2027-03-10", ["to_date"] = "2027-03-12", ["from_time"] = "8:00 AM",
             ["paid_by"] = new List<object?> { "BOE" }, ["reason_a"] = "New lab standards",
             ["mileage_rate"] = 99m, ["meal_day_rate"] = 999m,                 // a tampered browser cannot set a fixed rate
@@ -1344,7 +1361,7 @@ public sealed class RunServiceTests : IDisposable
             var (form, id) = await Service(db).SubmitFormAsync(workflow, new Dictionary<string, object?> { ["miles"] = 120m, ["meal_days"] = 2m }, "t@school.org", "T", default);
             Assert.Null(id);
             Assert.Contains("mileage rate has not been set", form.Fields["miles"].Errors.Single());
-            Assert.Empty(form.Fields["meal_days"].Errors);              // that rate is set
+            Assert.Contains("enter the destination ZIP code", form.Fields["meal_days"].Errors.Single());   // meals come from GSA, by ZIP
         }
     }
 
@@ -1364,8 +1381,9 @@ public sealed class RunServiceTests : IDisposable
             Assert.Equal(7, db.Teams.Count());
             Assert.Null(db.Workflows.Single(w => w.Name == "Field Trip Request").PublishedJson);   // waits for its Transportation team
             Assert.All(db.Teams.ToList(), t => Assert.Equal("", t.Members));
-            Assert.Equal(4, db.Rates.Count());
-            Assert.All(db.Rates.ToList(), r => Assert.Equal(0m, r.Value));
+            // Only mileage is the district's to set; meals and hotels come from GSA, with GSA's standard rate kept as a fallback.
+            Assert.Equal(new[] { ("gsa_standard_lodging", 110m), ("gsa_standard_meals", 68m), ("mileage", 0m) },
+                db.Rates.OrderBy(r => r.Key).Select(r => new { r.Key, r.Value }).AsEnumerable().Select(r => (r.Key, r.Value)).ToArray());
         }
 
         var json = SeedData.Templates.Single(t => t.Name == "Travel").Json;
@@ -1990,4 +2008,94 @@ public sealed class RunServiceTests : IDisposable
     [InlineData("Three-day permit", "", "form")]
     public void WorkflowIcons_MatchWholeWords(string name, string category, string icon) =>
         Assert.Equal(icon, Ui.WorkflowIcon(name, category));
+
+    // ---- GSA per diem rates on the travel form ---------------------------------------------------
+
+    private async Task<SchoolFlow.Core.Forms.FormResult> EvaluateTravelAsync(Action<Dictionary<string, object?>> change, IPerDiemSource? source = null)
+    {
+        await using var db = Db();
+        var workflow = await db.Workflows.SingleAsync(w => w.Name == "Request for Work Related Travel");
+        var dept = await db.Departments.SingleAsync(d => d.Name == "Science");
+        var input = new Dictionary<string, object?>
+        {
+            ["request_date"] = "2027-01-15", ["employee_name"] = "T Teacher", ["district"] = "Bergen County Technical Schools",
+            ["department"] = new Dictionary<string, object?> { ["id"] = (decimal)dept.Id, ["name"] = "Science" },
+            ["event_title"] = "Convention", ["location"] = "Princeton", ["dest_zip"] = "08540-1234",
+            ["from_date"] = "2027-02-27", ["to_date"] = "2027-03-02", ["paid_by"] = new List<object?> { "BOE" }, ["reason_a"] = "x",
+            ["meal_first_people"] = 1m, ["meal_days"] = 2m, ["meal_day_people"] = 1m, ["meal_last_people"] = 1m,
+            ["lodging_nights"] = 3m, ["lodging_rate"] = 215m, ["lodging_rooms"] = 1m,
+            ["gsa"] = new Dictionary<string, object?> { ["meals"] = 999m },          // the browser cannot set the rates
+        };
+        change(input);
+        var (form, _) = await Service(db, perDiem: source).SubmitFormAsync(workflow, input, "t@school.org", "T Teacher", default);
+        return form;
+    }
+
+    [Fact]
+    public async Task PerDiem_FillsTheMealRates_AndCapsTheHotelAtTheHighestMonthOfTheStay()
+    {
+        var form = await EvaluateTravelAsync(_ => { });
+        var gsa = (Dictionary<string, object?>)form.Values["gsa"]!;
+        Assert.Equal(59m, gsa["meals"]);
+        Assert.Equal(44.25m, gsa["first_last_day"]);                     // 75% on the first and last day
+        Assert.Equal(220m, gsa["lodging"]);                              // nights in February ($200) and March ($220): the higher
+        Assert.Equal("08540", gsa["zip"]);
+        Assert.Equal(2027m, gsa["fiscal_year"]);
+        Assert.Equal(44.25m, form.Values["meal_first_rate"]);
+        Assert.Equal(59m, form.Values["meal_day_rate"]);
+        Assert.Equal(44.25m, form.Values["meal_last"]);
+        Assert.Empty(form.Fields["lodging_rate"].Errors);                // $215 is under $220
+
+        var over = await EvaluateTravelAsync(i => i["lodging_rate"] = 230m);
+        Assert.Contains("more than the GSA hotel limit", over.Fields["lodging_rate"].Errors.Single());
+        var conference = await EvaluateTravelAsync(i => { i["lodging_rate"] = 230m; i["conference_hotel"] = true; });
+        Assert.Empty(conference.Fields["lodging_rate"].Errors);          // the conference hotel may cost more…
+        Assert.Contains("required", conference.Fields["documents"].Errors.Single());   // …with documentation
+
+        var badZip = await EvaluateTravelAsync(i => i["dest_zip"] = "8540");
+        Assert.Contains("5-digit", badZip.Fields["dest_zip"].Errors.Single());
+        Assert.Null(badZip.Values["gsa"]);
+    }
+
+    [Fact]
+    public async Task PerDiem_WhenGsaCannotBeReached_UsesTheStandardRate_AndFlagsTheRequest()
+    {
+        var (runId, values) = await SubmitTravelAsync("Bergen County Technical Schools", input => { input["dest_zip"] = "99999"; input["lodging_rate"] = 100m; });
+        var gsa = (Dictionary<string, object?>)values["gsa"]!;
+        Assert.Equal("fallback", gsa["source"]);
+        Assert.Equal(68m, gsa["meals"]);                                // the standard rate kept under Admin → Rates
+        Assert.Equal(110m, gsa["lodging"]);
+        await using var db = Db();
+        Assert.Contains(await db.RunEvents.Where(e => e.RunId == runId).ToListAsync(),
+            e => e.Kind == "warning" && e.Message.Contains("standard rate was used"));
+        Assert.StartsWith("Standard rate used", Ui.PerDiemText(gsa));
+    }
+
+    [Fact]
+    public async Task PerDiem_LooksEachPlaceUpOnce()
+    {
+        var source = new FixedPerDiem();
+        await EvaluateTravelAsync(_ => { }, source);
+        Assert.Equal(1, source.Calls);
+        // A stay across 30 September needs both fiscal years.
+        var split = new FixedPerDiem();
+        await EvaluateTravelAsync(i => { i["dest_zip"] = "10001"; i["from_date"] = "2027-09-29"; i["to_date"] = "2027-10-02"; }, split);
+        Assert.Equal(2, split.Calls);
+    }
+
+    [Fact]
+    public void GsaReply_IsRead()
+    {
+        var reply = System.Text.Json.JsonDocument.Parse("""
+            { "request": null, "errors": [], "rates": [ { "oconus": false, "state": "NJ", "year": 2027, "isOconus": "false",
+              "rate": [ { "city": "Princeton / Trenton", "county": "Mercer", "standardRate": "false", "meals": 74, "zip": "08540",
+                "months": { "month": [ { "value": 165, "number": 1, "short": "Jan", "long": "January" }, { "value": 190, "number": 5, "short": "May", "long": "May" } ] } } ] } ] }
+            """);
+        var area = GsaPerDiemClient.Parse(reply.RootElement)!;
+        Assert.Equal(("Princeton / Trenton", "Mercer", "NJ", 74m, false), (area.City, area.County, area.State, area.Meals, area.StandardRate));
+        Assert.Equal(190m, area.LodgingByMonth[5]);
+        Assert.Null(GsaPerDiemClient.Parse(System.Text.Json.JsonDocument.Parse("""{ "rates": [] }""").RootElement));
+        Assert.Equal(2027, SchoolFlow.Core.Forms.PerDiemDirectory.FiscalYear(new DateTime(2026, 10, 1)));
+        Assert.Equal(2026, SchoolFlow.Core.Forms.PerDiemDirectory.FiscalYear(new DateTime(2026, 9, 30)));
+    }
 }

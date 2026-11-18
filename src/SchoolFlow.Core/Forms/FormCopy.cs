@@ -12,7 +12,7 @@ public static class FormCopy
     public static bool IsCopyable(FieldDef field) =>
         field.NoCopy != true && !string.IsNullOrWhiteSpace(field.Key)
         // Files belong to the request they were uploaded for, and a signature to the person who gave it.
-        && !FieldTypes.IsLayout(field.Type) && field.Type is not (FieldTypes.Calculated or FieldTypes.Attachments or FieldTypes.Signature)
+        && !FieldTypes.IsLayout(field.Type) && field.Type is not (FieldTypes.Calculated or FieldTypes.PerDiem or FieldTypes.Attachments or FieldTypes.Signature)
         // Student details are only for people cleared to see them; they are never offered for copying.
         && field.Type != FieldTypes.Student;
 

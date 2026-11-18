@@ -26,8 +26,9 @@ public sealed class RunService
     private readonly AttachmentService _attachments;
 
     public RunService(AppDbContext db, IFreshserviceClient freshservice, NotificationService notifications, AttachmentService attachments,
-        SchoolCalendar calendar, ILogger<RunService> log, DomainPolicy? domains = null)
+        SchoolCalendar calendar, ILogger<RunService> log, DomainPolicy? domains = null, PerDiemService? perDiem = null)
     {
+        _perDiem = perDiem;
         _domains = domains?.Domains;
         _calendar = calendar;
         _db = db;
@@ -36,6 +37,8 @@ public sealed class RunService
         _attachments = attachments;
         _log = log;
     }
+
+    private readonly PerDiemService? _perDiem;
 
     /// <summary>District email domains approvers chosen on a form must use; null or empty for any.</summary>
     private readonly IReadOnlyList<string>? _domains;
@@ -82,7 +85,8 @@ public sealed class RunService
             locations: await ActiveLocationsAsync(ct),
             attachments: await _attachments.PendingForAsync(email, workflow.Id, ct),
             closedDays: await _calendar.ClosedDaysAsync(ct),
-            students: await new AccessService(_db).StudentsForAsync(def.Form, input, email, ct), allowedDomains: _domains);
+            students: await new AccessService(_db).StudentsForAsync(def.Form, input, email, ct), allowedDomains: _domains,
+            perDiem: _perDiem is null ? null : await _perDiem.DirectoryForAsync(def.Form, input, ct));
         DistrictAddresses.Check(def, form, _domains);
         if (!form.IsValid) return (form, null);
 
@@ -106,7 +110,9 @@ public sealed class RunService
         // The files now belong to this request: claim them before any step runs, so they can never be
         // deleted or attached to a second request while this one is in progress.
         var fileIds = files.OfType<Dictionary<string, object?>>().Select(f => Values.ToText(f.GetValueOrDefault("id"))).ToList();
-        var id = await StartAsync(run, def, context, ct, async runId =>
+        var warning = PerDiemService.UsedFallback(def.Form, form.Values)
+            ? "GSA per diem rates could not be looked up, so the standard rate was used. Please check the meal and hotel amounts." : null;
+        var id = await StartAsync(run, def, context, ct, warning: warning, beforeFirstStep: async runId =>
         {
             if (fileIds.Count == 0) return;
             var claimed = await _db.Attachments.Where(a => fileIds.Contains(a.PublicId) && a.OwnerEmail == email && a.RunId == null).ToListAsync(ct);
@@ -130,7 +136,7 @@ public sealed class RunService
     };
 
     private async Task<int> StartAsync(WorkflowRun run, WorkflowDefinition def, Dictionary<string, object?> context, CancellationToken ct,
-        Func<int, Task>? beforeFirstStep = null)
+        Func<int, Task>? beforeFirstStep = null, string? warning = null)
     {
         // Save first so the run has an ID that formulas (run.id) and the timeline can use.
         run.ContextJson = Json.Serialize(context);
@@ -147,6 +153,7 @@ public sealed class RunService
         var state = new RunState { Context = context };
         state.NewEvents.Add(new RunEvent(DateTime.Now, null, "info",
             string.IsNullOrEmpty(run.SubmitterEmail) ? "Started by a Freshservice ticket event." : $"Submitted by {run.SubmitterName}."));
+        if (warning is not null) state.NewEvents.Add(new RunEvent(DateTime.Now, null, "warning", warning));
         await (await EngineAsync(ct)).StartAsync(def.Flow, state, ct);
         await SaveAsync(run, state, ct);
         return run.Id;
@@ -572,7 +579,8 @@ public sealed class RunService
         ambient["rates"] = await _calendar.RatesAsync(ct);
         var form = FormEvaluator.Evaluate(def.Form, input, ambient, departments: await ActiveDepartmentsAsync(ct), locations: await ActiveLocationsAsync(ct),
             attachments: await _attachments.UsableForRunAsync(email, run, ct), closedDays: await _calendar.ClosedDaysAsync(ct),
-            students: await new AccessService(_db).StudentsForAsync(def.Form, input, email, ct), allowedDomains: _domains);
+            students: await new AccessService(_db).StudentsForAsync(def.Form, input, email, ct), allowedDomains: _domains,
+            perDiem: _perDiem is null ? null : await _perDiem.DirectoryForAsync(def.Form, input, ct));
         DistrictAddresses.Check(def, form, _domains);
         if (!form.IsValid) return (form, ActionResult.Fail("Please fix the highlighted fields."));
 
@@ -609,6 +617,9 @@ public sealed class RunService
 
         state.NewEvents.Add(new RunEvent(DateTime.Now, state.CurrentNodeId, "info",
             $"Resubmitted with changes by {name}{Adjusted(adjusted)}."));
+        if (PerDiemService.UsedFallback(def.Form, form.Values))
+            state.NewEvents.Add(new RunEvent(DateTime.Now, state.CurrentNodeId, "warning",
+                "GSA per diem rates could not be looked up, so the standard rate was used. Please check the meal and hotel amounts."));
         await (await EngineAsync(ct)).ReenterApprovalAsync(def.Flow, state, ct, restart);
         if (!await TrySaveAsync(run, state, ct))
             return (form, ActionResult.Fail("The request changed while you were editing. Refresh and try again."));

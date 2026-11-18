@@ -134,6 +134,20 @@ public static class DefinitionValidator
             }
 
             if (f.Type == FieldTypes.Table) ValidateTable(f, name, known, issues);
+            if (f.Type == FieldTypes.PerDiem)
+            {
+                var types = form.Fields.Where(x => !string.IsNullOrWhiteSpace(x.Key)).GroupBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(g => g.Key, g => g.First().Type, StringComparer.OrdinalIgnoreCase);
+                void Needs(string? key, string what, string[] allowed, bool required)
+                {
+                    if (string.IsNullOrWhiteSpace(key)) { if (required) Error($"choose the field that holds {what}."); return; }
+                    if (!types.TryGetValue(key.Trim(), out var type)) Error($"'{key}' ({what}) is not a field on this form.");
+                    else if (Array.IndexOf(allowed, type) < 0) Error($"'{key}' ({what}) must be a {string.Join(" or ", allowed)} field.");
+                }
+                Needs(f.PerDiem?.Zip, "the destination ZIP code", new[] { FieldTypes.Text, FieldTypes.Number }, true);
+                Needs(f.PerDiem?.From, "the first day of travel", new[] { FieldTypes.Date }, true);
+                Needs(f.PerDiem?.To, "the last day of travel", new[] { FieldTypes.Date }, false);
+            }
         }
 
         // Circular references between calculated fields / visibility rules.

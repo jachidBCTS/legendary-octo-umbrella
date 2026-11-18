@@ -75,6 +75,8 @@ public class RatesModel : PageModel
     {
         var rate = await _db.Rates.FirstOrDefaultAsync(r => r.Id == id);
         if (rate is null) return NotFound();
+        if (rate.Key is PerDiemService.StandardMealsKey or PerDiemService.StandardLodgingKey)
+            return Flash($"“{rate.Label}” is used whenever gsa.gov cannot be reached, so it cannot be removed. Keep it up to date instead.", false);
         // A form that still uses it would quietly work out to nothing.
         var users = (await _db.Workflows.AsNoTracking().Select(w => new { w.Name, w.DraftJson, w.PublishedJson }).ToListAsync())
             .Where(w => (w.DraftJson + w.PublishedJson).Contains("rates." + rate.Key, StringComparison.OrdinalIgnoreCase)).Select(w => w.Name).ToList();

@@ -139,6 +139,20 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   match on name/category). Animations (track check draw-in, current-stop pulse, bell ring, clock
   tick, tile tilt) are all off under `prefers-reduced-motion` and `html.a11y`. `.table.stack` is
   `display: table` on wide screens (the general `.stack` grid class had broken column alignment).
+- **GSA per diem (Nov 18, 2026)**: field type `perdiem` (`FieldDef.PerDiem` = {zip, from, to} field
+  keys). Owner's choices: destination by **ZIP code**; hotel rate **capped** at the GSA limit (district
+  rule: the conference hotel may exceed it — `conference_hotel` tick box, documents then required);
+  first/last day meals **75%**; GSA unreachable → **standard rate, flagged** (timeline warning + "Standard
+  rate used" on the answer). The web app pre-fetches (`PerDiemService.DirectoryForAsync`, cached 24 h,
+  failures 2 min, 8 s timeout) so `FormEvaluator` stays network-free; `PerDiemDirectory.Quote` builds
+  the stored value {zip, city, county, state, meals, first_last_day, lodging = highest monthly limit over
+  the nights, fiscal_year (Oct–Sep), standard, source gsa/simulated/fallback, note}. Source:
+  `GsaPerDiemClient` (`Gsa:ApiKey`, `GET v2/rates/zip/{zip}/year/{fy}`) when a key is set, else
+  `SimulatedPerDiemSource` in Development, else none (fallback with "not set up"). Fallback amounts are
+  rates `gsa_standard_meals`/`gsa_standard_lodging` (seeded 68/110, cannot be removed). Only mileage is
+  district-kept now; the old `meal_*` rates are no longer seeded. **Not verified against the real GSA
+  API** (the reply shape in `GsaPerDiemClient.Parse` follows GSA's documentation; this workspace cannot
+  reach api.gsa.gov). An existing site keeps its old Travel workflow until the new one is imported.
 - **Approval follow-up**: `ApprovalTask` carries `RemindDays`/`EscalateDays`/`EscalateTo` copied
   from the node config, `StandIns` (from `Delegations`, applied when the task is created and when a
   delegation is added) and `Escalated`. Who may decide = `ApprovalTask.CanBeDecidedBy`. A stand-in's
@@ -369,3 +383,5 @@ Known gaps (not requested yet, worth raising):
 - They follow along from a phone and are not a .NET developer: explain outcomes in plain language,
   and say clearly what was and was not verified.
 - Develop on a branch and open a pull request into `main`.
+- **Do not build the server package (the update zip) until the owner asks for it** (owner, Nov 18,
+  2026). Commit and push as usual; build the zip only on request.

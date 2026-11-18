@@ -37,17 +37,18 @@ public static class SeedData
         Add(db, "Field Trip Request", "Plan a trip, choose who signs it off, and reuse last year's request as a starting point.", "Trips", "green", FieldTrip, publish: sampleDepartments);
         // The approvers of the travel form are real people the school must name. With the example
         // people (development) it is published; otherwise it stays a draft until an admin fills them in.
-        if (!db.Rates.Any())
-        {
-            // The travel form's fixed rates. Real amounts are the district's to set (Admin → Rates), so a
-            // new site starts them at 0 and the form refuses to cost anything with an unset rate.
-            foreach (var (key, label, example) in new[]
-                     {
-                         ("mileage", "Mileage rate (per mile)", 0.47m), ("meal_first_day", "Meal allowance: first day", 44.25m),
-                         ("meal_full_day", "Meal allowance: full day", 59m), ("meal_last_day", "Meal allowance: last day", 44.25m),
-                     })
-                db.Rates.Add(new Rate { Key = key, Label = label, Value = sampleDepartments ? example : 0m, UpdatedAt = DateTime.UtcNow });
-        }
+        // Rates the district keeps (Admin → Rates). Each is added once, if missing, so an existing site
+        // gains new ones on its next start. Mileage starts at 0 on a real site (the district sets it, and the
+        // form refuses to cost miles until then). The GSA standard rates are only a fallback for when
+        // gsa.gov cannot be reached; they start at GSA's published standard amounts.
+        foreach (var (key, label, example, real) in new[]
+                 {
+                     ("mileage", "Mileage rate (per mile)", 0.47m, 0m),
+                     (PerDiemService.StandardMealsKey, "GSA fallback: meals a day", 68m, 68m),
+                     (PerDiemService.StandardLodgingKey, "GSA fallback: hotel a night", 110m, 110m),
+                 })
+            if (!db.Rates.Any(r => r.Key == key))
+                db.Rates.Add(new Rate { Key = key, Label = label, Value = sampleDepartments ? example : real, UpdatedAt = DateTime.UtcNow });
         if (!db.Teams.Any())
         {
             // The people behind the travel form's steps. Real names are the district's to enter (Admin →
@@ -299,11 +300,16 @@ public static class SeedData
           { "key": "students", "label": "# of Students", "type": "number", "min": 0, "decimals": 0, "width": "half" },
           { "key": "event_title", "label": "Meeting/Conference Title", "type": "text", "required": true },
           { "key": "location", "label": "Location (full address)", "type": "textarea", "required": true },
+          { "key": "dest_zip", "label": "Destination ZIP code", "type": "text", "required": true, "width": "half", "placeholder": "e.g. 08540",
+            "help": "Used to look up the GSA meal rates and hotel limit for where you are going.",
+            "rules": [ { "check": "MATCHES(TRIM(dest_zip), '^[0-9]{5}(-[0-9]{4})?$')", "message": "Enter a 5-digit US ZIP code." } ] },
           { "key": "from_date", "label": "From date", "type": "date", "required": true, "width": "half", "noCopy": true },
           { "key": "from_time", "label": "From time", "type": "time", "width": "half", "noCopy": true },
           { "key": "to_date", "label": "To date", "type": "date", "required": true, "width": "half", "noCopy": true,
             "rules": [ { "check": "to_date >= from_date", "message": "The return date is before the start date." } ] },
           { "key": "to_time", "label": "To time", "type": "time", "width": "half", "noCopy": true },
+          { "key": "gsa", "label": "GSA per diem rates", "type": "perdiem", "perDiem": { "zip": "dest_zip", "from": "from_date", "to": "to_date" },
+            "help": "Looked up from gsa.gov for the destination ZIP code and your dates. The meal rates below come from here, and the hotel rate cannot be more than the limit unless it is the conference hotel." },
           { "key": "paid_by", "label": "Cost to be paid by", "type": "multiselect", "options": ["BOE", "Students", "Sponsor"], "required": true, "width": "half" },
           { "key": "sponsor_name", "label": "Name of Sponsor", "type": "text", "visibleWhen": "CONTAINS(paid_by, 'Sponsor')", "required": true, "width": "half" },
           { "key": "other_staff", "label": "1. List names of other staff attending the event", "type": "textarea",
@@ -330,7 +336,7 @@ public static class SeedData
               { "number": "4.", "item": "Meal Allowance", "description": "1st Day of Meeting/Convention Rate: {meal_first_rate} x {meal_first_people} person(s)", "cost": "meal_first" },
               { "description": "# of Full Meeting Days: {meal_days} x {meal_day_rate} / day x {meal_day_people} person(s)", "cost": "meal_full" },
               { "description": "Last Day Meeting/Convention Rate: {meal_last_rate} x {meal_last_people} person(s)", "cost": "meal_last" },
-              { "number": "5.", "item": "Lodging", "description": "# of Nights at Hotel: {lodging_nights} x {lodging_rate} / night x {lodging_rooms} room(s)", "cost": "lodging" },
+              { "number": "5.", "item": "Lodging", "description": "# of Nights at Hotel: {lodging_nights} x {lodging_rate} / night (GSA limit {gsa_hotel_limit}) x {lodging_rooms} room(s)", "cost": "lodging" },
               { "item": "Additional Lodging", "description": "# of Nights at Hotel: {lodging2_nights} x {lodging2_rate} / night x {lodging2_rooms} room(s)", "cost": "lodging2" },
               { "number": "6.", "item": "Per Diem Rate", "description": "{per_diem_rate} x {per_diem_days} day(s)", "cost": "per_diem" },
               { "number": "7.", "item": "Overnight Stipend", "description": "{stipend_rate} x {stipend_nights} night(s)", "cost": "stipend" },
@@ -348,27 +354,32 @@ public static class SeedData
           { "key": "baggage", "label": "Baggage cost", "type": "currency", "min": 0 },
           { "key": "taxi_rides", "label": "Taxi: number of rides", "type": "number", "min": 0, "decimals": 0 },
           { "key": "taxi", "label": "Taxi", "type": "currency", "min": 0 },
-          { "key": "meal_first_rate", "label": "Meals, first day: rate", "type": "calculated", "format": "currency", "decimals": 2, "formula": "rates.meal_first_day" },
+          { "key": "meal_first_rate", "label": "Meals, first day: rate", "type": "calculated", "format": "currency", "decimals": 2, "formula": "gsa.first_last_day" },
           { "key": "meal_first_people", "label": "Meals, first day: persons", "type": "number", "min": 0, "decimals": 0,
-            "rules": [ { "check": "meal_first_people = 0 || rates.meal_first_day > 0", "message": "The first-day meal rate has not been set yet. Please ask an administrator." } ] },
+            "rules": [ { "check": "meal_first_people = 0 || gsa.meals > 0", "message": "The meal rate is not known yet: enter the destination ZIP code and travel dates above." } ] },
           { "key": "meal_first", "label": "Meals, first day", "type": "calculated", "format": "currency", "decimals": 2, "formula": "ROUND(meal_first_rate * meal_first_people, 2)" },
           { "key": "meal_days", "label": "Meals, full days: number of days", "type": "number", "min": 0, "decimals": 0,
-            "rules": [ { "check": "meal_days = 0 || rates.meal_full_day > 0", "message": "The full-day meal rate has not been set yet. Please ask an administrator." } ] },
-          { "key": "meal_day_rate", "label": "Meals, full days: rate per day", "type": "calculated", "format": "currency", "decimals": 2, "formula": "rates.meal_full_day" },
+            "rules": [ { "check": "meal_days = 0 || gsa.meals > 0", "message": "The meal rate is not known yet: enter the destination ZIP code and travel dates above." } ] },
+          { "key": "meal_day_rate", "label": "Meals, full days: rate per day", "type": "calculated", "format": "currency", "decimals": 2, "formula": "gsa.meals" },
           { "key": "meal_day_people", "label": "Meals, full days: persons", "type": "number", "min": 0, "decimals": 0, "default": "1" },
           { "key": "meal_full", "label": "Meals, full days", "type": "calculated", "format": "currency", "decimals": 2, "formula": "ROUND(meal_days * meal_day_rate * meal_day_people, 2)" },
-          { "key": "meal_last_rate", "label": "Meals, last day: rate", "type": "calculated", "format": "currency", "decimals": 2, "formula": "rates.meal_last_day" },
+          { "key": "meal_last_rate", "label": "Meals, last day: rate", "type": "calculated", "format": "currency", "decimals": 2, "formula": "gsa.first_last_day" },
           { "key": "meal_last_people", "label": "Meals, last day: persons", "type": "number", "min": 0, "decimals": 0,
-            "rules": [ { "check": "meal_last_people = 0 || rates.meal_last_day > 0", "message": "The last-day meal rate has not been set yet. Please ask an administrator." } ] },
+            "rules": [ { "check": "meal_last_people = 0 || gsa.meals > 0", "message": "The meal rate is not known yet: enter the destination ZIP code and travel dates above." } ] },
           { "key": "meal_last", "label": "Meals, last day", "type": "calculated", "format": "currency", "decimals": 2, "formula": "ROUND(meal_last_rate * meal_last_people, 2)" },
           { "key": "lodging_nights", "label": "Lodging: nights", "type": "number", "min": 0, "decimals": 0 },
-          { "key": "lodging_rate", "label": "Lodging: rate per night", "type": "currency", "min": 0 },
+          { "key": "gsa_hotel_limit", "label": "GSA hotel limit a night", "type": "calculated", "format": "currency", "decimals": 2, "formula": "gsa.lodging" },
+          { "key": "lodging_rate", "label": "Lodging: rate per night", "type": "currency", "min": 0,
+            "rules": [ { "check": "conference_hotel || ISBLANK(gsa) || NOT(gsa.lodging > 0) || lodging_rate <= gsa.lodging", "message": "This is more than the GSA hotel limit for this destination and these dates. Lower it, or tick “conference hotel” below if it is the conference hotel." } ] },
           { "key": "lodging_rooms", "label": "Lodging: rooms", "type": "number", "min": 0, "decimals": 0, "default": "1" },
           { "key": "lodging", "label": "Lodging", "type": "calculated", "format": "currency", "decimals": 2, "formula": "ROUND(lodging_nights * lodging_rate * lodging_rooms, 2)" },
           { "key": "lodging2_nights", "label": "Additional lodging: nights", "type": "number", "min": 0, "decimals": 0 },
-          { "key": "lodging2_rate", "label": "Additional lodging: rate per night", "type": "currency", "min": 0 },
+          { "key": "lodging2_rate", "label": "Additional lodging: rate per night", "type": "currency", "min": 0,
+            "rules": [ { "check": "conference_hotel || ISBLANK(gsa) || NOT(gsa.lodging > 0) || lodging2_rate <= gsa.lodging", "message": "This is more than the GSA hotel limit for this destination and these dates. Lower it, or tick “conference hotel” below if it is the conference hotel." } ] },
           { "key": "lodging2_rooms", "label": "Additional lodging: rooms", "type": "number", "min": 0, "decimals": 0 },
           { "key": "lodging2", "label": "Additional lodging", "type": "calculated", "format": "currency", "decimals": 2, "formula": "ROUND(lodging2_nights * lodging2_rate * lodging2_rooms, 2)" },
+          { "key": "conference_hotel", "label": "My hotel is the conference hotel (or a similar hotel at no more than its rate)", "type": "checkbox",
+            "help": "District rules allow the conference hotel's rate even when it is above the GSA limit. Attach documentation of the rate below." },
           { "key": "per_diem_rate", "label": "Per diem: rate", "type": "currency", "min": 0 },
           { "key": "per_diem_days", "label": "Per diem: days", "type": "number", "min": 0, "decimals": 0 },
           { "key": "per_diem", "label": "Per diem", "type": "calculated", "format": "currency", "decimals": 2, "formula": "ROUND(per_diem_rate * per_diem_days, 2)" },
@@ -380,10 +391,10 @@ public static class SeedData
           { "key": "registration", "label": "Registration/meeting fee", "type": "currency", "min": 0 },
           { "key": "total", "label": "Total Estimated Expenses", "type": "calculated", "format": "currency", "decimals": 2,
             "formula": "mileage_cost + tolls + parking + tickets + baggage + taxi + meal_first + meal_full + meal_last + lodging + lodging2 + per_diem + stipend + misc + registration" },
-          { "key": "documents", "label": "Supporting documents", "type": "attachments", "maxFiles": 10,
+          { "key": "documents", "label": "Supporting documents", "type": "attachments", "maxFiles": 10, "requiredWhen": "conference_hotel",
             "help": "For example the event flyer or agenda, the list of staff attending, and hotel rate documentation." },
           { "key": "notes", "label": "Notes", "type": "section",
-            "help": "Finding Federal OMB Guidelines for maximum hotel rates and the daily reimbursement breakdown for Meals and Incidentals (M&IE): 1. Go to www.gsa.gov; 2. Look top left at Travel Resources; 3. Click on Per Diem Rates; 4. Choose the state you are visiting to see a listing of its cities with lodging and M&IE rates. Each state and city has a different lodging and M&IE rate. Lodging expenses may exceed the federal per diem rate if the hotel is the site of the conference, seminar, or meeting. If the “conference hotel” is not available, lodging may be paid for similar accommodations at a rate not to exceed the “conference hotel” rate. Kindly attach documentation.\n\nUpon returning from the trip AND in order to be eligible for reimbursement, all employees must file a Professional Development Report with their reimbursement claim. Include key issues that were addressed at the event and its relevance to improving instruction or the operation of the district.\n\nStaff member must reconcile this worksheet with actual expenditures with the Business Office. The reconciled Travel Request Form must be submitted to the Business Office within 3 weeks of the travel. All expenditures must be documented with original itemized receipts to be reimbursed. The Board of Education will only reimburse expenditures up to the maximum permitted by Federal OMB Guidelines." }
+            "help": "Meal rates and the hotel limit follow the Federal OMB (GSA) per diem rates for the destination, which this form looks up from gsa.gov for the ZIP code and dates you enter. Each state and city has a different lodging and M&IE rate; the first and last day of travel are paid at 75% of the daily meals rate. Lodging expenses may exceed the federal per diem rate if the hotel is the site of the conference, seminar, or meeting. If the “conference hotel” is not available, lodging may be paid for similar accommodations at a rate not to exceed the “conference hotel” rate. Kindly attach documentation.\n\nUpon returning from the trip AND in order to be eligible for reimbursement, all employees must file a Professional Development Report with their reimbursement claim. Include key issues that were addressed at the event and its relevance to improving instruction or the operation of the district.\n\nStaff member must reconcile this worksheet with actual expenditures with the Business Office. The reconciled Travel Request Form must be submitted to the Business Office within 3 weeks of the travel. All expenditures must be documented with original itemized receipts to be reimbursed. The Board of Education will only reimburse expenditures up to the maximum permitted by Federal OMB Guidelines." }
         ]
       },
       "flow": {
