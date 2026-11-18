@@ -136,6 +136,11 @@ On the server, copy `appsettings.Production.example.json` (in the package) to
 - `Freshservice` — your domain, the API key, and a webhook secret you make up (16+ characters).
   Leaving `Domain` or `ApiKey` empty runs the site in simulation mode, which is a safe way to do
   the very first start.
+- `Students` — the student roster, read live from your SQL Server: `ConnectionString` to the database
+  that holds it (Windows sign-in as the web server's account) and `View` (default
+  `dbo.BergenFormsStudents`). Create the view with `deploy/student-roster-view.sql`: it offers only the
+  six allowed columns and gives the web server's account read access to that view and nothing else.
+  Then use **Admin → Student access → Check the connection**. Leave it out and Student fields find nobody.
 - `Gsa:ApiKey` — the api.data.gov key for GSA's per diem rates (travel form). Without it the travel
   form uses the "GSA fallback" amounts on Admin → Rates and flags each request.
 - `Email` — leave `Mode` as `Off` until sign-in works; see the README to turn it on.

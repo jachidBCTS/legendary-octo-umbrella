@@ -81,6 +81,15 @@ builder.Services.AddScoped<Microsoft.AspNetCore.Authentication.IClaimsTransforma
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<GroupDirectory>();
 builder.Services.AddScoped<AccessService>();
+// The student roster is read live from the district's SQL Server (Students:ConnectionString and
+// Students:View); a development site without one uses a few made-up students.
+var rosterConnection = config["Students:ConnectionString"];
+if (!string.IsNullOrWhiteSpace(rosterConnection))
+    builder.Services.AddSingleton<IStudentRoster>(new SqlServerStudentRoster(rosterConnection, config["Students:View"]));
+else if (builder.Environment.IsDevelopment())
+    builder.Services.AddSingleton<IStudentRoster, SampleStudentRoster>();
+else
+    builder.Services.AddSingleton<IStudentRoster, NoStudentRoster>();
 builder.Services.AddSingleton<DomainPolicy>();
 builder.Services.AddScoped<AuditService>();
 builder.Services.AddScoped<SchoolCalendar>();

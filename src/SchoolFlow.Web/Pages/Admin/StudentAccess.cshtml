@@ -37,15 +37,21 @@
 
 <section class="panel">
     <h2>Student roster</h2>
-    <p>@(Model.StudentCount == 0 ? "No students have been loaded yet." : $"{Model.StudentCount:N0} students on the roster.")
-        @if (Model.BySchool.Count > 1) { <span class="muted">@string.Join(" · ", Model.BySchool.Select(s => $"{s.School}: {s.Count:N0}"))</span> }</p>
-    <form method="post" asp-page-handler="Import" enctype="multipart/form-data" class="dept-form" data-confirm="Replace the roster with this file? Students not in the file are removed from the roster.">
-        <div><label class="lbl" for="sa-file">Roster file (CSV)</label><input id="sa-file" type="file" name="file" accept=".csv,text/csv" required /></div>
-        <div class="dept-save"><button class="btn">Import and replace</button></div>
-    </form>
-    <p class="muted small">The file needs a heading row with <strong>Student ID</strong>, <strong>First Name</strong>, <strong>Last Name</strong>, and optionally <strong>School</strong>, <strong>Grade</strong> and <strong>Academy</strong>.
-        Those six columns are all that is kept; any other column in the file is ignored. The file replaces the roster: students in it are added or updated, students not in it are removed.
-        Requests already submitted keep the student details they were submitted with.</p>
+    @if (Model.RosterConfigured)
+    {
+        <p>Students are looked up live in the district's student database each time someone searches; nothing is copied into Bergen Forms.
+            Only student ID, first name, last name, school, grade and academy are read.</p>
+        <form method="post" asp-page-handler="Check"><button class="btn">Check the connection</button></form>
+        @if (Model.RosterCheck is { } check)
+        {
+            <div class="flash @(check.StartsWith("Could not") ? "bad" : "ok")" role="status">@check</div>
+        }
+    }
+    else
+    {
+        <p><span class="pill warn">Not connected</span> Student fields cannot find anyone until the roster is connected.
+            Set <code>Students:ConnectionString</code> (and, if it is not <code>dbo.BergenFormsStudents</code>, <code>Students:View</code>) in the settings file on the server, then restart the site. The deployment guide explains how.</p>
+    }
     @if (Model.FormsUsingStudents.Count > 0)
     {
         <p class="muted small">Forms with a Student field: @string.Join(", ", Model.FormsUsingStudents).</p>

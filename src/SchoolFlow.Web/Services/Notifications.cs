@@ -189,7 +189,7 @@ public sealed class NotificationService
     }
 
     /// <summary>
-    /// Queues a notification for each address. People who use SchoolFlow see it in the app and get a link;
+    /// Queues a notification for each address. People who use Bergen Forms see it in the app and get a link;
     /// outside addresses (a parent, a vendor) only ever get the email, without a link they could not open.
     /// </summary>
     public async Task NotifyAsync(IEnumerable<string> emails, string title, string body, string link, CancellationToken ct)
@@ -239,7 +239,7 @@ public sealed class NotificationService
         var paragraphs = string.Join("", body.Replace("\r\n", "\n").Split("\n\n", StringSplitOptions.RemoveEmptyEntries)
             .Select(p => $"<p style=\"margin:0 0 12px\">{E(p.Trim()).Replace("\n", "<br>")}</p>"));
         var button = string.IsNullOrEmpty(absoluteLink) ? "" :
-            $"<p style=\"margin:20px 0 0\"><a href=\"{E(absoluteLink)}\" style=\"background:#4f46e5;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;display:inline-block\">Open in SchoolFlow</a></p>";
+            $"<p style=\"margin:20px 0 0\"><a href=\"{E(absoluteLink)}\" style=\"background:#4f46e5;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;display:inline-block\">Open in Bergen Forms</a></p>";
         return "<div style=\"font-family:Segoe UI,Arial,sans-serif;font-size:15px;line-height:1.5;color:#1b1f33;max-width:560px\">" +
                $"<h2 style=\"font-size:18px;margin:0 0 12px\">{E(title)}</h2>{paragraphs}{button}" +
                "<p style=\"margin:24px 0 0;color:#6c728c;font-size:12.5px\">Sent by SchoolFlow. You can turn off these emails on the Notifications page.</p></div>";

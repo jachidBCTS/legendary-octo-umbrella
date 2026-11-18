@@ -144,6 +144,18 @@
 
   window.SF = { api, h, debounce, toast };
 
+  // Sidebar groups (Build, Admin) remember whether they were left open or closed, on this device only.
+  // The group holding the page you are on is always open.
+  document.querySelectorAll('details.nav-group[data-nav-group]').forEach((group) => {
+    const key = 'sf_nav_' + group.getAttribute('data-nav-group');
+    if (group.getAttribute('data-here') !== 'true') {
+      try { const saved = localStorage.getItem(key); if (saved !== null) group.open = saved === '1'; } catch (e) { /* storage blocked */ }
+    }
+    // Only the person's own click (or Enter/Space on the heading) is remembered, not the automatic opening.
+    const heading = group.querySelector('summary');
+    if (heading) heading.addEventListener('click', () => { try { localStorage.setItem(key, group.open ? '0' : '1'); } catch (e) { /* ignore */ } });
+  });
+
   // A request's journey can be wider than the screen: start with the stop it is at in view.
   document.querySelectorAll('.train-scroll').forEach((track) => {
     const here = track.querySelector('[aria-current="step"]');

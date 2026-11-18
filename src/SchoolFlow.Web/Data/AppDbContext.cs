@@ -203,20 +203,6 @@ public class AppUser
     public bool StudentAccess { get; set; }
 }
 
-/// <summary>One student on the roster. Deliberately limited to these six facts.</summary>
-public class Student
-{
-    public int Id { get; set; }
-    public string StudentId { get; set; } = "";
-    public string FirstName { get; set; } = "";
-    public string LastName { get; set; } = "";
-    public string School { get; set; } = "";
-    public string Grade { get; set; } = "";
-    public string Academy { get; set; } = "";
-
-    public SchoolFlow.Core.StudentInfo ToInfo() => new(StudentId, FirstName, LastName, School, Grade, Academy);
-}
-
 /// <summary>
 /// A Microsoft Entra security group that SchoolFlow knows about. Admins register a group here (its
 /// name and its Object ID from Entra) to grant its members a role and/or to limit forms to them.
@@ -428,7 +414,6 @@ public class AppDbContext : DbContext
     public DbSet<ClosedDay> ClosedDays => Set<ClosedDay>();
     public DbSet<Rate> Rates => Set<Rate>();
     public DbSet<Team> Teams => Set<Team>();
-    public DbSet<Student> Students => Set<Student>();
     public DbSet<WorkflowVersion> WorkflowVersions => Set<WorkflowVersion>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 
@@ -519,17 +504,6 @@ public class AppDbContext : DbContext
         {
             e.Property(x => x.PublishedBy).HasMaxLength(320);
             e.HasIndex(x => new { x.WorkflowId, x.Version }).IsUnique();
-        });
-        b.Entity<Student>(e =>
-        {
-            e.Property(x => x.StudentId).HasMaxLength(40);
-            e.Property(x => x.FirstName).HasMaxLength(100);
-            e.Property(x => x.LastName).HasMaxLength(100);
-            e.Property(x => x.School).HasMaxLength(200);
-            e.Property(x => x.Grade).HasMaxLength(20);
-            e.Property(x => x.Academy).HasMaxLength(200);
-            e.HasIndex(x => x.StudentId).IsUnique();
-            e.HasIndex(x => x.LastName);
         });
         b.Entity<Team>(e =>
         {

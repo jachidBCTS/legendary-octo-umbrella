@@ -253,16 +253,25 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   request keeps the amounts it was submitted with. A new site seeds the travel rates at 0 and the
   form's rules refuse to cost anything with a 0 rate. Changes are audited.
 - **Student information** (owner's rule: at most student ID, first name, last name, school,
-  grade, academy; access by a per-person flag an admin sets). `Students` table, loaded by CSV on
-  Admin → Student access (replace-all import; only those six columns are read). `AppUser.StudentAccess`
-  is the flag — **not** implied by Admin. `FieldTypes.Student`: the browser sends only an ID;
-  `AccessService.StudentsForAsync` looks it up and `FormEvaluator.NormalizeStudent` takes every
-  detail from the roster, refusing people without the flag. `/api/students` returns 403 without it
-  and never lists the roster (2+ characters, 15 results). Viewers without the flag see
-  "Restricted" on the request, print view and CSV export; student answers are never copied to a
-  new request; the audit log records access changes and import counts, never student details.
+  grade, academy; access by a per-person flag an admin sets). **The roster is read live from the
+  owner's SQL Server** (owner, Nov 18, 2026; the CSV import and the `Students` table were removed —
+  migration `RemoveStudentRoster`): `IStudentRoster` (`Services/Students.cs`) — `SqlServerStudentRoster`
+  (`Students:ConnectionString`, `Students:View`, default `dbo.BergenFormsStudents`, a view with columns
+  StudentId, FirstName, LastName, School, Grade, Academy; `deploy/student-roster-view.sql`; parameterised
+  queries, LIKE wildcards escaped, view name checked), `SampleStudentRoster` in Development (Okafor 20451,
+  Okon 20452, Ruiz 20453), `NoStudentRoster` otherwise. Admin → Student access keeps the per-person flag
+  and has "Check the connection". `AppUser.StudentAccess` is the flag — **not** implied by Admin.
+  `FieldTypes.Student`: the browser sends only an ID; `AccessService.StudentsForAsync` looks it up in the
+  roster and `FormEvaluator.NormalizeStudent` takes every detail from it, refusing people without the
+  flag. `/api/students` returns 403 without it and never lists the roster (2+ characters, 15 results).
+  Viewers without the flag see "Restricted" on the request, print view and CSV export; student answers
+  are never copied to a new request; the audit log records access changes, never student details.
   Not covered: text a builder puts into a ticket, email or approval message is seen by whoever
-  receives it. Open: whether the roster should come from the owner's SQL Server instead of CSV.
+  receives it. **Not verified against the owner's SQL Server yet.**
+- **Name (owner, Nov 18, 2026):** the site is called **Bergen Forms** everywhere people see it. Code,
+  namespaces, the `X-SchoolFlow-Secret` webhook header and the workflow file marker keep "SchoolFlow".
+- **Sidebar:** Build and Admin are `<details class="nav-group">`; the group holding the current page is
+  open (`data-here="true"`), otherwise `common.js` restores the person's own last click (localStorage).
 - **Accessibility**: `tests`-independent check with axe-core (WCAG 2.1 A/AA) over the main screens
   found only contrast, unlabeled builder inputs and non-underlined text links; all fixed, zero
   violations now. Keep: `--muted` at #5a607a or darker, `row()` in `builder.js` ties labels to

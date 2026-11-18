@@ -47,7 +47,13 @@ public static class RoleResolver
 public sealed class AccessService
 {
     private readonly AppDbContext _db;
-    public AccessService(AppDbContext db) => _db = db;
+    private readonly IStudentRoster _roster;
+
+    public AccessService(AppDbContext db, IStudentRoster? roster = null)
+    {
+        _db = db;
+        _roster = roster ?? new NoStudentRoster();
+    }
 
     /// <summary>Whether this person has been given access to student information (a flag an admin sets per person).</summary>
     public Task<bool> CanViewStudentsAsync(ClaimsPrincipal user, CancellationToken ct = default) => CanViewStudentsAsync(user.Email(), ct);
@@ -67,9 +73,10 @@ public sealed class AccessService
         if (!await CanViewStudentsAsync(email, ct)) return new SchoolFlow.Core.StudentDirectory(false, known);
         var lookup = input.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
         var ids = fields.Select(f => SchoolFlow.Core.Forms.FormEvaluator.StudentIdOf(lookup.GetValueOrDefault(f.Key))).Where(id => id.Length > 0).Distinct().ToList();
+        // Looked up live in the district's roster; nothing about students is stored here except what a request keeps.
         if (ids.Count > 0)
-            foreach (var student in await _db.Students.AsNoTracking().Where(s => ids.Contains(s.StudentId)).ToListAsync(ct))
-                known[student.StudentId] = student.ToInfo();
+            foreach (var (id, student) in await _roster.FindAsync(ids, ct))
+                known[id] = student;
         return new SchoolFlow.Core.StudentDirectory(true, known);
     }
 

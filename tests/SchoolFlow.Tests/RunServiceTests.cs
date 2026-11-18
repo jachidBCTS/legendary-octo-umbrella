@@ -56,7 +56,7 @@ public sealed class RunServiceTests : IDisposable
     {
         var calendar = new SchoolCalendar(db, new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()));
         return new(db, freshservice ?? _freshservice, new NotificationService(db, new EmailSettings(Config), Config), Files(db), calendar,
-            NullLogger<RunService>.Instance, perDiem: new PerDiemService(new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()),
+            NullLogger<RunService>.Instance, roster: new SampleStudentRoster(), perDiem: new PerDiemService(new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()),
                 calendar, NullLogger<PerDiemService>.Instance, perDiem ?? new FixedPerDiem()));
     }
 
@@ -1242,9 +1242,7 @@ public sealed class RunServiceTests : IDisposable
         var json = Json.Serialize(def);
         var workflow = new Workflow { Name = "Early dismissal", DraftJson = json, PublishedJson = json, PublishedVersion = 1, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
         db.Workflows.Add(workflow);
-        db.Students.AddRange(
-            new Student { StudentId = "20451", FirstName = "Maya", LastName = "Okafor", School = "Teterboro", Grade = "10", Academy = "Aerospace" },
-            new Student { StudentId = "20452", FirstName = "Leo", LastName = "Okon", School = "Paramus", Grade = "11", Academy = "Culinary" });
+        // The roster itself is the district's (read live); the example roster has Maya Okafor (20451) and Leo Okon (20452).
         db.Users.Add(new AppUser { Email = "nurse@school.org", Name = "N Nurse", StudentAccess = true });
         await db.SaveChangesAsync();
         return workflow;
@@ -1292,23 +1290,6 @@ public sealed class RunServiceTests : IDisposable
         // Never offered when someone starts from a previous request.
         var copied = SchoolFlow.Core.Forms.FormCopy.Extract(Json.ParseDefinition(workflow.PublishedJson!).Form, Json.ToValues(runs.Single().ContextJson));
         Assert.DoesNotContain("student", copied.Keys);
-    }
-
-    [Fact]
-    public void RosterFile_IsReadByItsHeadings_KeepingOnlyTheSixColumns()
-    {
-        var rows = SchoolFlow.Web.Pages.Admin.StudentCsv.Parse(
-            "Last Name,First Name,Student ID,Home Address,Grade Level,School,Academy\r\n" +
-            "\"O'Brien, Jr.\",Sam,30001,\"12 Elm St\nApt 4\",9,Teterboro,\"Law \"\"& Justice\"\"\"\r\n" +
-            "\r\n" +
-            "Diaz,Ana,30002,5 Oak Ave,12,Paramus,\n");
-        Assert.Equal(3, rows.Count);                                   // the blank line is ignored; the line break inside quotes is not a new row
-        var columns = SchoolFlow.Web.Pages.Admin.StudentCsv.MapColumns(rows[0]);
-        Assert.Equal(new[] { "academy", "first", "grade", "id", "last", "school" }, columns.Keys.OrderBy(k => k).ToArray());   // no "Home Address"
-        Assert.Equal("O'Brien, Jr.", rows[1][columns["last"]]);
-        Assert.Equal("Law \"& Justice\"", rows[1][columns["academy"]]);
-        Assert.Equal("30002", rows[2][columns["id"]]);
-        Assert.Empty(SchoolFlow.Web.Pages.Admin.StudentCsv.MapColumns(new List<string> { "Name", "DOB" }));
     }
 
     [Fact]
@@ -2097,5 +2078,17 @@ public sealed class RunServiceTests : IDisposable
         Assert.Null(GsaPerDiemClient.Parse(System.Text.Json.JsonDocument.Parse("""{ "rates": [] }""").RootElement));
         Assert.Equal(2027, SchoolFlow.Core.Forms.PerDiemDirectory.FiscalYear(new DateTime(2026, 10, 1)));
         Assert.Equal(2026, SchoolFlow.Core.Forms.PerDiemDirectory.FiscalYear(new DateTime(2026, 9, 30)));
+    }
+
+    [Theory]
+    [InlineData("dbo.BergenFormsStudents", true)]
+    [InlineData("[Student Info].dbo.[Roster View]", true)]
+    [InlineData("Roster", true)]
+    [InlineData("dbo.Students; DROP TABLE x", false)]
+    [InlineData("dbo.Students--", false)]
+    public void RosterViewName_MustBeAPlainName(string view, bool ok)
+    {
+        var made = Record.Exception(() => new SqlServerStudentRoster("Server=x;Database=y;Integrated Security=True", view));
+        Assert.Equal(ok, made is null);
     }
 }

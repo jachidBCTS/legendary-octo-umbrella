@@ -960,7 +960,7 @@ async function login(page, email) {
   fs.writeFileSync(S + '/not-a-workflow.json', JSON.stringify({ hello: 'world' }));
   await page.setInputFiles('#import-file', S + '/not-a-workflow.json');
   await page.waitForSelector('.flash.bad');
-  check((await page.locator('.flash.bad').textContent()).includes('not a SchoolFlow workflow file'), 'a file that is not a workflow is refused');
+  check((await page.locator('.flash.bad').textContent()).includes('not a Bergen Forms workflow file'), 'a file that is not a workflow is refused');
   await page.setInputFiles('#import-file', S + '/outing.schoolflow.json');
   await page.waitForURL(/Builder\/Edit\/\d+/);
   const outingId = Number(page.url().split('/').pop());
@@ -1312,13 +1312,10 @@ async function login(page, email) {
   note('13e. student access, roster, student field, accessibility mode');
   await login(page, 'admin@example.org');
   await page.goto(base + '/Admin/StudentAccess');
-  fs.writeFileSync(S + '/roster.csv', 'Last Name,First Name,Student ID,Home Address,Grade,School,Academy\nOkafor,Maya,20451,12 Elm St,10,Teterboro,Aerospace\nOkon,Leo,20452,5 Oak Ave,11,Paramus,Culinary\n');
-  await page.setInputFiles('#sa-file', S + '/roster.csv');
-  page.once('dialog', (d) => d.accept());
-  await page.click('button:has-text("Import and replace")');
+  check(await page.locator('#sa-file').count() === 0 && !(await page.locator('body').textContent()).includes('Import'), 'there is no roster import: students are read from the district\'s database');
+  await page.click('button:has-text("Check the connection")');
   await page.waitForSelector('.flash.ok');
-  check((await page.locator('.flash.ok').textContent()).includes('2 added') && (await page.locator('body').textContent()).includes('2 students on the roster'), 'a roster file is imported');
-  check(!(await page.locator('body').textContent()).includes('Elm St'), 'columns outside the six agreed ones are not kept or shown');
+  check((await page.locator('.flash.ok').textContent()).includes('Example roster'), 'admins can check the roster connection');
   await page.fill('#sa-email', 'principal@example.org');
   await page.click('button:has-text("Give access")');
   await page.waitForSelector('.flash.ok');
@@ -1373,7 +1370,7 @@ async function login(page, email) {
   check(restricted.includes('Restricted') && !restricted.includes('Okafor') && restricted.includes('Medical appointment'), 'someone without access sees “Restricted” in place of the student');
   await page.goto(base + '/Admin/Audit');
   const audit5 = await page.locator('.table tbody').textContent();
-  check(audit5.includes('Student access given') && audit5.includes('Student roster imported') && !audit5.includes('Okafor'), 'access changes and imports are audited, without student details');
+  check(audit5.includes('Student access given') && !audit5.includes('Okafor'), 'access changes are audited, without student details');
 
   await login(page, 'teacher@example.org');
   await page.keyboard.press('Tab');
@@ -1433,6 +1430,21 @@ async function login(page, email) {
   check(await page.locator('.approve-box').count() === 0, 'the person who passed it on no longer has it to decide');
   const people = await page.evaluate(async () => (await fetch('/api/people?q=a')).json());
   check(Array.isArray(people) && people.length === 0, 'email suggestions need at least two characters');
+
+  note('13w. name and collapsible menus');
+  await login(page, 'admin@example.org');
+  check((await page.locator('.brand').textContent()).includes('Bergen Forms') && (await page.title()).endsWith('Bergen Forms'), 'the site is called Bergen Forms');
+  const adminGroup = page.locator('details.nav-group[data-nav-group="admin"]');
+  check(await adminGroup.evaluate((d) => !d.open), 'the Admin menu starts closed away from admin pages');
+  await adminGroup.locator('summary').click();
+  check(await adminGroup.locator('a[href="/Admin/Teams"]').isVisible(), 'clicking Admin opens it');
+  await page.waitForFunction(() => localStorage.getItem('sf_nav_admin') === '1');
+  await page.goto(base + '/Approvals');
+  check(await page.locator('details.nav-group[data-nav-group="admin"]').evaluate((d) => d.open), 'an opened menu stays open from page to page');
+  await page.locator('details.nav-group[data-nav-group="admin"] summary').click();
+  await page.goto(base + '/Admin/Rates');
+  check(await page.locator('details.nav-group[data-nav-group="admin"]').evaluate((d) => d.open), 'the menu holding the current page is always open');
+  await page.screenshot({ path: S + '/shots/64-sidebar.png' });
 
   note('14. admin + help + mobile');
   await login(page, 'admin@example.org');

@@ -115,7 +115,7 @@ public class IndexModel : PageModel
         return RedirectToPage();
     }
 
-    /// <summary>Downloads a workflow (its current draft) as a file that can be imported here or on another SchoolFlow site.</summary>
+    /// <summary>Downloads a workflow (its current draft) as a file that can be imported here or on another Bergen Forms site.</summary>
     public async Task<IActionResult> OnGetExportAsync(int id)
     {
         var w = await ManagedAsync(id);
@@ -144,7 +144,7 @@ public class IndexModel : PageModel
             var root = doc.RootElement;
             if (root.ValueKind != System.Text.Json.JsonValueKind.Object || !root.TryGetProperty("schoolflow", out _)
                 || !root.TryGetProperty("definition", out var definition) || definition.ValueKind != System.Text.Json.JsonValueKind.Object)
-                return Bad("That is not a SchoolFlow workflow file.");
+                return Bad("That is not a Bergen Forms workflow file.");
             string Text(string property) => root.TryGetProperty(property, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String ? v.GetString()!.Trim() : "";
             (name, description, category, color) = (Text("name"), Text("description"), Text("category"), Text("color"));
             def = Json.ParseDefinition(definition.GetRawText());

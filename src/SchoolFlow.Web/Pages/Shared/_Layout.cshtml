@@ -29,7 +29,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>@ViewData["Title"] · SchoolFlow</title>
+    <title>@ViewData["Title"] · Bergen Forms</title>
     @if (signedIn)
     {
         <meta name="csrf-token" content="@Antiforgery.GetAndStoreTokens(Context).RequestToken" />
@@ -45,7 +45,7 @@
       <div class="sidebar-inner">
         <a class="brand" href="/">
             <span class="brand-mark"><svg viewBox="0 0 32 32"><path d="M9 8h8a4 4 0 0 1 0 8h-2a4 4 0 0 0 0 8h8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></span>
-            <span>SchoolFlow</span>
+            <span>Bergen Forms</span>
         </a>
         <nav>
             <a class="@Active("/", true)" href="/"><partial name="_Icons" model='"home"' /> Home</a>
@@ -61,14 +61,19 @@
             <a class="@Active("/Account/Display")" href="/Account/Display"><partial name="_Icons" model='"eye"' /> Accessibility@(a11y ? " (on)" : "")</a>
             @if (showBuild)
             {
-                <div class="nav-label">Build</div>
+                var buildHere = new[] { "/Builder", "/Reports", "/Help" }.Any(p => Active(p) == "active");
+                <details class="nav-group" data-nav-group="build" open="@buildHere" data-here="@(buildHere ? "true" : null)">
+                <summary class="nav-label">Build</summary>
                 <a class="@Active("/Builder")" href="/Builder"><partial name="_Icons" model='"flow"' /> Workflows</a>
                 <a class="@Active("/Reports")" href="/Reports"><partial name="_Icons" model='"chart"' /> Reports</a>
                 <a class="@Active("/Help")" href="/Help/Formulas"><partial name="_Icons" model='"fx"' /> Formula guide</a>
+                </details>
             }
             @if (User.IsAdmin())
             {
-                <div class="nav-label">Admin</div>
+                var adminHere = Active("/Admin") == "active";
+                <details class="nav-group" data-nav-group="admin" open="@adminHere" data-here="@(adminHere ? "true" : null)">
+                <summary class="nav-label">Admin</summary>
                 <a class="@Active("/Admin/Departments")" href="/Admin/Departments"><partial name="_Icons" model='"building"' /> Departments</a>
                 <a class="@Active("/Admin/Teams")" href="/Admin/Teams"><partial name="_Icons" model='"chain"' /> Teams</a>
                 <a class="@Active("/Admin/Locations")" href="/Admin/Locations"><partial name="_Icons" model='"pin"' /> Locations</a>
@@ -77,6 +82,7 @@
                 <a class="@Active("/Admin/StudentAccess")" href="/Admin/StudentAccess"><partial name="_Icons" model='"check"' /> Student access</a>
                 <a class="@Active("/Admin/Audit")" href="/Admin/Audit"><partial name="_Icons" model='"clock"' /> Audit log</a>
                 <a class="@Active("/Admin/Settings")" href="/Admin/Settings"><partial name="_Icons" model='"gear"' /> Settings</a>
+                </details>
             }
         </nav>
         <div class="sidebar-user">
@@ -96,7 +102,7 @@
     {
         <header class="mobile-bar">
             <button type="button" class="icon-btn" data-toggle-sidebar aria-label="Menu"><svg viewBox="0 0 24 24" class="icon"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
-            <strong>SchoolFlow</strong>
+            <strong>Bergen Forms</strong>
         </header>
         @if (!Freshservice.IsLive)
         {
