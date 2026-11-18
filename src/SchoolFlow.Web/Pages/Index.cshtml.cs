@@ -9,7 +9,15 @@ namespace SchoolFlow.Web.Pages;
 public class IndexModel : PageModel
 {
     private readonly AppDbContext _db;
-    public IndexModel(AppDbContext db) => _db = db;
+    private readonly SchoolCalendar _calendar;
+    public IndexModel(AppDbContext db, SchoolCalendar calendar)
+    {
+        _db = db;
+        _calendar = calendar;
+    }
+
+    /// <summary>Where each recent request that is waiting on someone is now.</summary>
+    public Dictionary<int, CurrentStop> Stops { get; private set; } = new();
 
     public List<IGrouping<string, Workflow>> Groups { get; private set; } = new();
     public List<WorkflowRun> Recent { get; private set; } = new();
@@ -27,6 +35,7 @@ public class IndexModel : PageModel
         Groups = live.GroupBy(w => w.Category).OrderBy(g => g.Key.Length == 0).ThenBy(g => g.Key).ToList();
         Recent = await _db.Runs.AsNoTracking().Where(r => r.SubmitterEmail == email && email != "")
             .OrderByDescending(r => r.UpdatedAt).Take(6).ToListAsync();
+        Stops = await Journey.CurrentStopsAsync(_db, _calendar, Recent);
         var drafts = await _db.FormDrafts.AsNoTracking().Where(d => d.OwnerEmail == email && email != "")
             .OrderByDescending(d => d.UpdatedAt).ToListAsync();
         // A draft of a form that has since been switched off cannot be finished, so it is not offered.

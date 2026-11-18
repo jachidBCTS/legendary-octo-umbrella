@@ -33,6 +33,7 @@ front-end dependencies.
 | Email suggestions | Email boxes (forms, approval chains, stand-ins, teams, departments, builder) suggest staff as you type (`/api/people`: people who have signed in, team members, department approvers, and Freshservice requesters when connected) |
 | Download all files | A request with two or more files offers them as one .zip |
 | Builder undo | *Duplicate step* copies a step (task fields get new keys); *Undo* / Ctrl+Z reverses the last change to steps or fields (30 kept) |
+| Where is my request? | Each request shows its whole route as a line of stops: what is done (who, when), where it is now and whose desk it is on, and what comes next. The current stop is blue, then amber after 2 school days and red after 4 (or when overdue/escalated). Request lists, Home and Approvals show the same "stop · waiting on · how long" line |
 | Discussion | Each request has a message thread for questions and answers; everyone involved is notified |
 | Reminders and escalation | Approvers are reminded when a request sits unanswered (default: every 2 school days, at most 5 times). A step can also escalate to someone else after a set number of school days. Both are set per approval step in the builder |
 | Away / stand-in | Anyone can name a colleague to approve in their place for a date range. The request history records who decided and for whom |

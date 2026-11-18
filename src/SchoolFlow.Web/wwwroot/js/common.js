@@ -144,6 +144,21 @@
 
   window.SF = { api, h, debounce, toast };
 
+  // A request's journey can be wider than the screen: start with the stop it is at in view.
+  document.querySelectorAll('.train-scroll').forEach((track) => {
+    const here = track.querySelector('[aria-current="step"]');
+    if (here && track.scrollWidth > track.clientWidth)
+      track.scrollLeft = Math.max(0, here.offsetLeft - (track.clientWidth - here.offsetWidth) / 2);
+    // Fade whichever edge has more stops beyond it, so it is clear the track scrolls.
+    const edges = () => {
+      track.classList.toggle('more-left', track.scrollLeft > 4);
+      track.classList.toggle('more-right', track.scrollLeft + track.clientWidth < track.scrollWidth - 4);
+    };
+    edges();
+    track.addEventListener('scroll', edges, { passive: true });
+    window.addEventListener('resize', edges);
+  });
+
   document.addEventListener('submit', (e) => {
     const message = e.target.getAttribute && e.target.getAttribute('data-confirm');
     if (message && !window.confirm(message)) e.preventDefault();

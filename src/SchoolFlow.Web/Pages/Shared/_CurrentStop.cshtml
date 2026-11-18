@@ -1,0 +1,7 @@
+@model SchoolFlow.Web.Services.CurrentStop
+@* One line under a request's status: the stop it is at, whose desk, and for how long. *@
+<span class="stop-line">
+    <span class="stop-title"><span class="stop-dot age-@(Model.Age?.Tone ?? "fresh")" aria-hidden="true"></span>@Model.Title@(Model.Position is null ? "" : " · " + Model.Position)</span>
+    <span class="stop-who">Waiting on @Model.WaitingOn</span>
+    @if (Model.Age is { } age) { <span class="pill tiny age-pill age-@age.Tone">@age.Label</span> }
+</span>

@@ -22,7 +22,7 @@
 {
     <article class="panel wf-tile tone-@w.Color">
         <div class="wf-tile-head">
-            <span class="wf-dot">@Ui.Initials(w.Name)</span>
+            <span class="wf-dot"><partial name="_Icons" model="Ui.WorkflowIcon(w.Name, w.Category)" /></span>
             <div class="grow">
                 <a href="/Builder/Edit/@w.Id"><strong>@w.Name</strong></a>
                 <div class="muted small">@(w.Category.Length > 0 ? w.Category + " · " : "")@(w.TriggerType == TriggerTypes.Ticket ? "Starts from a ticket event" : "Starts from a form")</div>

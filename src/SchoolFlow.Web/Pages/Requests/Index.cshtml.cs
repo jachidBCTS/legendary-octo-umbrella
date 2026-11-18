@@ -11,9 +11,11 @@ public class IndexModel : PageModel
     private const int PageSize = 25;
     private readonly AppDbContext _db;
     private readonly AccessService _access;
+    private readonly SchoolCalendar _calendar;
 
-    public IndexModel(AppDbContext db, AccessService access)
+    public IndexModel(AppDbContext db, AccessService access, SchoolCalendar calendar)
     {
+        _calendar = calendar;
         _db = db;
         _access = access;
     }
@@ -31,6 +33,8 @@ public class IndexModel : PageModel
 
     public List<Department> Departments { get; private set; } = new();
     public List<WorkflowRun> Runs { get; private set; } = new();
+    /// <summary>For requests waiting on someone: the stop they are at, whose desk, and for how long.</summary>
+    public Dictionary<int, CurrentStop> Stops { get; private set; } = new();
     public bool HasMore { get; private set; }
     public bool CanSeeManaged { get; private set; }
     public bool CanSeeDepartment { get; private set; }
@@ -47,6 +51,7 @@ public class IndexModel : PageModel
         var rows = await query.OrderByDescending(r => r.Id).Skip((PageNumber - 1) * PageSize).Take(PageSize + 1).ToListAsync();
         HasMore = rows.Count > PageSize;
         Runs = rows.Take(PageSize).ToList();
+        Stops = await Journey.CurrentStopsAsync(_db, _calendar, Runs);
     }
 
     /// <summary>Downloads what the list is showing (same scope and filters) as a spreadsheet file, one column per form answer.</summary>

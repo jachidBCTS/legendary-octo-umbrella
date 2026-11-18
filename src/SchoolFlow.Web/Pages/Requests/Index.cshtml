@@ -65,7 +65,8 @@ else
                     <td><a href="/Requests/Detail/@r.Id"><strong>@r.WorkflowName</strong></a> <span class="muted">#@r.Id</span></td>
                     @if (Model.ShowsOthers) { <td data-label="Submitted by">@r.SubmitterName</td> }
                     <td data-label="Department">@(r.DepartmentName.Length > 0 ? r.DepartmentName : "—")</td>
-                    <td data-label="Status"><span class="pill @css">@label</span></td>
+                    <td data-label="Status"><span class="pill @css">@label</span>
+                        @if (Model.Stops.TryGetValue(r.Id, out var stop)) { <partial name="_CurrentStop" model="stop" /> }</td>
                     <td data-label="Ticket">@(r.TicketId is long t ? "#" + t : "—")</td>
                     <td class="muted" data-label="Submitted">@Ui.When(r.CreatedAt)</td>
                     <td class="muted" data-label="Updated">@Ui.When(r.UpdatedAt)</td>

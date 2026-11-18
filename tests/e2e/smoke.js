@@ -415,10 +415,13 @@ async function login(page, email) {
   await page.click('main button[type=submit]');
   await page.waitForURL(/Requests\/Detail\/\d+/);
   const tripUrl = page.url();
-  const track = () => page.locator('.chain-track li').allTextContents();
+  const track = () => page.locator('.train-track > li').evaluateAll((els) => els.map((li) => li.className + ' | ' + li.textContent.replace(/\s+/g, ' ')));
   let steps = await track();
-  check(steps.length === 2 && steps[0].includes('Team leader') && steps[0].includes('Waiting') && steps[1].includes('Final approval — Music') && steps[1].includes('Up next'),
-    'request shows the chain: requester step, then department final approver');
+  check(steps.length === 4 && steps[0].includes('is-done') && steps[0].includes('Submitted')
+    && steps[1].includes('is-current') && steps[1].includes('Team leader') && steps[1].includes('Waiting on Avery Admin') && steps[1].includes('Here now · today') && steps[1].includes('Stop 2 of 4')
+    && steps[2].includes('is-upcoming') && steps[2].includes('Final approval — Music') && steps[3].includes('Completed'),
+    'the request shows every stop: submitted, the requester\'s step (here now, whose desk), the department approver, then done (' + steps.join(' || ') + ')');
+  check(await page.locator('.train-stop.is-current.age-fresh').count() === 1, 'the stop it is at is coloured by how long it has waited');
   check((await page.locator('.page-head .sub').textContent()).includes('Music'), 'request is filed under its department');
   await page.screenshot({ path: S + '/shots/20-trip-chain.png', fullPage: true });
 
@@ -436,7 +439,7 @@ async function login(page, email) {
   await page.click('button[name=decision][value=approve]');
   await page.waitForSelector('.flash.ok');
   steps = await track();
-  check(steps[0].includes('Approved') && steps[1].includes('Waiting'), 'chain moved to the department step');
+  check(steps[1].includes('is-done') && steps[1].includes('Approved by Avery Admin') && steps[2].includes('is-current'), 'the track moved on to the department step (' + steps.join(' || ') + ')');
   await login(page, 'principal@example.org');
   await page.goto(tripUrl);
   await page.click('button[name=decision][value=approve]');
@@ -1139,6 +1142,12 @@ async function login(page, email) {
   await approveAs('principal@example.org');   // superintendent
   check((await page.locator('.page-head .pill').textContent()) === 'Waiting on a task', 'after the approvals the request waits on the business office, not on a help desk ticket');
   check(await page.locator('.task-box').count() === 0 && (await page.locator('.timeline').textContent()).includes('waiting for admin@example.org'), 'someone outside the team sees who it is waiting on, not the task');
+  const travelStops = await page.locator('.train-track > li').count();
+  const travelHere = await page.locator('.train-stop.is-current').textContent();
+  check(travelStops === 9 && travelHere.includes('Business office: budget, PO and Board approval') && travelHere.includes('Stop 6 of 9'),
+    'the travel request shows all nine stops, here at the business office (' + travelStops + ')');
+  check((await page.locator('.train-stop.is-upcoming').allTextContents()).some((t) => t.includes('After the trip')), 'stops still to come are listed');
+  await page.screenshot({ path: S + '/shots/59-train-track.png' });
   check(!(await page.locator('.timeline').textContent()).includes('Freshservice'), 'no ticket is created for travel');
 
   await login(page, 'admin@example.org');
@@ -1370,6 +1379,22 @@ async function login(page, email) {
   await page.click('main form button');
   await page.waitForSelector('.flash.ok');
   check(await page.evaluate(() => !document.documentElement.classList.contains('a11y')), 'accessibility mode switches off again');
+
+  note('13y. where each request is, in lists');
+  await login(page, 'admin@example.org');
+  await page.goto(base + '/Requests?scope=managed');
+  const listLines = await page.locator('.stop-line').allTextContents();
+  check(listLines.length >= 1 && listLines.every((t) => /Waiting on /.test(t) && /(Here now · today|Waiting \d+ school days?|Overdue)/.test(t)),
+    'the request list shows each waiting request\'s stop, whose desk and how long (' + listLines.length + ')');
+  await page.screenshot({ path: S + '/shots/61-requests-list.png', fullPage: true });
+  await login(page, 'teacher@example.org');
+  await page.goto(base + '/');
+  check(await page.locator('.table .stop-line').count() === await page.locator('.table tbody tr:has(.pill.warn)').count(), 'recent requests on Home show where each waiting one is (' + await page.locator('.table .stop-line').count() + ')');
+  check(await page.locator('.wf-card .wf-dot svg').count() === await page.locator('.wf-card').count(), 'every form tile has a picture');
+  await page.screenshot({ path: S + '/shots/60-home-icons.png', fullPage: true });
+  await login(page, 'admin@example.org');
+  await page.goto(base + '/Approvals');
+  check(await page.locator('.approve-box .stop-line .age-pill').count() >= 1, 'the approvals inbox shows how long each one has waited');
 
   note('13z. passing an approval to someone else, with staff email suggestions');
   const passUrl = await submitTrip('Botanical garden');

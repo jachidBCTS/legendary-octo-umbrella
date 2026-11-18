@@ -41,6 +41,22 @@ public static class Ui
         return string.Concat(letters);
     }
 
+    /// <summary>The picture for a workflow's tile, chosen from words in its name and category.</summary>
+    public static string WorkflowIcon(string? name, string? category = null)
+    {
+        var text = ((name ?? "") + " " + (category ?? "")).ToLowerInvariant();
+        // Whole words only ("hr" must not match "three"); a trailing * allows endings ("escalat*").
+        bool Has(params string[] words) => words.Any(w => System.Text.RegularExpressions.Regex.IsMatch(text,
+            @"\b" + System.Text.RegularExpressions.Regex.Escape(w.TrimEnd('*')) + (w.EndsWith('*') ? "" : @"s?\b")));
+        if (Has("travel", "conference", "mileage")) return "plane";
+        if (Has("field trip", "bus", "trip", "transport", "excursion")) return "bus";
+        if (Has("purchase", "order", "buy", "procure*", "requisition", "supplies")) return "cart";
+        if (Has("repair", "broken", "fix", "maintenance", "facilities")) return "wrench";
+        if (Has("device", "laptop", "computer", "technology", "help desk", "it", "software", "escalat*", "account")) return "laptop";
+        if (Has("leave", "hr", "personnel", "hiring", "job")) return "briefcase";
+        return "form";
+    }
+
     /// <summary>Formats a stored field value for read-only display.</summary>
     private static readonly System.Text.RegularExpressions.Regex DateOnlyText = new(@"^\d{4}-\d{2}-\d{2}$");
 

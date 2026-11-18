@@ -125,6 +125,20 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
 - **Zip download**: `GET /files/run/{id}/zip` (`FilesController.Zip`, built in a temp file, names
   de-duplicated); shown on Detail when a request has 2+ files. Builder: `duplicateNode`, `undo()`
   with `remember()` before every structural change (30 snapshots of `state.def`).
+- **Journey / "train stop" track (Nov 18, 2026)**: `Services/Journey.cs`. `Journey.Build` walks the
+  flow from Start (conditions and set-variables evaluated against the context; after the current
+  step a condition reading something not yet answered takes "true"; people steps follow
+  "approved"/"next") and returns `JourneyStop`s: Submitted, every approval/task (an
+  `approval_chain` expands into its steps from `context.chain`; not reached yet = one stop),
+  help-desk steps, then Completed / Not approved / Cancelled. States come from the `ApprovalTasks`
+  rows (latest per node). Read-only — it never changes a run. The current stop shows whose desk
+  (`Journey.WaitingOn`: team named in the step's setting + people, stand-ins, "all must approve"
+  progress). `WaitAge.Of` = school days since the step was reached: fresh 0–1, aging 2–3 or due
+  within 2 days, delayed 4+/escalated/overdue. Lists (`/Requests`, Home, `/Approvals`) use
+  `Journey.CurrentStopsAsync` + `_CurrentStop.cshtml`. Tile pictures: `Ui.WorkflowIcon` (whole-word
+  match on name/category). Animations (track check draw-in, current-stop pulse, bell ring, clock
+  tick, tile tilt) are all off under `prefers-reduced-motion` and `html.a11y`. `.table.stack` is
+  `display: table` on wide screens (the general `.stack` grid class had broken column alignment).
 - **Approval follow-up**: `ApprovalTask` carries `RemindDays`/`EscalateDays`/`EscalateTo` copied
   from the node config, `StandIns` (from `Delegations`, applied when the task is created and when a
   delegation is added) and `Escalated`. Who may decide = `ApprovalTask.CanBeDecidedBy`. A stand-in's

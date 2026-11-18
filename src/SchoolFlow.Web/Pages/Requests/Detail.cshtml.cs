@@ -18,9 +18,12 @@ public class DetailModel : PageModel
     private readonly IConfiguration _config;
     private readonly AccessService _access;
     private readonly AuditService _audit;
+    private readonly SchoolCalendar _calendar;
 
-    public DetailModel(AppDbContext db, RunService runs, IFreshserviceClient freshservice, IConfiguration config, AccessService access, AuditService audit)
+    public DetailModel(AppDbContext db, RunService runs, IFreshserviceClient freshservice, IConfiguration config, AccessService access, AuditService audit,
+        SchoolCalendar calendar)
     {
+        _calendar = calendar;
         _access = access;
         _audit = audit;
         _db = db;
@@ -32,6 +35,8 @@ public class DetailModel : PageModel
     public sealed record ChainStepView(string Name, string Approvers, string Status, string Rule);
     /// <summary>Steps of the approval chain this request is going (or went) through, if any.</summary>
     public List<ChainStepView> Chain { get; private set; } = new();
+    /// <summary>Every stop on the request's journey, from submission to the end (the train-stop track).</summary>
+    public List<JourneyStop> Stops { get; private set; } = new();
 
     public sealed record FileLink(string Name, string Size, string Url);
     public sealed record Answer(string Label, string Value, List<string>? Columns = null, List<List<string>>? Rows = null, List<FileLink>? Files = null, bool Heading = false,
@@ -156,6 +161,13 @@ public class DetailModel : PageModel
         var seesStudents = studentKeys.Count == 0 || await _access.CanViewStudentsAsync(User);
         // How answers read before the latest change ("Edited · was: …").
         var previous = context.GetValueOrDefault("_previous") as Dictionary<string, object?>;
+        // The journey: what has happened, where it is now (and whose desk), and what is still to come.
+        var nameOf = await Journey.NamesAsync(_db, tasks.SelectMany(t => t.AssigneeList.Concat(t.StandInPairs.Select(p => p.StandIn)).Concat(t.EscalatedList)
+            .Append(t.DecidedBy ?? ""))
+            // and the people the request names (chain approvers, the requester) for stops still to come
+            .Concat(System.Text.RegularExpressions.Regex.Matches(run.ContextJson, @"[A-Za-z0-9._%+\-']+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}").Select(m => m.Value)));
+        Stops = Journey.Build(def, run, context, tasks, DateTime.UtcNow, await _calendar.ClosedDaysAsync(), nameOf,
+            seesStudents ? new HashSet<string>() : studentKeys);
         string? Was(string key) => previous is not null && previous.TryGetValue(key, out var was) && !studentKeys.Contains(key) ? Values.ToText(was) : null;
         AddAnswers(def.Form.Fields);
         // What was added along the way by completed tasks (the latest time each task was done).

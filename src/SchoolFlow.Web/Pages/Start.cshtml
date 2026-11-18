@@ -6,7 +6,7 @@
 <a class="back-link" href="/"><partial name="_Icons" model='"back"' /> All forms</a>
 <div class="form-shell tone-@Model.Workflow.Color">
     <header class="form-head">
-        <span class="wf-dot big">@Ui.Initials(Model.Workflow.Name)</span>
+        <span class="wf-dot big"><partial name="_Icons" model="Ui.WorkflowIcon(Model.Workflow.Name, Model.Workflow.Category)" /></span>
         <div>
             <h1>@Model.Workflow.Name</h1>
             @if (Model.Workflow.Description.Length > 0) { <p class="sub">@Model.Workflow.Description</p> }

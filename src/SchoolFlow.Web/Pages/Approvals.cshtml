@@ -21,6 +21,7 @@
                 @Ui.When(item.Task.CreatedAt)</span>
         </div>
         <p class="muted">@item.Run.WorkflowName #@item.Run.Id · from @item.Run.SubmitterName</p>
+        @if (Model.Stops.TryGetValue(item.Run.Id, out var stop)) { <p><partial name="_CurrentStop" model="stop" /></p> }
         @if (item.Task.Instructions.Length > 0) { <p class="pre">@item.Task.Instructions</p> }
         <a class="btn" href="/Requests/Detail/@item.Run.Id">@(item.Task.Kind == TaskKinds.Task ? "Open request to complete this task" : "Open request to review and decide") <partial name="_Icons" model='"arrow"' /></a>
     </section>

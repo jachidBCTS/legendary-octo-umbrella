@@ -29,7 +29,7 @@
         @foreach (var (draft, workflow) in Model.Drafts)
         {
             <div class="draft tone-@workflow.Color">
-                <span class="wf-dot">@Ui.Initials(workflow.Name)</span>
+                <span class="wf-dot"><partial name="_Icons" model="Ui.WorkflowIcon(workflow.Name, workflow.Category)" /></span>
                 <a class="grow draft-main" href="/Start/@workflow.Id?draft=@draft.Id">
                     <strong>@workflow.Name</strong>
                     <span class="muted small">@(draft.Summary.Length > 0 ? draft.Summary : "Nothing filled in yet") · saved @Ui.When(draft.UpdatedAt)</span>
@@ -61,7 +61,7 @@
         @foreach (var w in group)
         {
             <a class="wf-card tone-@w.Color" href="/Start/@w.Id">
-                <span class="wf-dot">@Ui.Initials(w.Name)</span>
+                <span class="wf-dot"><partial name="_Icons" model="Ui.WorkflowIcon(w.Name, w.Category)" /></span>
                 <span class="wf-body">
                     <strong>@w.Name</strong>
                     <span>@w.Description</span>
@@ -89,7 +89,8 @@ else
                 var (label, css) = Ui.Status(r.Status);
                 <tr>
                     <td><a href="/Requests/Detail/@r.Id"><strong>@r.WorkflowName</strong></a> <span class="muted">#@r.Id</span></td>
-                    <td data-label="Status"><span class="pill @css">@label</span></td>
+                    <td data-label="Status"><span class="pill @css">@label</span>
+                        @if (Model.Stops.TryGetValue(r.Id, out var stop)) { <partial name="_CurrentStop" model="stop" /> }</td>
                     <td data-label="Ticket">@(r.TicketId is long t ? "#" + t : "—")</td>
                     <td class="muted" data-label="Updated">@Ui.When(r.UpdatedAt)</td>
                 </tr>

@@ -59,6 +59,53 @@
     </div>
 }
 
+@if (Model.Stops.Count > 0)
+{
+    var total = Model.Stops.Count;
+    var reached = Model.Stops.Count(st => st.State == "done");
+    <section class="panel journey" aria-labelledby="journey-title">
+        <div class="row-between">
+            <h2 id="journey-title"><partial name="_Icons" model='"route"' /> Where this request is</h2>
+            <span class="muted small">@reached of @total stops done</span>
+        </div>
+        <div class="train-scroll" tabindex="0" role="region" aria-label="The stops this request goes through">
+            <ol class="train-track">
+                @for (var i = 0; i < total; i++)
+                {
+                    var st = Model.Stops[i];
+                    var here = st.State is "current" or "returned";
+                    var stateText = st.State switch { "done" => "Done", "current" => "Here now", "returned" => "Sent back", "rejected" => "Not approved", "failed" => "Stopped by a problem", "cancelled" => "Not reached", _ => "Coming up" };
+                    <li class="train-stop is-@st.State @(st.Age is { } a ? "age-" + a.Tone : "")" aria-current="@(here ? "step" : null)">
+                        <span class="train-stop-dot" aria-hidden="true">
+                            @switch (st.State)
+                            {
+                                case "done": <svg viewBox="0 0 24 24"><path class="check-mark" d="m6.5 12.5 3.6 3.6 7.4-8.2" /></svg> break;
+                                case "rejected": <svg viewBox="0 0 24 24"><path d="M8 8l8 8M16 8l-8 8" /></svg> break;
+                                case "failed": <svg viewBox="0 0 24 24"><path d="M12 6.5v7M12 17v.4" /></svg> break;
+                                case "returned": <svg viewBox="0 0 24 24"><path d="M15.5 8.5H9a3.5 3.5 0 0 0 0 7h6.5M12.5 5.5l3 3-3 3" /></svg> break;
+                                case "current": <span class="train-core"></span> break;
+                            }
+                        </span>
+                        <div class="train-stop-body">
+                            @if (here) { <span class="train-here">Stop @(i + 1) of @total</span> }
+                            <strong class="train-title">@st.Title</strong>
+                            <span class="visually-hidden">— @stateText.</span>
+                            @if (st.Position is not null && st.Kind == "approval") { <span class="muted tiny-text">@st.Position</span> }
+                            @if (st.Who is not null)
+                            {
+                                <span class="train-who">@(st.State == "current" ? "Waiting on " : st.State is "upcoming" ? "Goes to " : "")@st.Who</span>
+                            }
+                            @if (st.When is not null && st.State != "upcoming") { <span class="muted tiny-text">@(st.State == "current" ? "Arrived " : "")@st.When</span> }
+                            @if (st.Age is { } age) { <span class="pill age-pill age-@age.Tone">@age.Label</span> }
+                            @if (st.Note is { Length: > 0 } note) { <span class="train-note">“@(note.Length > 140 ? note[..140] + "…" : note)”</span> }
+                        </div>
+                    </li>
+                }
+            </ol>
+        </div>
+    </section>
+}
+
 @foreach (var task in Model.MyWork.Take(1))
 {
     <section class="panel approve-box task-box">
@@ -169,24 +216,6 @@
                 </form>
             </details>
         }
-    </section>
-}
-
-@if (Model.Chain.Count > 0)
-{
-    <section class="panel">
-        <h2>Approval chain</h2>
-        <ol class="chain-track">
-            @foreach (var step in Model.Chain)
-            {
-                <li class="chain-@step.Status">
-                    <span class="chain-mark"></span>
-                    <strong>@step.Name</strong>
-                    <span class="muted small">@step.Approvers@(step.Rule == "all" && step.Status is "pending" or "waiting" ? " (all must approve)" : "")</span>
-                    <span class="pill tiny @(step.Status switch { "approved" => "ok", "rejected" => "bad", "waiting" => "warn", _ => "muted" })">@(step.Status switch { "approved" => "Approved", "rejected" => "Rejected", "waiting" => Model.Run.Status == RunStatus.ChangesRequested ? "Sent back for changes" : "Waiting", "skipped" => "Not reached", _ => "Up next" })</span>
-                </li>
-            }
-        </ol>
     </section>
 }
 

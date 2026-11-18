@@ -1915,4 +1915,79 @@ public sealed class RunServiceTests : IDisposable
         Assert.Equal(new[] { "admin@example.org", "head@school.org" }, after.AssigneeList.OrderBy(a => a).ToArray());
         Assert.Contains(await check.RunEvents.Where(e => e.RunId == runId).ToListAsync(), e => e.Message.Contains("passed from principal@example.org to head@school.org"));
     }
+
+    // ---- the request's journey (train-stop track) and waiting ages ---------------------------
+
+    private async Task<List<JourneyStop>> StopsAsync(int runId)
+    {
+        await using var db = Db();
+        var run = await db.Runs.SingleAsync(r => r.Id == runId);
+        var tasks = await db.ApprovalTasks.Where(t => t.RunId == runId).ToListAsync();
+        var nameOf = await Journey.NamesAsync(db, tasks.SelectMany(t => t.AssigneeList));
+        return Journey.Build(Json.ParseDefinition(run.DefinitionJson), run, Json.ToValues(run.ContextJson), tasks, DateTime.UtcNow,
+            new HashSet<DateTime>(), nameOf, new HashSet<string>());
+    }
+
+    [Fact]
+    public async Task Journey_ShowsEveryStop_WhereTheRequestIs_AndWhoItIsWaitingOn()
+    {
+        var (runId, _) = await SubmitTravelAsync("Bergen County Technical Schools", input => input["registration"] = 100m);
+        await ApproveInTurnAsync(runId, TechApprovals[0], TechApprovals[1]);
+        var stops = await StopsAsync(runId);
+        Assert.Equal(new[]
+        {
+            "Submitted", "Final approval — Science", "Central Office Administrator approval", "Business Administrator approval", "Superintendent approval",
+            "Business office: budget, PO and Board approval", "After the trip: actual costs and receipts", "Business office: reconcile travel costs", "Completed",
+        }, stops.Select(s => s.Title).ToArray());
+        Assert.Equal(new[] { "done", "done", "done", "current", "upcoming", "upcoming", "upcoming", "upcoming", "upcoming" }, stops.Select(s => s.State).ToArray());
+        var here = stops[3];
+        Assert.StartsWith("Business Administrator team: ", here.Who);                    // the team, then the people in it
+        Assert.Equal("fresh", here.Age!.Tone);
+        Assert.Equal("Here now · today", here.Age.Label);
+        Assert.Equal("Superintendent team", stops[4].Who);                               // who will handle what comes next
+        Assert.StartsWith("Approved by ", stops[2].Who);
+
+        // Sent back: the stop says who it is waiting on now.
+        Assert.True((await ActAsync(runId, "admin@example.org", ApprovalAction.Return, "Add the hotel")).Ok);
+        var returned = (await StopsAsync(runId))[3];
+        Assert.Equal("returned", returned.State);
+        Assert.Equal("Sent back — waiting on T Teacher to edit", returned.Who);
+        Assert.Equal("Add the hotel", returned.Note);
+    }
+
+    [Fact]
+    public async Task Journey_OfAFinishedRequest_EndsWhereItEnded()
+    {
+        var (runId, _) = await SubmitTravelAsync("Bergen County Technical Schools", input => input["registration"] = 100m);
+        await DecideAsync(runId, "principal@example.org", approved: false);
+        var stops = await StopsAsync(runId);
+        Assert.Equal(new[] { "done", "rejected", "rejected" }, stops.Select(s => s.State).ToArray());
+        Assert.Equal("Not approved", stops[^1].Title);
+    }
+
+    [Fact]
+    public void WaitAge_CountsSchoolDays_AndTurnsAmberThenRed()
+    {
+        var closed = new HashSet<DateTime>();
+        DateTime At(int y, int m, int d) => new DateTime(y, m, d, 15, 0, 0, DateTimeKind.Utc);
+        Assert.Equal(("fresh", 1), Pick(WaitAge.Of(At(2026, 11, 13), At(2026, 11, 16), closed)));     // Friday → Monday
+        Assert.Equal(("aging", 2), Pick(WaitAge.Of(At(2026, 11, 13), At(2026, 11, 17), closed)));
+        Assert.Equal(("delayed", 4), Pick(WaitAge.Of(At(2026, 11, 13), At(2026, 11, 19), closed)));
+        Assert.Equal("Waiting 4 school days", WaitAge.Of(At(2026, 11, 13), At(2026, 11, 19), closed).Label);
+        Assert.Equal(("delayed", 0), Pick(WaitAge.Of(At(2026, 11, 16), At(2026, 11, 16), closed, escalated: true)));
+        var overdue = WaitAge.Of(At(2026, 11, 16), At(2026, 11, 16), closed, dueOn: new DateTime(2026, 11, 10));
+        Assert.Equal(("delayed", "Overdue"), (overdue.Tone, overdue.Label));
+        Assert.Equal("aging", WaitAge.Of(At(2026, 11, 16), At(2026, 11, 16), closed, dueOn: new DateTime(2026, 11, 17)).Tone);
+        static (string, int) Pick(WaitAge a) => (a.Tone, a.Days);
+    }
+
+    [Theory]
+    [InlineData("Request for Work Related Travel", "", "plane")]
+    [InlineData("Field Trip Request", "", "bus")]
+    [InlineData("Technology Purchase Request", "", "cart")]
+    [InlineData("Device Repair", "Technology", "wrench")]
+    [InlineData("Escalate a ticket", "", "laptop")]
+    [InlineData("Three-day permit", "", "form")]
+    public void WorkflowIcons_MatchWholeWords(string name, string category, string icon) =>
+        Assert.Equal(icon, Ui.WorkflowIcon(name, category));
 }

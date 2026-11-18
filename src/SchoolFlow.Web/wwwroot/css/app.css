@@ -182,6 +182,8 @@ input[readonly] { background: #f6f7fb; color: var(--ink-2); }
 /* ---- tables ---- */
 .table-wrap { overflow-x: auto; }
 .table { width: 100%; border-collapse: collapse; }
+/* A list table that stacks on phones is still a table on wider screens (the general .stack class is a grid). */
+.table.stack { display: table; gap: 0; }
 .table th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; padding: 10px 18px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .table td { padding: 12px 18px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .table tr:last-child td { border-bottom: 0; }
@@ -722,3 +724,105 @@ details.forward input[type=email], details.forward input[type=text], details.for
 .sf-was { font-size: 12.5px; color: var(--warn); margin-top: 3px; }
 .people-add .row { display: flex; gap: 8px; align-items: center; }
 .people-add .row input { flex: 1 1 auto; min-width: 0; }
+
+/* ---- Request journey: the "train stop" track -------------------------------------------- */
+.age-fresh { --stop-tone: var(--brand); }
+.age-aging { --stop-tone: var(--warn); }
+.age-delayed { --stop-tone: var(--bad); }
+.journey h2 { display: flex; align-items: center; gap: 8px; }
+.train-scroll { position: relative; overflow-x: auto; margin: 6px -6px 0; padding: 10px 6px 6px; scrollbar-width: thin; }
+.train-scroll:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 10px; }
+.train-track { list-style: none; margin: 0; padding: 0; display: flex; min-width: min-content; }
+.train-stop { --stop-tone: var(--brand); position: relative; flex: 1 0 168px; padding: 0 8px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.train-stop.age-aging { --stop-tone: var(--warn); }
+.train-stop.age-delayed { --stop-tone: var(--bad); }
+/* The track: from the previous stop's centre to this one's. Solid green up to where the request is, dashed after. */
+.train-stop:not(:first-child)::before { content: ""; position: absolute; top: 15px; left: -50%; width: 100%; height: 4px; border-radius: 2px; background: var(--ok); z-index: 0; }
+.train-stop.is-current:not(:first-child)::before { background: linear-gradient(90deg, var(--ok), var(--stop-tone)); }
+.train-stop.is-returned:not(:first-child)::before { background: linear-gradient(90deg, var(--ok), var(--warn)); }
+.train-stop.is-rejected:not(:first-child)::before, .train-stop.is-failed:not(:first-child)::before { background: linear-gradient(90deg, var(--ok), var(--bad)); }
+.train-stop.is-upcoming:not(:first-child)::before, .train-stop.is-cancelled:not(:first-child)::before {
+  background: repeating-linear-gradient(90deg, var(--line-2) 0 7px, transparent 7px 13px); height: 3px; top: 15.5px; }
+.train-stop-dot { position: relative; z-index: 1; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--panel); border: 3px solid var(--line-2); flex: none; }
+.train-stop-dot svg { width: 18px; height: 18px; fill: none; stroke: #fff; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.train-stop.is-done .train-stop-dot { background: var(--ok); border-color: var(--ok); }
+.train-stop.is-rejected .train-stop-dot, .train-stop.is-failed .train-stop-dot { background: var(--bad); border-color: var(--bad); }
+.train-stop.is-returned .train-stop-dot { background: var(--warn); border-color: var(--warn); }
+.train-stop.is-current .train-stop-dot { border-color: var(--stop-tone); box-shadow: 0 0 0 4px color-mix(in srgb, var(--stop-tone) 18%, transparent); }
+.train-core { width: 12px; height: 12px; border-radius: 50%; background: var(--stop-tone); }
+.train-stop.is-upcoming .train-stop-dot { border-style: solid; border-color: var(--line-2); }
+.train-stop.is-cancelled .train-stop-dot { border-style: dashed; border-color: var(--line-2); background: var(--bg); }
+.train-stop-body { margin-top: 9px; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 13px; line-height: 1.35; max-width: 220px; }
+.train-title { font-size: 13.5px; color: var(--ink); }
+.train-stop.is-upcoming .train-title, .train-stop.is-cancelled .train-title { color: var(--ink-2); font-weight: 600; }
+.train-who { color: var(--ink-2); overflow-wrap: anywhere; }
+.train-stop.is-upcoming .train-who, .train-stop.is-cancelled .train-who { color: var(--muted); }
+.train-note { color: var(--ink-2); font-style: italic; overflow-wrap: anywhere; }
+.tiny-text { font-size: 12px; }
+.train-here { font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--stop-tone); }
+.train-stop.is-returned .train-here { color: var(--warn); }
+.train-stop.is-current .train-stop-body, .train-stop.is-returned .train-stop-body {
+  background: color-mix(in srgb, var(--stop-tone) 7%, var(--panel)); border: 1.5px solid color-mix(in srgb, var(--stop-tone) 40%, var(--panel));
+  border-radius: 12px; padding: 9px 11px; box-shadow: 0 4px 14px color-mix(in srgb, var(--stop-tone) 14%, transparent); }
+.train-stop.is-returned { --stop-tone: var(--warn); }
+.age-pill { margin-top: 2px; }
+.pill.age-fresh { background: var(--info-soft); color: var(--info); }
+.pill.age-aging { background: var(--warn-soft); color: var(--warn); }
+.pill.age-delayed { background: var(--bad-soft); color: var(--bad); }
+@media (max-width: 720px) {
+  /* On a phone the line runs down the page instead of across it. */
+  .train-scroll { overflow: visible; }
+  .train-track { flex-direction: column; min-width: 0; }
+  .train-stop { flex: none; flex-direction: row; align-items: flex-start; text-align: left; gap: 12px; padding: 0 0 16px; }
+  .train-stop:not(:first-child)::before { display: none; }
+  .train-stop:not(:last-child)::after { content: ""; position: absolute; left: 15px; top: 34px; bottom: 0; width: 4px; border-radius: 2px; background: var(--ok); }
+  .train-stop.is-current:not(:last-child)::after, .train-stop.is-returned:not(:last-child)::after, .train-stop.is-upcoming:not(:last-child)::after,
+  .train-stop.is-cancelled:not(:last-child)::after, .train-stop.is-rejected:not(:last-child)::after, .train-stop.is-failed:not(:last-child)::after {
+    background: repeating-linear-gradient(180deg, var(--line-2) 0 7px, transparent 7px 13px); width: 3px; left: 15.5px; }
+  .train-stop-body { margin-top: 4px; align-items: flex-start; max-width: none; min-width: 0; flex: 1 1 auto; }
+  .train-stop.is-current .train-stop-body, .train-stop.is-returned .train-stop-body { margin-top: -4px; }
+}
+
+/* ---- Where a request is, in lists ------------------------------------------------------- */
+.stop-line { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 8px; margin-top: 6px; font-size: 12.5px; line-height: 1.35; }
+.stop-title { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--ink); }
+.stop-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--stop-tone, var(--brand)); flex: none; }
+.stop-who { color: var(--muted); overflow-wrap: anywhere; }
+
+/* ---- Workflow tiles: category pictures --------------------------------------------------- */
+.wf-dot { transition: transform .2s ease; }
+.wf-dot .icon { width: 24px; height: 24px; stroke-width: 1.8; }
+.wf-dot.big .icon { width: 28px; height: 28px; }
+.wf-card:hover .wf-dot, .wf-card:focus-visible .wf-dot { transform: translateY(-2px) rotate(-6deg) scale(1.05); }
+
+/* ---- Small animations (all switched off below for reduced motion and accessibility mode) ---- */
+.check-mark { stroke-dasharray: 24; stroke-dashoffset: 0; }
+@keyframes sf-draw { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
+@keyframes sf-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--stop-tone) 50%, transparent); }
+  70% { box-shadow: 0 0 0 14px color-mix(in srgb, var(--stop-tone) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--stop-tone) 0%, transparent); } }
+@keyframes sf-ring { 0%, 55%, 100% { transform: rotate(0); } 8% { transform: rotate(14deg); } 18% { transform: rotate(-12deg); } 28% { transform: rotate(8deg); } 38% { transform: rotate(-5deg); } 46% { transform: rotate(2deg); } }
+@keyframes sf-tick { to { transform: rotate(360deg); } }
+@keyframes sf-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+.train-stop.is-done .check-mark, .empty-art .check-mark { animation: sf-draw .55s ease-out both; }
+.train-stop:nth-child(2) .check-mark { animation-delay: .08s; } .train-stop:nth-child(3) .check-mark { animation-delay: .16s; }
+.train-stop:nth-child(4) .check-mark { animation-delay: .24s; } .train-stop:nth-child(5) .check-mark { animation-delay: .32s; }
+.train-stop:nth-child(6) .check-mark { animation-delay: .4s; } .train-stop:nth-child(n+7) .check-mark { animation-delay: .48s; }
+.train-stop.is-current .train-stop-dot { animation: sf-pulse 2.2s ease-out infinite; }
+.sidebar a:has(.badge) .icon-bell { transform-origin: 50% 12%; animation: sf-ring 2.6s ease-in-out .8s 3; }
+.callout-icon .icon-clock { animation: sf-breathe 3s ease-in-out infinite; }
+.callout-icon .clock-minute { transform-box: view-box; transform-origin: 12px 12px; animation: sf-tick 12s steps(60) infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .check-mark, .train-stop-dot, .icon-bell, .icon-clock, .clock-minute, .wf-dot, .wf-card { animation: none !important; transition: none !important; }
+  .wf-card:hover .wf-dot { transform: none; }
+}
+html.a11y .check-mark, html.a11y .train-stop-dot, html.a11y .icon-bell, html.a11y .icon-clock, html.a11y .clock-minute, html.a11y .wf-dot { animation: none !important; transition: none !important; }
+html.a11y .wf-card:hover .wf-dot { transform: none; }
+html.a11y .train-stop-dot { border-width: 3px; }
+html.a11y .train-stop-body { font-size: 15px; }
+.train-scroll.more-right { -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent); mask-image: linear-gradient(90deg, #000 85%, transparent); }
+.train-scroll.more-left { -webkit-mask-image: linear-gradient(90deg, transparent, #000 15%); mask-image: linear-gradient(90deg, transparent, #000 15%); }
+.train-scroll.more-left.more-right { -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); }
+@media (max-width: 720px) { .train-scroll.more-left, .train-scroll.more-right { -webkit-mask-image: none; mask-image: none; } }
