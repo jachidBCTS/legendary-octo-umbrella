@@ -1,5 +1,5 @@
 {
-  "//": "Staff list location (ActiveStaff.Location) -> student roster location (ActiveStudents.Location). Goes inside \"Students\": { ... \"Match\": { \"Locations\": { ... } } } in appsettings.Production.json. Districts (BCSS, BCTS) are the same in both views, so they need no match. BCTS student locations are number codes: still to be matched.",
+  "//": "Staff list location (ActiveStaff.Location) -> student roster location (ActiveStudents.Location). Goes inside \"Students\": { ... \"Match\": { \"Locations\": { ... } } } in appsettings.Production.json. Districts (BCSS, BCTS) are the same in both views, so they need no match. BCTS student locations are number codes (owner, Nov 18): 20 Academy, 300 Applied Technology HS, 301 Northern Valley IDT, 302 Career Innovation HS, 70 Teterboro, 75 Paramus (Voc and Tec).",
   "Locations": {
     "BLESHMAN": "N. A. Bleshman Regional Day School",
     "BROWNSTONE": "Brownstone School",
@@ -44,6 +44,13 @@
     "WASHINGTON @ PHS": "Washington Paramus High School-LEAP",
     "WASHINGTON @ PVRHS": "Washington Passaic Valley",
     "WASHINGTON ELEMENTARY": "Washington Elementary School",
-    "WOOD-RIDGE ADULT TRAINING CENTER": "Wood-Ridge Adult Training Center"
+    "WOOD-RIDGE ADULT TRAINING CENTER": "Wood-Ridge Adult Training Center",
+    "ACADEMY": "20",
+    "APPLIED TECHNOLOGY HS (BCC)": "300",
+    "NORTHERN VALLEY REGIONAL": "301",
+    "CAREER INNOVATION HIGH SCHOOL": "302",
+    "TETERBORO": "70",
+    "PARAMUS TEC": "75",
+    "PARAMUS VOC": "75"
   }
 }
