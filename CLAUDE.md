@@ -256,14 +256,22 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   grade, academy; access by a per-person flag an admin sets). **The roster is read live from the
   owner's SQL Server** (owner, Nov 18, 2026; the CSV import and the `Students` table were removed —
   migration `RemoveStudentRoster`): `IStudentRoster` (`Services/Students.cs`) — `SqlServerStudentRoster`
-  (`Students:ConnectionString`, `Students:View`, default `dbo.BergenFormsStudents`, a view with columns
-  StudentId, FirstName, LastName, School, Grade, Academy; `deploy/student-roster-view.sql`; parameterised
-  queries, LIKE wildcards escaped, view name checked), `SampleStudentRoster` in Development (Okafor 20451,
+  (`Students:ConnectionString`, `Students:View`, `Students:Columns:{StudentId,FirstName,LastName,School,
+  Grade,Academy}` — the owner's view is `ThingsOfBergen.dbo.ActiveStudents` with StudentNumber, Location,
+  [Academy or Major]; its District column is deliberately not read; `deploy/student-roster-view.sql`;
+  parameterised queries, LIKE wildcards escaped, view/column names checked, lookups in batches of 100), `SampleStudentRoster` in Development (Okafor 20451,
   Okon 20452, Ruiz 20453), `NoStudentRoster` otherwise. Admin → Student access keeps the per-person flag
   and has "Check the connection". `AppUser.StudentAccess` is the flag — **not** implied by Admin.
   `FieldTypes.Student`: the browser sends only an ID; `AccessService.StudentsForAsync` looks it up in the
   roster and `FormEvaluator.NormalizeStudent` takes every detail from it, refusing people without the
   flag. `/api/students` returns 403 without it and never lists the roster (2+ characters, 15 results).
+  **Only the student number is stored** (owner, Nov 18, 2026): `StudentData.Minimize` reduces a student
+  answer to `{ id }` and drops everything worked out from student details, in `RunService.Stored` (every
+  save of a run) and in drafts. `StudentAnswers.RestoreAsync` puts the details back from the live roster
+  (re-evaluating the form for derived values) when a run is loaded for the engine (`RunService.LoadAsync`,
+  task evaluation), on the request/print page for viewers with the flag, and in CSV exports (one batched
+  lookup). A student no longer on the roster shows as "ID n (not on the current student roster)".
+  Limitation: a "Set value" step computed from student details is not recomputed after a reload.
   Viewers without the flag see "Restricted" on the request, print view and CSV export; student answers
   are never copied to a new request; the audit log records access changes, never student details.
   Not covered: text a builder puts into a ticket, email or approval message is seen by whoever

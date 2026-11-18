@@ -85,7 +85,8 @@ builder.Services.AddScoped<AccessService>();
 // Students:View); a development site without one uses a few made-up students.
 var rosterConnection = config["Students:ConnectionString"];
 if (!string.IsNullOrWhiteSpace(rosterConnection))
-    builder.Services.AddSingleton<IStudentRoster>(new SqlServerStudentRoster(rosterConnection, config["Students:View"]));
+    builder.Services.AddSingleton<IStudentRoster>(new SqlServerStudentRoster(rosterConnection, config["Students:View"],
+        SqlServerStudentRoster.Parts.ToDictionary(p => p, p => config[$"Students:Columns:{p}"])));
 else if (builder.Environment.IsDevelopment())
     builder.Services.AddSingleton<IStudentRoster, SampleStudentRoster>();
 else

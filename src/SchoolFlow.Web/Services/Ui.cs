@@ -85,6 +85,8 @@ public static class Ui
         if (type == FieldTypes.Student && value is Dictionary<string, object?> student)
         {
             string Part(string key) => Values.ToText(student.GetValueOrDefault(key)).Trim();
+            // Requests keep only the number; the rest is looked up when shown. Not found = left the roster.
+            if (Part("name").Length == 0) return $"ID {Part("id")} (not on the current student roster)";
             var parts = new[] { Part("name"), "ID " + Part("id"), Part("school"), Part("grade").Length > 0 ? "Grade " + Part("grade") : "", Part("academy") };
             return string.Join(" · ", parts.Where(p => p.Length > 0));
         }

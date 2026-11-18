@@ -55,11 +55,30 @@ public class IndexModel : PageModel
     }
 
     /// <summary>Downloads what the list is showing (same scope and filters) as a spreadsheet file, one column per form answer.</summary>
-    public async Task<IActionResult> OnGetExportAsync([FromServices] AuditService audit)
+    public async Task<IActionResult> OnGetExportAsync([FromServices] AuditService audit, [FromServices] IStudentRoster roster)
     {
         const int MaxRows = 5000;
         var runs = await (await FilteredAsync()).OrderByDescending(r => r.Id).Take(MaxRows).ToListAsync();
-        var csv = RequestExport.ToCsv(runs, includeStudents: await _access.CanViewStudentsAsync(User));
+        var includeStudents = await _access.CanViewStudentsAsync(User);
+        // Requests keep only student numbers: for someone with access, the details are looked up now, all at once.
+        Dictionary<int, Dictionary<string, object?>>? contexts = null;
+        if (includeStudents)
+        {
+            var answers = new StudentAnswers(roster, _calendar);
+            var withStudents = runs.Select(r => (Run: r, Def: SchoolFlow.Core.Json.ParseDefinition(r.DefinitionJson), Context: SchoolFlow.Core.Json.ToValues(r.ContextJson)))
+                .Where(x => StudentAnswers.IdsOf(x.Def, x.Context).Any()).ToList();
+            if (withStudents.Count > 0)
+            {
+                var known = await answers.LookupAsync(withStudents.SelectMany(x => StudentAnswers.IdsOf(x.Def, x.Context)), HttpContext.RequestAborted);
+                contexts = new();
+                foreach (var (run, def, context) in withStudents)
+                {
+                    await answers.RestoreAsync(def, context, known, HttpContext.RequestAborted);
+                    contexts[run.Id] = context;
+                }
+            }
+        }
+        var csv = RequestExport.ToCsv(runs, includeStudents, contexts);
         if (Scope != "mine")
         {
             // Other people's answers are leaving the system: note who took them.

@@ -9,6 +9,6 @@ namespace SchoolFlow.Web.Pages.Requests;
 public class PrintModel : DetailModel
 {
     public PrintModel(AppDbContext db, RunService runs, IFreshserviceClient freshservice, IConfiguration config, AccessService access, AuditService audit,
-        SchoolCalendar calendar)
-        : base(db, runs, freshservice, config, access, audit, calendar) { }
+        SchoolCalendar calendar, IStudentRoster roster)
+        : base(db, runs, freshservice, config, access, audit, calendar, roster) { }
 }

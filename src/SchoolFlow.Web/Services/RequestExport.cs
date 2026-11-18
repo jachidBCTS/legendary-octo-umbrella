@@ -11,7 +11,8 @@ public static class RequestExport
     private static readonly string[] Fixed = { "Request #", "Form", "Status", "Submitted by", "Email", "Department", "Ticket", "Submitted", "Last updated" };
 
     /// <param name="includeStudents">False for someone without student access: student answers are left out of the file.</param>
-    public static string ToCsv(IReadOnlyList<WorkflowRun> runs, bool includeStudents = true)
+    /// <param name="contexts">Answers to use instead of the stored ones (requests whose students were looked up again).</param>
+    public static string ToCsv(IReadOnlyList<WorkflowRun> runs, bool includeStudents = true, IReadOnlyDictionary<int, Dictionary<string, object?>>? contexts = null)
     {
         // Requests on different forms (or versions of a form) have different questions; a column is a question's label.
         var forms = new Dictionary<string, FormDefinition>();
@@ -45,7 +46,7 @@ public static class RequestExport
                 run.Id.ToString(), run.WorkflowName, status, run.SubmitterName, run.SubmitterEmail, run.DepartmentName,
                 run.TicketId?.ToString() ?? "", Ui.Local(run.CreatedAt).ToString("yyyy-MM-dd HH:mm"), Ui.Local(run.UpdatedAt).ToString("yyyy-MM-dd HH:mm"),
             };
-            var context = Json.ToValues(run.ContextJson);
+            var context = contexts is not null && contexts.TryGetValue(run.Id, out var restored) ? restored : Json.ToValues(run.ContextJson);
             var answers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var field in FormOf(run).Fields.Where(HasAnswer))
                 answers.TryAdd(Header(field), !includeStudents && StudentKeysOf(run).Contains(field.Key)

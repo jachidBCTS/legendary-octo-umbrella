@@ -52,6 +52,28 @@ public static class StudentData
         return tainted;
     }
 
+    /// <summary>
+    /// What is kept of student information when answers are stored (owner's rule: the student number
+    /// and nothing else). A Student field keeps only <c>{ id }</c>; anything worked out from student
+    /// details is not kept at all. The details are looked up again from the roster when needed.
+    /// </summary>
+    public static void Minimize(WorkflowDefinition def, IDictionary<string, object?> values)
+    {
+        var tainted = KeysOf(def);
+        if (tainted.Count == 0) return;
+        var studentFields = def.Form.Fields.Where(f => f.Type == FieldTypes.Student && !string.IsNullOrWhiteSpace(f.Key))
+            .Select(f => f.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var key in values.Keys.Where(tainted.Contains).ToList())
+        {
+            if (!studentFields.Contains(key)) { values.Remove(key); continue; }
+            var id = FormEvaluator.StudentIdOf(values[key]);
+            if (id.Length == 0) { values[key] = null; continue; }
+            var kept = Values.NewDict();
+            kept["id"] = id;
+            values[key] = kept;
+        }
+    }
+
     /// <summary>The steps whose shown text (messages, instructions, tickets) would contain student information.</summary>
     public static IEnumerable<(NodeDef Node, string Setting)> Leaks(WorkflowDefinition def, HashSet<string>? tainted = null)
     {

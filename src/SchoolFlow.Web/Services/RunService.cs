@@ -142,7 +142,7 @@ public sealed class RunService
         Func<int, Task>? beforeFirstStep = null, string? warning = null)
     {
         // Save first so the run has an ID that formulas (run.id) and the timeline can use.
-        run.ContextJson = Json.Serialize(context);
+        run.ContextJson = Stored(run, context);
         _db.Runs.Add(run);
         await _db.SaveChangesAsync(ct);
 
@@ -192,6 +192,7 @@ public sealed class RunService
         // Formulas in the task's fields can use everything already on the request (the form's answers,
         // earlier steps), so "required when total >= 150" works here too.
         var ambient = Json.ToValues(run.ContextJson);
+        await Students.RestoreAsync(Json.ParseDefinition(run.DefinitionJson), ambient, ct);
         ambient["rates"] = await _calendar.RatesAsync(ct);
         // Files already on the request stay usable whoever uploaded them: a task done again by a stand-in
         // or an admin must be able to keep the receipts the first person attached.
@@ -238,7 +239,7 @@ public sealed class RunService
         task.DecidedAt = DateTime.UtcNow;
 
         var def = Json.ParseDefinition(run.DefinitionJson);
-        var state = Load(run);
+        var state = await LoadAsync(run, ct);
         // A task done before (and sent back since) shows what changed, like a resubmitted form.
         var doneBefore = await _db.ApprovalTasks.AnyAsync(t => t.RunId == run.Id && t.NodeId == node.Id && t.Id != task.Id && t.Kind == TaskKinds.Task
             && t.Status == ApprovalStatus.Done, ct);
@@ -340,7 +341,7 @@ public sealed class RunService
             task.DecidedBy = email;
             task.Comment = comment;
             task.DecidedAt = DateTime.UtcNow;
-            var state = Load(run);
+            var state = await LoadAsync(run, ct);
             state.Status = RunStatus.ChangesRequested;
             // The approver can ask for every approval to be given again once the request comes back.
             var restart = restartApprovals && state.Context.GetValueOrDefault("approvals") is List<object?> { Count: > 0 };
@@ -392,7 +393,7 @@ public sealed class RunService
         task.DecidedAt = DateTime.UtcNow;
 
         var def = Json.ParseDefinition(run.DefinitionJson);
-        var resumed = Load(run);
+        var resumed = await LoadAsync(run, ct);
         await (await EngineAsync(ct)).ResumeWithDecisionAsync(def.Flow, resumed, new ApprovalDecision { Approved = approved, By = who, Comment = comment }, ct);
         return await TrySaveAsync(run, resumed, ct) ? new ActionResult(true, RunId: run.Id) : ActionResult.Fail(Raced);
     }
@@ -429,7 +430,7 @@ public sealed class RunService
         task.DecidedAt = DateTime.UtcNow;
 
         var def = Json.ParseDefinition(run.DefinitionJson);
-        var state = Load(run);
+        var state = await LoadAsync(run, ct);
         var sender = string.IsNullOrWhiteSpace(name) ? email : name;
         var earlier = (await _db.ApprovalTasks.AsNoTracking()
                 .Where(t => t.RunId == run.Id && t.Kind == TaskKinds.Task && t.Status == ApprovalStatus.Done && t.NodeId != node.Id)
@@ -500,7 +501,7 @@ public sealed class RunService
         task.ReminderCount = 0;
         task.LastReminderAt = null;
 
-        var state = Load(run);
+        var state = await LoadAsync(run, ct);
         // An approval chain remembers who each step asks; keep it in step with the change.
         if (!isTask && state.Context.GetValueOrDefault("chain") is Dictionary<string, object?> chain
             && chain.GetValueOrDefault("steps") is List<object?> steps && Values.TryToNumber(chain.GetValueOrDefault("index"), out var position)
@@ -587,7 +588,7 @@ public sealed class RunService
         DistrictAddresses.Check(def, form, _domains);
         if (!form.IsValid) return (form, ActionResult.Fail("Please fix the highlighted fields."));
 
-        var state = Load(run);
+        var state = await LoadAsync(run, ct);
         var before = new Dictionary<string, object?>(state.Context, StringComparer.OrdinalIgnoreCase);
         // What the approver will see as "Edited · was: …", and whether approvals already given still count.
         var (adjusted, previous) = Changes(def.Form.Fields, before, form.Values, StudentData.KeysOf(def));
@@ -641,7 +642,7 @@ public sealed class RunService
         // The people who were being asked no longer need to do anything.
         var waiting = await _db.ApprovalTasks.AsNoTracking().Where(t => t.RunId == run.Id && t.Status == ApprovalStatus.Pending).ToListAsync(ct);
         var approvers = waiting.SelectMany(t => t.AssigneeList.Concat(t.StandInPairs.Select(p => p.StandIn)).Concat(t.EscalatedList)).Distinct().ToList();
-        var state = Load(run);
+        var state = await LoadAsync(run, ct);
         state.Status = RunStatus.Cancelled;
         state.PendingApproval = null;
         state.NewEvents.Add(new RunEvent(DateTime.Now, null, "cancelled", $"Withdrawn by {name}."));
@@ -844,7 +845,7 @@ public sealed class RunService
                 break; // Freshservice is unreachable or throttling; try again on the next pass
             }
 
-            var state = Load(run);
+            var state = await LoadAsync(run, ct);
             if (ticket is null)
             {
                 // Deleted in Freshservice: nothing will ever arrive, so say so instead of waiting forever.
@@ -878,7 +879,7 @@ public sealed class RunService
         if (run is null) return ActionResult.Fail("Request not found.");
         if (run.Status != RunStatus.Failed) return ActionResult.Fail("Only failed requests can be retried.");
         var def = Json.ParseDefinition(run.DefinitionJson);
-        var state = Load(run);
+        var state = await LoadAsync(run, ct);
         await (await EngineAsync(ct)).RetryAsync(def.Flow, state, ct);
         return await TrySaveAsync(run, state, ct) ? new ActionResult(true, RunId: run.Id) : ActionResult.Fail("The request changed while retrying. Refresh and try again.");
     }
@@ -889,7 +890,7 @@ public sealed class RunService
         if (run is null) return ActionResult.Fail("Request not found.");
         if (RunStatus.IsFinished(run.Status)) return ActionResult.Fail("This request has already finished.");
 
-        var state = Load(run);
+        var state = await LoadAsync(run, ct);
         state.Status = RunStatus.Cancelled;
         state.PendingApproval = null;
         state.WaitingTicketId = null;
@@ -932,7 +933,7 @@ public sealed class RunService
         foreach (var run in waiting)
         {
             var def = Json.ParseDefinition(run.DefinitionJson);
-            var state = Load(run);
+            var state = await LoadAsync(run, ct);
             if (payload.TryGetValue("event", out var ev)) state.Context["event"] = ev;
             var moved = await (await EngineAsync(ct)).ResumeWithTicketEventAsync(def.Flow, state, merged, ct);
             if (await TrySaveAsync(run, state, ct) && moved) resumed++;
@@ -985,6 +986,25 @@ public sealed class RunService
 
     // ---- persistence -----------------------------------------------------------------
 
+    /// <summary>Loads a request's state, with its students' details put back from the roster for the steps to use.</summary>
+    private async Task<RunState> LoadAsync(WorkflowRun run, CancellationToken ct)
+    {
+        var state = Load(run);
+        await Students.RestoreAsync(Json.ParseDefinition(run.DefinitionJson), state.Context, ct);
+        return state;
+    }
+
+    private StudentAnswers Students => _students ??= new StudentAnswers(_roster ?? new NoStudentRoster(), _calendar);
+    private StudentAnswers? _students;
+
+    /// <summary>What is written to the database: student fields keep only the student number.</summary>
+    private static string Stored(WorkflowRun run, Dictionary<string, object?> context)
+    {
+        var copy = new Dictionary<string, object?>(context, StringComparer.OrdinalIgnoreCase);
+        StudentData.Minimize(Json.ParseDefinition(run.DefinitionJson), copy);
+        return Json.Serialize(copy);
+    }
+
     private static RunState Load(WorkflowRun run) => new()
     {
         Status = run.Status,
@@ -1026,7 +1046,7 @@ public sealed class RunService
         var label = $"{run.WorkflowName} #{run.Id}";
         run.Status = state.Status;
         run.CurrentNodeId = state.CurrentNodeId;
-        run.ContextJson = Json.Serialize(state.Context);
+        run.ContextJson = Stored(run, state.Context);
         run.WaitingTicketId = state.Status == RunStatus.WaitingTicket ? state.WaitingTicketId : null;
         run.Error = state.Status == RunStatus.Failed ? state.Error : null;
         run.UpdatedAt = DateTime.UtcNow;

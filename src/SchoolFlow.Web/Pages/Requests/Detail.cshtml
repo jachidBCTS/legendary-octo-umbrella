@@ -238,6 +238,7 @@
     </section>
     <section class="panel">
         <h2>What was submitted</h2>
+        @if (Model.RosterProblem) { <p class="flash warn">The student roster could not be reached just now, so students are shown by number only.</p> }
         @if (Model.ZipUrl is not null) { <p><a class="btn small" href="@Model.ZipUrl" download><partial name="_Icons" model='"clip"' /> Download all files (.zip)</a></p> }
         @if (Model.Fields.Count == 0)
         {

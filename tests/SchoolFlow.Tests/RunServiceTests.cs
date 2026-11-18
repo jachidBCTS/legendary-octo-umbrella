@@ -1276,9 +1276,23 @@ public sealed class RunServiceTests : IDisposable
         Assert.Equal(new[] { "id", "name", "first", "last", "school", "grade", "academy" }, student.Keys.ToArray());   // the six agreed facts (name is first + last) and nothing more
         Assert.Equal("Okafor (10)", form.Values["label"]);
 
-        // On a request and in an export, only people with the flag see who the student is.
+        // Only the student number is stored (owner's rule); nothing else about the student, nor what was worked out from it.
         var runs = await db.Runs.AsNoTracking().ToListAsync();
-        Assert.Contains("Okafor, Maya · ID 20451 · Teterboro · Grade 10 · Aerospace", RequestExport.ToCsv(runs, includeStudents: true));
+        var stored = runs.Single().ContextJson;
+        Assert.Contains("\"student\":{\"id\":\"20451\"}", stored);
+        foreach (var detail in new[] { "Okafor", "Maya", "Teterboro", "Aerospace", "label" }) Assert.DoesNotContain(detail, stored);
+
+        // Someone with the flag sees the student, looked up again from the roster (with what is worked out from it).
+        var context = Json.ToValues(stored);
+        var calendar = new SchoolCalendar(db, new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()));
+        await new StudentAnswers(new SampleStudentRoster(), calendar).RestoreAsync(Json.ParseDefinition(runs.Single().DefinitionJson), context, default);
+        Assert.Equal("Okafor (10)", context["label"]);
+        Assert.Contains("Okafor, Maya · ID 20451 · Teterboro · Grade 10 · Aerospace",
+            RequestExport.ToCsv(runs, includeStudents: true, new Dictionary<int, Dictionary<string, object?>> { [runs.Single().Id] = context }));
+        // A student who has left the roster still shows by number.
+        var gone = Json.ToValues(stored);
+        await new StudentAnswers(new NoStudentRoster(), calendar).RestoreAsync(Json.ParseDefinition(runs.Single().DefinitionJson), gone, default);
+        Assert.Equal("ID 20451 (not on the current student roster)", Ui.Display(gone["student"], FieldTypes.Student, null, null));
         var masked = RequestExport.ToCsv(runs, includeStudents: false);
         Assert.Contains("\"(restricted)\"", masked);
         Assert.DoesNotContain("Maya", masked);
@@ -2090,5 +2104,14 @@ public sealed class RunServiceTests : IDisposable
     {
         var made = Record.Exception(() => new SqlServerStudentRoster("Server=x;Database=y;Integrated Security=True", view));
         Assert.Equal(ok, made is null);
+    }
+
+    [Fact]
+    public void RosterColumns_CanBeNamedLikeTheDistrictsView()
+    {
+        var columns = new Dictionary<string, string?> { ["StudentId"] = "StudentNumber", ["School"] = "Location", ["Academy"] = "[Academy or Major]" };
+        Assert.Null(Record.Exception(() => new SqlServerStudentRoster("Server=x;Database=y;Integrated Security=True", "dbo.ActiveStudents", columns)));
+        columns["Grade"] = "Grade]; DROP TABLE x;--";
+        Assert.NotNull(Record.Exception(() => new SqlServerStudentRoster("Server=x;Database=y;Integrated Security=True", "dbo.ActiveStudents", columns)));
     }
 }

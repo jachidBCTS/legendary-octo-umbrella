@@ -300,10 +300,14 @@ public sealed class FormsController : ControllerBase
             _db.FormDrafts.Add(draft);
         }
 
-        var form = Json.ParseDefinition(workflow.PublishedJson!).Form;
-        var summary = FormCopy.Summary(form, Json.ToValues(request.Values));
+        var whole = Json.ParseDefinition(workflow.PublishedJson!);
+        var form = whole.Form;
+        var answers = Json.ToValues(request.Values);
+        var summary = FormCopy.Summary(form, answers);
         draft.Summary = summary.Length > 300 ? summary[..300] : summary;
-        draft.ValuesJson = raw;
+        // A draft, like a request, keeps only a student's number; the form looks the rest up again when reopened.
+        SchoolFlow.Core.Forms.StudentData.Minimize(whole, answers);
+        draft.ValuesJson = Json.Serialize(answers);
         draft.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
         return Ok(new { draftId = draft.Id, savedAt = Ui.Local(draft.UpdatedAt).ToString("h:mm tt", Values.DisplayCulture) });

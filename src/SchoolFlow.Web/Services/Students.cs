@@ -23,27 +23,39 @@ public interface IStudentRoster
 
 /// <summary>
 /// Reads the roster from SQL Server: <c>Students:ConnectionString</c> (Windows sign-in as the web
-/// server's account) and <c>Students:View</c>, a view with the columns StudentId, FirstName, LastName,
-/// School, Grade and Academy (see docs/DEPLOY-IIS.md).
+/// server's account), <c>Students:View</c>, and the view's column names under <c>Students:Columns</c>
+/// (StudentId, FirstName, LastName, School, Grade, Academy — each defaults to that name). No other
+/// column is ever read. See docs/DEPLOY-IIS.md.
 /// </summary>
 public sealed class SqlServerStudentRoster : IStudentRoster
 {
     public const string DefaultView = "dbo.BergenFormsStudents";
     private static readonly Regex SafeName = new(@"^(\[[A-Za-z0-9_ ]+\]|[A-Za-z0-9_]+)(\.(\[[A-Za-z0-9_ ]+\]|[A-Za-z0-9_]+)){0,2}$");
+    private static readonly Regex SafeColumn = new(@"^[A-Za-z0-9_ ]{1,128}$");
+    public static readonly string[] Parts = { "StudentId", "FirstName", "LastName", "School", "Grade", "Academy" };
     private readonly string _connectionString;
     private readonly string _view;
+    private readonly Dictionary<string, string> _col;   // part → [column]
+    private readonly string _columns;
 
-    public SqlServerStudentRoster(string connectionString, string? view)
+    public SqlServerStudentRoster(string connectionString, string? view, IReadOnlyDictionary<string, string?>? columns = null)
     {
         _connectionString = connectionString;
         _view = string.IsNullOrWhiteSpace(view) ? DefaultView : view.Trim();
-        // The view name is put into the SQL text, so only a plain [schema.]name is accepted.
+        // The view and column names are put into the SQL text, so only plain names are accepted.
         if (!SafeName.IsMatch(_view)) throw new InvalidOperationException($"Students:View \"{_view}\" is not a valid view name (expected e.g. dbo.BergenFormsStudents).");
+        _col = new Dictionary<string, string>();
+        foreach (var part in Parts)
+        {
+            var name = columns is not null && columns.TryGetValue(part, out var given) && !string.IsNullOrWhiteSpace(given) ? given.Trim().Trim('[', ']') : part;
+            if (!SafeColumn.IsMatch(name)) throw new InvalidOperationException($"Students:Columns:{part} \"{name}\" is not a valid column name.");
+            _col[part] = "[" + name + "]";
+        }
+        _columns = $"CAST({_col["StudentId"]} AS nvarchar(40)), CAST({_col["FirstName"]} AS nvarchar(100)), CAST({_col["LastName"]} AS nvarchar(100)), " +
+                   $"CAST({_col["School"]} AS nvarchar(200)), CAST({_col["Grade"]} AS nvarchar(20)), CAST({_col["Academy"]} AS nvarchar(200))";
     }
 
     public bool IsConfigured => true;
-    private const string Columns = "CAST(StudentId AS nvarchar(40)), CAST(FirstName AS nvarchar(100)), CAST(LastName AS nvarchar(100)), " +
-                                   "CAST(School AS nvarchar(200)), CAST(Grade AS nvarchar(20)), CAST(Academy AS nvarchar(200))";
 
     /// <summary>Makes typed text safe inside LIKE: %, _ and [ match only themselves.</summary>
     private static string Like(string word) => word.Replace("[", "[[]").Replace("%", "[%]").Replace("_", "[_]") + "%";
@@ -54,8 +66,8 @@ public sealed class SqlServerStudentRoster : IStudentRoster
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(ct);
         await using var command = connection.CreateCommand();
-        var where = string.Join(" AND ", words.Select((_, i) => $"(LastName LIKE @w{i} OR FirstName LIKE @w{i} OR CAST(StudentId AS nvarchar(40)) LIKE @w{i})"));
-        command.CommandText = $"SELECT TOP (@max) {Columns} FROM {_view} WHERE {where} ORDER BY LastName, FirstName";
+        var where = string.Join(" AND ", words.Select((_, i) => $"({_col["LastName"]} LIKE @w{i} OR {_col["FirstName"]} LIKE @w{i} OR CAST({_col["StudentId"]} AS nvarchar(40)) LIKE @w{i})"));
+        command.CommandText = $"SELECT TOP (@max) {_columns} FROM {_view} WHERE {where} ORDER BY {_col["LastName"]}, {_col["FirstName"]}";
         command.CommandTimeout = 10;
         command.Parameters.AddWithValue("@max", Math.Clamp(max, 1, 50));
         for (var i = 0; i < words.Count; i++) command.Parameters.Add(new SqlParameter($"@w{i}", System.Data.SqlDbType.NVarChar, 120) { Value = Like(words[i]) });
@@ -65,15 +77,19 @@ public sealed class SqlServerStudentRoster : IStudentRoster
     public async Task<IReadOnlyDictionary<string, StudentInfo>> FindAsync(IReadOnlyCollection<string> ids, CancellationToken ct)
     {
         var result = new Dictionary<string, StudentInfo>(StringComparer.OrdinalIgnoreCase);
-        var wanted = ids.Where(i => i.Length is > 0 and <= 40).Distinct(StringComparer.OrdinalIgnoreCase).Take(50).ToList();
+        var wanted = ids.Where(i => i.Length is > 0 and <= 40).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         if (wanted.Count == 0) return result;
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(ct);
-        await using var command = connection.CreateCommand();
-        command.CommandText = $"SELECT {Columns} FROM {_view} WHERE CAST(StudentId AS nvarchar(40)) IN ({string.Join(", ", wanted.Select((_, i) => "@id" + i))})";
-        command.CommandTimeout = 10;
-        for (var i = 0; i < wanted.Count; i++) command.Parameters.Add(new SqlParameter("@id" + i, System.Data.SqlDbType.NVarChar, 40) { Value = wanted[i] });
-        foreach (var student in await ReadAsync(command, ct)) result.TryAdd(student.Id, student);
+        // In batches of 100, so an export of many requests stays within SQL Server's parameter limits.
+        foreach (var batch in wanted.Chunk(100))
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT {_columns} FROM {_view} WHERE CAST({_col["StudentId"]} AS nvarchar(40)) IN ({string.Join(", ", batch.Select((_, i) => "@id" + i))})";
+            command.CommandTimeout = 15;
+            for (var i = 0; i < batch.Length; i++) command.Parameters.Add(new SqlParameter("@id" + i, System.Data.SqlDbType.NVarChar, 40) { Value = batch[i] });
+            foreach (var student in await ReadAsync(command, ct)) result.TryAdd(student.Id, student);
+        }
         return result;
     }
 
@@ -141,4 +157,61 @@ public sealed class NoStudentRoster : IStudentRoster
     public Task<IReadOnlyDictionary<string, StudentInfo>> FindAsync(IReadOnlyCollection<string> ids, CancellationToken ct) =>
         Task.FromResult<IReadOnlyDictionary<string, StudentInfo>>(new Dictionary<string, StudentInfo>());
     public Task<string> TestAsync(CancellationToken ct) => Task.FromResult("Not connected: Students:ConnectionString is not set in the settings file.");
+}
+
+/// <summary>
+/// Requests store only a student's number (<see cref="SchoolFlow.Core.Forms.StudentData.Minimize"/>).
+/// This puts the details back, from the live roster, when they are needed: to show the request to
+/// someone with student access, or to let a later step's formulas use them. Nothing is saved back.
+/// </summary>
+public sealed class StudentAnswers
+{
+    private readonly IStudentRoster _roster;
+    private readonly SchoolCalendar _calendar;
+
+    public StudentAnswers(IStudentRoster roster, SchoolCalendar calendar)
+    {
+        _roster = roster;
+        _calendar = calendar;
+    }
+
+    private static List<string> StudentKeys(WorkflowDefinition def) =>
+        def.Form.Fields.Where(f => f.Type == FieldTypes.Student && !string.IsNullOrWhiteSpace(f.Key)).Select(f => f.Key).ToList();
+
+    /// <summary>The student numbers stored on a request.</summary>
+    public static IEnumerable<string> IdsOf(WorkflowDefinition def, IDictionary<string, object?> context) =>
+        StudentKeys(def).Select(k => SchoolFlow.Core.Forms.FormEvaluator.StudentIdOf(context.TryGetValue(k, out var v) ? v : null)).Where(id => id.Length > 0);
+
+    public Task<IReadOnlyDictionary<string, StudentInfo>> LookupAsync(IEnumerable<string> ids, CancellationToken ct) =>
+        _roster.FindAsync(ids.Distinct(StringComparer.OrdinalIgnoreCase).ToList(), ct);
+
+    /// <summary>Looks the request's students up and puts their details (and anything worked out from them) back into <paramref name="context"/>.</summary>
+    public async Task RestoreAsync(WorkflowDefinition def, Dictionary<string, object?> context, CancellationToken ct)
+    {
+        var ids = IdsOf(def, context).ToList();
+        if (ids.Count == 0) return;
+        await RestoreAsync(def, context, await LookupAsync(ids, ct), ct);
+    }
+
+    /// <summary>The same, with students already looked up (for many requests at once).</summary>
+    public async Task RestoreAsync(WorkflowDefinition def, Dictionary<string, object?> context, IReadOnlyDictionary<string, StudentInfo> known, CancellationToken ct)
+    {
+        var keys = StudentKeys(def);
+        if (keys.Count == 0) return;
+        // Re-evaluating the form gives each student field its full record from the roster, and works
+        // out again whatever was calculated from it; only those answers are taken from the result.
+        var tainted = SchoolFlow.Core.Forms.StudentData.KeysOf(def);
+        var ambient = SchoolFlow.Core.Expressions.Values.NewDict();
+        if (context.TryGetValue("submitter", out var submitter)) ambient["submitter"] = submitter;
+        ambient["rates"] = await _calendar.RatesAsync(ct);
+        var result = SchoolFlow.Core.Forms.FormEvaluator.Evaluate(def.Form, context, ambient, closedDays: await _calendar.ClosedDaysAsync(ct),
+            students: new StudentDirectory(true, known));
+        foreach (var key in tainted.Where(k => def.Form.Fields.Any(f => string.Equals(f.Key, k, StringComparison.OrdinalIgnoreCase))))
+        {
+            var isStudent = keys.Contains(key, StringComparer.OrdinalIgnoreCase);
+            // A student no longer on the roster keeps their number, so the request still says who it was about.
+            if (isStudent && (!result.Values.TryGetValue(key, out var full) || full is null)) continue;
+            if (result.Values.TryGetValue(key, out var value)) context[key] = value;
+        }
+    }
 }

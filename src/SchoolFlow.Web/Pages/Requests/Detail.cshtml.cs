@@ -19,11 +19,13 @@ public class DetailModel : PageModel
     private readonly AccessService _access;
     private readonly AuditService _audit;
     private readonly SchoolCalendar _calendar;
+    private readonly IStudentRoster _roster;
 
     public DetailModel(AppDbContext db, RunService runs, IFreshserviceClient freshservice, IConfiguration config, AccessService access, AuditService audit,
-        SchoolCalendar calendar)
+        SchoolCalendar calendar, IStudentRoster roster)
     {
         _calendar = calendar;
+        _roster = roster;
         _access = access;
         _audit = audit;
         _db = db;
@@ -37,6 +39,8 @@ public class DetailModel : PageModel
     public List<ChainStepView> Chain { get; private set; } = new();
     /// <summary>Every stop on the request's journey, from submission to the end (the train-stop track).</summary>
     public List<JourneyStop> Stops { get; private set; } = new();
+    /// <summary>The student roster could not be reached, so students show by number only.</summary>
+    public bool RosterProblem { get; private set; }
 
     public sealed record FileLink(string Name, string Size, string Url);
     public sealed record Answer(string Label, string Value, List<string>? Columns = null, List<List<string>>? Rows = null, List<FileLink>? Files = null, bool Heading = false,
@@ -159,6 +163,12 @@ public class DetailModel : PageModel
         // Student fields, and anything worked out from them, are hidden from people without student access.
         var studentKeys = SchoolFlow.Core.Forms.StudentData.KeysOf(def);
         var seesStudents = studentKeys.Count == 0 || await _access.CanViewStudentsAsync(User);
+        // A request keeps only the student number; someone with student access sees the details, looked up now.
+        if (studentKeys.Count > 0 && seesStudents)
+        {
+            try { await new StudentAnswers(_roster, _calendar).RestoreAsync(def, context, HttpContext.RequestAborted); }
+            catch (Exception ex) when (ex is Microsoft.Data.SqlClient.SqlException or InvalidOperationException) { RosterProblem = true; }
+        }
         // How answers read before the latest change ("Edited · was: …").
         var previous = context.GetValueOrDefault("_previous") as Dictionary<string, object?>;
         // The journey: what has happened, where it is now (and whose desk), and what is still to come.
