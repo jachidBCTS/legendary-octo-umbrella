@@ -158,6 +158,16 @@ public sealed class SimulatedFreshserviceClient : IFreshserviceClient
     public Task<string> TestConnectionAsync(CancellationToken ct = default) =>
         Task.FromResult("Simulation mode: no Freshservice domain and API key are configured, so nothing is sent.");
 
+    public Task<IReadOnlyList<TicketField>> TicketFieldsAsync(CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<TicketField>>(new[]
+        {
+            new TicketField("category", "Category", "default_category", true, new[] { "Hardware", "Hardware > Computer", "Hardware > Computer > Laptop", "Software", "Network" }),
+            new TicketField("cf_room_number", "Room #", "custom_text", false, Array.Empty<string>()),
+            new TicketField("cf_phone_extension", "Phone / Extension", "custom_text", false, Array.Empty<string>()),
+            new TicketField("cf_building", "Location", "custom_dropdown", false, new[] { "Academy", "Teterboro", "Paramus" }),
+            new TicketField("cf_availability", "Availability", "custom_paragraph", false, Array.Empty<string>()),
+        });
+
     private static int StableHash(string s)
     {
         unchecked

@@ -589,6 +589,7 @@ public sealed class WorkflowEngine
                     DepartmentId = ResolveId(node.Get("departmentId"), scope, "Department"),
                     Category = NullIfBlank(Template.Render(node.Get("category"), scope)),
                     SubCategory = NullIfBlank(Template.Render(node.Get("subCategory"), scope)),
+                    ItemCategory = NullIfBlank(Template.Render(node.Get("itemCategory"), scope)),
                     Tags = Template.Render(node.Get("tags"), scope).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList(),
                     CustomFields = ResolveCustomFields(node, scope),
                 };

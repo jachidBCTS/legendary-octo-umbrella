@@ -19,9 +19,18 @@ public sealed class TicketCreate
     public long? DepartmentId { get; set; }
     public string? Category { get; set; }
     public string? SubCategory { get; set; }
+    /// <summary>The third level of the category ("Item"), below the sub-category.</summary>
+    public string? ItemCategory { get; set; }
     public List<string> Tags { get; set; } = new();
     public Dictionary<string, object?> CustomFields { get; set; } = new();
 }
+
+/// <summary>
+/// A field on the Freshservice ticket form: what an admin sees (<see cref="Label"/>) and what the API
+/// needs (<see cref="Name"/>; custom fields are filled under custom_fields with this name). Choices of a
+/// nested field (category › sub-category › item) are listed as "A > B > C".
+/// </summary>
+public sealed record TicketField(string Name, string Label, string Type, bool IsDefault, IReadOnlyList<string> Choices);
 
 public sealed class TicketUpdate
 {
@@ -68,6 +77,10 @@ public interface IFreshserviceClient
 
     /// <summary>Verifies the connection; returns a short human-readable summary or throws.</summary>
     Task<string> TestConnectionAsync(CancellationToken ct = default);
+
+    /// <summary>The fields on the ticket form, with their API names and choices (for setting up Create ticket steps).</summary>
+    Task<IReadOnlyList<TicketField>> TicketFieldsAsync(CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<TicketField>>(Array.Empty<TicketField>());
 }
 
 public static class TicketFields

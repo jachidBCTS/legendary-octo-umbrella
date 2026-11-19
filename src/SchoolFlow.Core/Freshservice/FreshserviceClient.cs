@@ -55,6 +55,7 @@ public sealed class FreshserviceClient : IFreshserviceClient
             ["department_id"] = ticket.DepartmentId,
             ["category"] = ticket.Category,
             ["sub_category"] = ticket.SubCategory,
+            ["item_category"] = ticket.ItemCategory,
             ["tags"] = ticket.Tags.Count > 0 ? ticket.Tags : null,
             ["custom_fields"] = ticket.CustomFields.Count > 0 ? ticket.CustomFields : null,
         };
@@ -234,6 +235,56 @@ public sealed class FreshserviceClient : IFreshserviceClient
         catch (FreshserviceException ex) when (ex.StatusCode == 404)
         {
             return await ListAllAsync("api/v2/agent_groups", "agent_groups", e => Item(e, "name"), ct);
+        }
+    }
+
+    /// <summary>GET api/v2/ticket_form_fields: every field on the ticket form, default and custom.</summary>
+    public async Task<IReadOnlyList<TicketField>> TicketFieldsAsync(CancellationToken ct = default)
+    {
+        using var doc = await SendAsync(HttpMethod.Get, "api/v2/ticket_form_fields", null, ct);
+        return ParseTicketFields(doc!.RootElement);
+    }
+
+    public static IReadOnlyList<TicketField> ParseTicketFields(JsonElement root)
+    {
+        var list = new List<TicketField>();
+        if (!root.TryGetProperty("ticket_fields", out var fields) || fields.ValueKind != JsonValueKind.Array) return list;
+        foreach (var f in fields.EnumerateArray())
+        {
+            var name = Str(f, "name") ?? "";
+            if (name.Length == 0) continue;
+            var choices = new List<string>();
+            if (f.TryGetProperty("choices", out var c)) Choices(c, "", choices);
+            var isDefault = f.TryGetProperty("default_field", out var d) && d.ValueKind == JsonValueKind.True;
+            list.Add(new TicketField(name, Str(f, "label") ?? Str(f, "label_for_customers") ?? name, Str(f, "field_type") ?? "", isDefault, choices));
+        }
+        return list;
+    }
+
+    // Choices come as strings, as { value, nested_options/choices }, or as a { "name": id } map; nested ones are walked down.
+    private static void Choices(JsonElement e, string prefix, List<string> into)
+    {
+        if (into.Count >= 500) return;
+        switch (e.ValueKind)
+        {
+            case JsonValueKind.Array:
+                foreach (var item in e.EnumerateArray()) Choices(item, prefix, into);
+                break;
+            case JsonValueKind.String:
+                into.Add(prefix + e.GetString());
+                break;
+            case JsonValueKind.Object:
+                var value = Str(e, "value") ?? Str(e, "name") ?? Str(e, "label");
+                if (value is null)
+                {
+                    foreach (var p in e.EnumerateObject()) into.Add(prefix + p.Name);   // { "Open": 2, … }
+                    break;
+                }
+                into.Add(prefix + value);
+                foreach (var key in new[] { "nested_options", "choices", "sub_choices" })
+                    if (e.TryGetProperty(key, out var nested) && nested.ValueKind is JsonValueKind.Array or JsonValueKind.Object)
+                        Choices(nested, prefix + value + " > ", into);
+                break;
         }
     }
 

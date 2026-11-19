@@ -130,6 +130,25 @@ public class FreshserviceClientTests
         Assert.Contains("tickets can be read", await second.TestConnectionAsync());
     }
 
+    [Fact]
+    public void Ticket_form_fields_list_api_names_and_nested_choices()
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse("""
+        {"ticket_fields":[
+          {"name":"category","label":"Category","field_type":"default_category","default_field":true,
+           "choices":[{"id":1,"value":"Hardware","nested_options":[{"id":2,"value":"Computer","nested_options":[{"id":3,"value":"Laptop"}]}]},{"id":4,"value":"Software"}]},
+          {"name":"cf_room_number","label":"Room #","field_type":"custom_text","default_field":false},
+          {"name":"cf_building","label":"Location","field_type":"custom_dropdown","default_field":false,"choices":["Academy","Teterboro"]}
+        ]}
+        """);
+        var fields = FreshserviceClient.ParseTicketFields(doc.RootElement);
+        Assert.Equal(3, fields.Count);
+        Assert.Equal(new[] { "Hardware", "Hardware > Computer", "Hardware > Computer > Laptop", "Software" }, fields[0].Choices);
+        Assert.Equal("cf_room_number", fields[1].Name);
+        Assert.False(fields[1].IsDefault);
+        Assert.Equal(new[] { "Academy", "Teterboro" }, fields[2].Choices);
+    }
+
     private sealed class FakeHandler : HttpMessageHandler
     {
         public List<(HttpMethod Method, string Url, string? Body, string? Auth)> Requests { get; } = new();

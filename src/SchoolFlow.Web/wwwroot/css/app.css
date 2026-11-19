@@ -972,3 +972,7 @@ html.a11y .form-group > summary::after { transition: none; }
 .letterhead-preview img { max-width: 100%; max-height: 120px; border: 1px solid var(--line); border-radius: 8px; padding: 6px; background: #fff; }
 @media print { .letterhead { max-height: 150px; padding: 0 0 10px; } }
 @media (max-width: 640px) { .letterhead { padding: 12px 14px 4px; max-height: 110px; } }
+
+.fs-fields-head { margin: 22px 0 6px; font-size: 15px; }
+.fs-fields { margin-top: 10px; }
+.fs-choices { margin: 6px 0 0; padding-left: 18px; max-height: 260px; overflow-y: auto; font-size: 13px; }

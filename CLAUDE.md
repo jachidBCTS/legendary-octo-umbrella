@@ -377,6 +377,11 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   0 = off) with their events, approval tasks, comments, attachment rows and files; also
   notifications and drafts of that age. Never deletes a run still in progress, never touches
   `AuditEntries`, and writes a `retention.purged` audit entry. Database rows go before files.
+- **Freshservice ticket fields (Nov 19, 2026):** Admin → Settings → "Show ticket fields" lists the ticket form
+  (`IFreshserviceClient.TicketFieldsAsync` → `GET api/v2/ticket_form_fields`, `FreshserviceClient.ParseTicketFields`;
+  nested choices flattened as "A > B > C") so Create ticket steps can be mapped exactly. Create ticket also sends
+  `item_category` (node config `itemCategory`). The connection test checks `api/v2/tickets` first (404 = wrong
+  `Freshservice:Domain`), then groups (`api/v2/groups`, falling back to `api/v2/agent_groups`).
 - **Freshservice**: `IFreshserviceClient` has a live client and `SimulatedFreshserviceClient`
   (used when no domain/API key is configured; timeline entries are prefixed `[Simulated]`).
 - **Permissions** (owner: staff only sign in; admins keep the ability to approve on someone's

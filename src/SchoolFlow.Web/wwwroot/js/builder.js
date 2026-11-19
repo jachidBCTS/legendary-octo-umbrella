@@ -1560,6 +1560,7 @@
           h('div', { class: 'b-pair' },
             row('Category', tpl('category', 1)),
             row('Sub-category', tpl('subCategory', 1))),
+          row('Item', tpl('itemCategory', 1), 'The third level of the category, if your Freshservice uses one. Each level must match a choice in Freshservice exactly (Admin → Settings → Freshservice ticket fields lists them).'),
           row('Tags', tpl('tags', 1, 'comma, separated')),
           toggle('Attach the request\'s files to the ticket', c.attachFiles === 'true', (v) => { set('attachFiles')(v ? 'true' : ''); }),
           h('p', { class: 'b-help' }, 'Sends everything uploaded through Attachments fields. If Freshservice refuses a file the ticket is still created, and the request\'s timeline says which files were left out.'),

@@ -50,6 +50,23 @@ public class SettingsModel : PageModel
     public string? EmailTestResult { get; private set; }
     public bool EmailTestOk { get; private set; }
     public string? TestResult { get; private set; }
+    /// <summary>The Freshservice ticket form's fields, when an admin asked to see them.</summary>
+    public IReadOnlyList<SchoolFlow.Core.Freshservice.TicketField>? TicketFields { get; private set; }
+    public string? TicketFieldsError { get; private set; }
+
+    public async Task OnPostTicketFieldsAsync(CancellationToken ct)
+    {
+        try
+        {
+            TicketFields = await _freshservice.TicketFieldsAsync(ct);
+            if (TicketFields.Count == 0) TicketFieldsError = "Freshservice returned no ticket fields.";
+        }
+        catch (Exception ex) when (ex is FreshserviceException or HttpRequestException or TaskCanceledException)
+        {
+            TicketFieldsError = ex is FreshserviceException ? ex.Message : "Could not reach Freshservice: " + ex.Message;
+        }
+        await LoadAsync();
+    }
     public bool TestOk { get; private set; }
 
     private async Task LoadAsync()
