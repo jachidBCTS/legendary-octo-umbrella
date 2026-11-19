@@ -34,8 +34,19 @@
     { type: 'signature', label: 'Signature', hint: 'Type your name to sign' },
     { type: 'section', label: 'Section heading', hint: 'Group fields' },
     { type: 'page', label: 'Page break', hint: 'Start a new page' },
+    { type: 'break', label: 'Line break', hint: 'Next field starts on a new line' },
     { type: 'worksheet', label: 'Worksheet', hint: 'Table with fields inside its rows' },
   ];
+  // The "Add a field" list, in groups (each one a fold-out menu).
+  const FIELD_GROUPS = [
+    { name: 'Basic answers', types: ['text', 'textarea', 'number', 'currency', 'date', 'time', 'email', 'phone'] },
+    { name: 'Choices', types: ['select', 'radio', 'multiselect', 'checkbox'] },
+    { name: 'School information', types: ['department', 'location', 'student', 'approval_chain', 'lookup'] },
+    { name: 'Calculations and tables', types: ['calculated', 'table', 'worksheet', 'perdiem'] },
+    { name: 'Files and signing', types: ['attachments', 'signature'] },
+    { name: 'Layout', types: ['section', 'break', 'page'] },
+  ];
+  const openGroups = new Set(['Basic answers']);
   const COLUMN_TYPES = [['text', 'Text'], ['number', 'Number'], ['currency', 'Currency'], ['date', 'Date'], ['select', 'Dropdown'], ['checkbox', 'Yes / no'], ['calculated', 'Calculated']];
   const LOOKUP_SOURCES = [['departments', 'Freshservice departments'], ['locations', 'Freshservice locations (live)'], ['my_assets', "The person's own devices"], ['requesters', 'People (search by name)'], ['groups', 'Agent groups']];
   const NODE_TYPES = [
@@ -53,6 +64,7 @@
     { type: 'set_variable', label: 'Set value', hint: 'Calculate and remember a value', tone: 'slate' },
     { type: 'end', label: 'End', hint: 'Finish the request', tone: 'green' },
   ];
+  const LAYOUT = ['section', 'page', 'worksheet', 'break'];
   const NODE_INFO = Object.fromEntries(NODE_TYPES.map((n) => [n.type, n]));
   // Steps and fields that reach into the Freshservice help desk: administrators only.
   const HELP_DESK_STEPS = ['fs_create_ticket', 'fs_update_ticket', 'fs_add_note', 'fs_service_request', 'fs_lookup', 'wait_ticket'];
@@ -339,7 +351,7 @@
   /** Names a formula may mention, for the "unknown name" hint. */
   function knownNames(context) {
     const names = new Set(RESERVED);
-    if (isFormTrigger()) state.def.form.fields.forEach((f) => { if (f.key && !['section', 'page', 'worksheet'].includes(f.type)) names.add(f.key.toLowerCase()); });
+    if (isFormTrigger()) state.def.form.fields.forEach((f) => { if (f.key && !LAYOUT.includes(f.type)) names.add(f.key.toLowerCase()); });
     if (context === 'flow') {
       state.def.flow.nodes.forEach((n) => {
         if (n.type === 'task') (n.fields || []).forEach((f) => { if (f.key) names.add(f.key.toLowerCase()); });
@@ -355,7 +367,7 @@
     if (opts.columns) opts.columns.forEach((c) => { if (c.key) items.push([c.key, 'This row: ' + (c.label || c.key)]); });
     if (isFormTrigger()) {
       for (const f of state.def.form.fields) {
-        if (!f.key || ['section', 'page', 'worksheet'].includes(f.type)) continue;
+        if (!f.key || LAYOUT.includes(f.type)) continue;
         if (f.type === 'table') {
           items.push(['COUNT(' + f.key + ')', 'Number of rows in ' + (f.label || f.key)]);
           (f.columns || []).forEach((c) => { if (c.key) items.push([f.key + '.' + c.key, (f.label || f.key) + ' → ' + (c.label || c.key) + ' (list)']); });
@@ -528,7 +540,7 @@
 
   function addField(type) {
     const info = FIELD_TYPES.find((t) => t.type === type);
-    const label = type === 'section' ? 'New section' : type === 'page' ? 'Next page' : type === 'worksheet' ? 'Worksheet' : 'New ' + info.label.toLowerCase();
+    const label = type === 'section' ? 'New section' : type === 'page' ? 'Next page' : type === 'worksheet' ? 'Worksheet' : type === 'break' ? 'Line break' : 'New ' + info.label.toLowerCase();
     remember();
     const field = { key: uniqueKey(slug(label), fieldKeys()), label, type };
     if (type === 'worksheet') field.rows = [{ number: '1.', item: 'Item', description: 'Description' }];
@@ -569,7 +581,7 @@
     fields.forEach((f, index) => {
       const info = FIELD_TYPES.find((t) => t.type === f.type) || { label: f.type };
       const card = h('div', {
-        class: 'fld-card' + (index === state.selField ? ' selected' : '') + (['section', 'page', 'worksheet'].includes(f.type) ? ' section' : '') + (bad.has(f.key) ? ' invalid' : '') + (f.width === 'half' ? ' half' : ''),
+        class: 'fld-card' + (index === state.selField ? ' selected' : '') + (LAYOUT.includes(f.type) ? ' section' : '') + (bad.has(f.key) ? ' invalid' : '') + (f.width === 'half' ? ' half' : ''),
         draggable: 'true', tabindex: '0',
         onclick: () => { state.selField = index; renderAll(); },
         onkeydown: (e) => { if (e.key === 'Enter' && e.target === card) { state.selField = index; renderAll(); } },
@@ -592,7 +604,7 @@
       h('span', { class: 'fld-grip', 'aria-hidden': 'true' }, '⋮⋮'),
       h('div', { class: 'grow' },
         h('div', { class: 'fld-label' }, f.label || '(no label)'),
-        h('div', { class: 'fld-meta' }, h('span', null, info.label), !['section', 'page', 'worksheet'].includes(f.type) ? h('code', null, f.key) : null, fieldBadges(f))),
+        h('div', { class: 'fld-meta' }, h('span', null, info.label), !LAYOUT.includes(f.type) ? h('code', null, f.key) : null, fieldBadges(f))),
       h('div', { class: 'fld-tools' },
         h('button', { type: 'button', class: 'icon-btn', title: 'Move up', 'aria-label': 'Move up', disabled: index === 0, onclick: (e) => { e.stopPropagation(); moveField(index, -1); } }, '↑'),
         h('button', { type: 'button', class: 'icon-btn', title: 'Move down', 'aria-label': 'Move down', disabled: index === fields.length - 1, onclick: (e) => { e.stopPropagation(); moveField(index, 1); } }, '↓'),
@@ -636,9 +648,17 @@
   }
 
   function renderFormTab() {
-    const palette = h('aside', { class: 'bld-palette' }, h('h3', null, 'Add a field'),
-      FIELD_TYPES.filter((t) => state.isAdmin || t.type !== 'lookup').map((t) => h('button', { type: 'button', class: 'pal-item', onclick: () => addField(t.type) },
-        h('strong', null, t.label), h('small', null, t.hint))));
+    const palette = h('aside', { class: 'bld-palette grouped' }, h('h3', null, 'Add a field'),
+      FIELD_GROUPS.map((group) => {
+        const items = group.types.filter((type) => state.isAdmin || type !== 'lookup').map((type) => FIELD_TYPES.find((t) => t.type === type)).filter(Boolean);
+        if (items.length === 0) return null;
+        const details = h('details', { class: 'pal-group', open: openGroups.has(group.name) || null },
+          h('summary', null, h('span', null, group.name), h('span', { class: 'pal-count' }, String(items.length))),
+          h('div', { class: 'pal-items' }, items.map((t) => h('button', { type: 'button', class: 'pal-item', onclick: () => addField(t.type) },
+            h('strong', null, t.label), h('small', null, t.hint)))));
+        details.addEventListener('toggle', () => { if (details.open) openGroups.add(group.name); else openGroups.delete(group.name); });
+        return details;
+      }));
     fieldList = h('div', { class: 'fld-list' });
     const center = h('section', { class: 'bld-center' },
       h('div', { class: 'bld-center-head' }, h('h3', null, 'Form fields'), h('span', { class: 'muted small' }, 'Drag to reorder · click to edit')),
@@ -687,6 +707,14 @@
   function renderFieldInspector(panel, field) {
     const refresh = () => renderFieldList();
     const info = FIELD_TYPES.find((t) => t.type === field.type) || { label: field.type };
+    if (field.type === 'break') {
+      panel.append(
+        h('div', { class: 'row-between' }, h('h3', null, info.label),
+          h('button', { type: 'button', class: 'btn small', onclick: () => { state.selField = -1; renderAll(); } }, 'Form settings')),
+        toggle('Draw a line across', field.format === 'line', (v) => { field.format = v ? 'line' : null; refresh(); }),
+        h('p', { class: 'b-help' }, 'The field after this one starts on a new line, even if it is half width and there is room beside the one before. Tick “Draw a line across” to also show a thin dividing line. People filling in the form see nothing else.'));
+      return;
+    }
     const isSheet = field.type === 'worksheet';
     const isPage = field.type === 'page' || isSheet;   // layout-only: no logic settings
     const isSection = field.type === 'section' || isPage;

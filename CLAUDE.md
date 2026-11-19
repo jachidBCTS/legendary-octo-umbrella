@@ -180,8 +180,10 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
 - **Export / reports / print**: `RequestExport.ToCsv` (cells starting with `= + - @` are prefixed
   with `'` — keep that guard), `Pages/Reports`, `Pages/Requests/Print` (inherits `DetailModel`;
   do not redeclare `OnGetAsync` there — two matching handlers crash the page).
-- **Layout fields**: `section` and `page` hold no answer — test with `FieldTypes.IsLayout`, not
-  `== Section`. A `page` field starts a new page; paging is entirely in `form-runtime.js`
+- **Layout fields**: `section`, `page`, `worksheet` and `break` hold no answer — test with
+  `FieldTypes.IsLayout`, not `== Section`. `break` (Nov 19, 2026) ends the grid row so the next field
+  starts on a new line; `format: "line"` also draws a thin rule (CSS `.sf-break`). The builder's
+  "Add a field" list is grouped (`FIELD_GROUPS` in `builder.js`, `<details class="pal-group">`). A `page` field starts a new page; paging is entirely in `form-runtime.js`
   (`pageOf`, `showPage`, `nextPage`): the server still evaluates the whole form, and *Next* just
   asks the server and refuses to move while the current page has errors.
 - **Worksheet** (`FieldTypes.Worksheet`, layout-only): `FieldDef.Rows` (`WorksheetRow`: number,
@@ -189,7 +191,8 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   fields of the same form — values, formulas and checks stay on those fields, so `FormEvaluator`
   is untouched. `form-runtime.js` builds held fields "compact" (`buildField(field, true)`, named by
   `aria-label`) and `buildWorksheet` places them. `FormDefinition.Style = "paper"` is CSS only
-  (`.sf-paper`). Intro lines that all start with `•` render as a notice list.
+  (`.sf-paper`; answers sit close above their underline — padding 2px, no min-height — while
+  accessibility mode restores boxed inputs). Intro lines that all start with `•` render as a notice list.
 - **Who builds what (owner, Nov 17, 2026): forms are admin-only; flows can be changed by staff.**
   `AccessService.CanEditForm` (= admin) gates creating, duplicating, importing, deleting and
   switching on/off workflows and any change to the form, trigger, name/description/category/colour, owners or
@@ -247,7 +250,8 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   missing or empty team fails the run with a message that says where to fix it (retry afterwards).
   To prevent that, `TeamCheck.IssuesAsync` adds an error for every `[Team]` that is missing or
   empty when a workflow is saved or published, so it cannot be published until the team has people.
-  Starter teams: `SeedData.StarterTeams` (Transportation + the six travel teams).
+  Starter teams: `SeedData.StarterTeams` (Transportation + the six travel teams). Admin → Teams shows
+  each team folded (`details.team-card`); the one just saved reopens (`TempData["OpenTeam"]`).
 - **Field Trip template** (workflow 4): no help desk (owner, Nov 17). After the approval chain, if
   `bus_needed`, a task for `[Transportation]` (bus company, pick-up time, confirmation, final cost
   defaulting to the quote); then the organiser is told. Seeds as a draft on a real site.

@@ -195,8 +195,11 @@ async function login(page, email) {
   await page.fill('#new-name', 'Room Booking');
   await page.click('dialog button.primary');
   await page.waitForSelector('.bld-palette');
+  check(await page.locator('.bld-palette .pal-group').count() === 6 && await page.locator('.bld-palette .pal-group[open]').count() === 1, 'the field list is in six fold-out groups, only the first open');
   const addField = async (type, label) => {
-    await page.click(`.bld-palette .pal-item:has(strong:text-is("${type}"))`);
+    const item = page.locator(`.bld-palette .pal-item:has(strong:text-is("${type}"))`);
+    if (!(await item.isVisible())) await page.locator('.bld-palette .pal-group', { has: page.locator(`.pal-item:has(strong:text-is("${type}"))`) }).locator('summary').click();
+    await item.click();
     const input = page.locator('.bld-inspector .b-row').first().locator('input');
     await input.fill(label);
   };
@@ -216,6 +219,10 @@ async function login(page, email) {
   await page.locator('.bld-issues .issue').first().click();
   await page.locator('.bld-inspector textarea.b-formula').first().fill('hours * hourly_rate');
   await page.waitForSelector('.b-fx-status.ok');
+  await page.locator('.bld-palette .pal-group:has(summary:has-text("Layout")) summary').click();
+  await page.click('.bld-palette .pal-item:has(strong:text-is("Line break"))');
+  await page.locator('.bld-inspector label:has-text("Draw a line across") input').check();
+  check(await page.locator('.fld-card.selected:has-text("Line break")').count() === 1, 'a line break can be added from the Layout group');
   // flow: add create-ticket after start
   await page.click('.bld-tabs button:has-text("Flow")');
   await page.locator('.fl-node:has-text("Form submitted")').click();
@@ -1244,13 +1251,15 @@ async function login(page, email) {
   await page.screenshot({ path: S + '/shots/53-travel-complete.png', fullPage: true });
 
   await page.goto(base + '/Admin/Teams');
-  check(await page.locator('main section.panel h2').count() === 8 && (await page.locator('body').textContent()).includes('used by Request for Work Related Travel'), 'admins manage the starter teams in one place');
-  const superTeam = page.locator('section.panel:has(h2:has-text("Superintendent"))');
+  check(await page.locator('details.team-card').count() === 7 && await page.locator('details.team-card[open]').count() === 0 && (await page.locator('body').textContent()).includes('used by Request for Work Related Travel'), 'admins manage the starter teams in one place, each folded until opened');
+  const superTeam = page.locator('details.team-card:has(.team-name:text-is("Superintendent"))');
+  await superTeam.locator('summary').click();
   await superTeam.locator('textarea').fill('not-an-email');
   await superTeam.locator('button:has-text("Save")').click();
   await page.waitForSelector('.flash.bad');
+  check(await page.locator('details.team-card[open] .team-name').textContent() === 'Superintendent', 'the team just saved stays open after the page reloads');
   page.once('dialog', (d) => d.accept());
-  await page.locator('section.panel:has(h2:has-text("Superintendent")) button:has-text("Remove")').click();
+  await page.locator('details.team-card:has(.team-name:text-is("Superintendent")) button:has-text("Remove")').click();
   await page.waitForSelector('.flash.bad');
   check((await page.locator('.flash.bad').textContent()).includes('Request for Work Related Travel'), 'a team a workflow uses cannot be removed');
   await page.screenshot({ path: S + '/shots/54-teams.png', fullPage: true });

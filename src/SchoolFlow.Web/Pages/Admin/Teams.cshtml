@@ -13,14 +13,18 @@
 }
 
 @if (Model.Teams.Count == 0) { <div class="empty small"><p>No teams yet.</p></div> }
-<div class="stack">
+<div class="team-list">
+@{ var openTeam = TempData["OpenTeam"] as int?; }
 @foreach (var t in Model.Teams)
 {
-    <section class="panel">
-        <div class="row-between">
-            <h2>@t.Name @if (t.Members.Length == 0) { <span class="pill bad">Nobody yet</span> }</h2>
-            <form method="post" asp-page-handler="Remove" data-confirm="Remove the team “@t.Name”?"><input type="hidden" name="id" value="@t.Id" /><button class="btn small ghost-danger">Remove</button></form>
-        </div>
+    <details class="panel team-card" open="@(openTeam == t.Id ? "open" : null)">
+        <summary><span class="team-head">
+            <span class="team-name">@t.Name</span>
+            @if (t.Members.Length == 0) { <span class="pill bad">Nobody yet</span> }
+            else { <span class="pill muted">@t.MemberList.Count() @(t.MemberList.Count() == 1 ? "person" : "people")</span> }
+            <span class="team-use muted small">@(Model.UsedBy.TryGetValue(t.Name, out var usedBy) ? $"Used by {usedBy.Count} workflow{(usedBy.Count == 1 ? "" : "s")}" : "Not used yet")</span>
+        </span></summary>
+        <div class="team-body">
         <form method="post" asp-page-handler="Save">
             <input type="hidden" name="id" value="@t.Id" />
             <label class="lbl" for="team-@t.Id">People in this team <span class="muted">(one email per line)</span></label>
@@ -34,7 +38,9 @@
                 <span class="muted small">In a workflow step: <code>[@t.Name]</code>
                     @if (Model.UsedBy.TryGetValue(t.Name, out var users)) { <span>· used by @string.Join(", ", users)</span> } else { <span>· not used by any workflow yet</span> }</span></div>
         </form>
-    </section>
+        <form method="post" asp-page-handler="Remove" class="team-remove" data-confirm="Remove the team “@t.Name”?"><input type="hidden" name="id" value="@t.Id" /><button class="btn small ghost-danger">Remove this team</button></form>
+        </div>
+    </details>
 }
 </div>
 

@@ -45,9 +45,10 @@ public class TeamsModel : PageModel
         return usage;
     }
 
-    private IActionResult Flash(string message, bool ok)
+    private IActionResult Flash(string message, bool ok, int? openTeam = null)
     {
         TempData["Flash"] = message;
+        if (openTeam is int id) TempData["OpenTeam"] = id;   // the team just changed stays open; the others are folded
         if (!ok) TempData["FlashKind"] = "bad";
         return RedirectToPage();
     }
@@ -80,15 +81,15 @@ public class TeamsModel : PageModel
         var team = await _db.Teams.FirstOrDefaultAsync(t => t.Id == id);
         if (team is null) return NotFound();
         var (list, error) = ParseMembers(members);
-        if (error is not null) return Flash($"{team.Name}: {error}", false);
+        if (error is not null) return Flash($"{team.Name}: {error}", false, team.Id);
         var packed = list.Count == 0 ? "" : ApprovalTask.Pack(list);
-        if (packed == team.Members) return Flash("Nothing changed.", true);
+        if (packed == team.Members) return Flash("Nothing changed.", true, team.Id);
         _audit.Record(User, "team.changed", team.Name, $"Members changed from [{string.Join(", ", team.MemberList)}] to [{string.Join(", ", list)}].");
         team.Members = packed;
         team.UpdatedAt = DateTime.UtcNow;
         team.UpdatedBy = User.Email();
         await _db.SaveChangesAsync();
-        return Flash($"Saved. New approvals and tasks for “{team.Name}” go to these people; ones already waiting keep the people they were sent to.", true);
+        return Flash($"Saved. New approvals and tasks for “{team.Name}” go to these people; ones already waiting keep the people they were sent to.", true, team.Id);
     }
 
     public async Task<IActionResult> OnPostRemoveAsync(int id)

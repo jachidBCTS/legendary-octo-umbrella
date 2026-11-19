@@ -341,6 +341,10 @@
     function buildField(field, compact) {
       const id = 'sf-' + (++uid);
       const error = h('div', { class: 'sf-error', hidden: true, id: id + '-err' });
+      if (field.type === 'break') {
+        const wrap = h('div', { class: 'sf-field sf-break' + (field.format === 'line' ? ' sf-break-line' : ''), 'aria-hidden': 'true' }, error);
+        return { wrap, error };
+      }
       if (field.type === 'section' || field.type === 'page') {
         const wrap = h('div', { class: 'sf-field sf-section' + (field.type === 'page' ? ' sf-page-title' : '') },
           h('h3', null, field.label || ''), field.help ? h('p', { class: 'sf-help' }, field.help) : null, error);

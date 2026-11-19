@@ -81,12 +81,14 @@ public static class FieldTypes
         Department = "department", ApprovalChain = "approval_chain", Location = "location", Attachments = "attachments",
         Time = "time", Phone = "phone", Signature = "signature", Page = "page", Worksheet = "worksheet", Student = "student",
         /// <summary>GSA per diem rates for a destination ZIP code and travel dates, looked up by the server.</summary>
-        PerDiem = "perdiem";
+        PerDiem = "perdiem",
+        /// <summary>Ends the current row: the next field starts on a new line (optionally under a thin line).</summary>
+        Break = "break";
 
     public static readonly string[] All =
     {
         Text, TextArea, Email, Number, Currency, Date, Select, Radio, MultiSelect, Checkbox, Lookup, Calculated, Table, Section,
-        Department, ApprovalChain, Location, Attachments, Time, Phone, Signature, Page, Worksheet, Student, PerDiem,
+        Department, ApprovalChain, Location, Attachments, Time, Phone, Signature, Page, Worksheet, Student, PerDiem, Break,
     };
 
     /// <summary>Field types a Task step can ask its assignee for.</summary>
@@ -98,8 +100,8 @@ public static class FieldTypes
     /// <summary>Field types that can be placed inside a worksheet row.</summary>
     public static readonly string[] InWorksheet = { Text, Number, Currency, Calculated, Date, Time, Select };
 
-    /// <summary>Headings and page breaks: they arrange the form and never hold an answer.</summary>
-    public static bool IsLayout(string type) => type is Section or Page or Worksheet;
+    /// <summary>Headings, page and line breaks, worksheets: they arrange the form and never hold an answer.</summary>
+    public static bool IsLayout(string type) => type is Section or Page or Worksheet or Break;
 
     public static readonly string[] Column = { Text, Number, Currency, Date, Select, Checkbox, Calculated };
 
