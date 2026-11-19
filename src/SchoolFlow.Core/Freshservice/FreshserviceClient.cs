@@ -149,7 +149,7 @@ public sealed class FreshserviceClient : IFreshserviceClient
             case LookupSources.Departments:
                 return Filter(await ListAllAsync("api/v2/departments", "departments", e => Item(e, "name"), ct), query);
             case LookupSources.Groups:
-                return Filter(await ListAllAsync("api/v2/groups", "groups", e => Item(e, "name"), ct), query);
+                return Filter(await GroupsAsync(ct), query);
             case LookupSources.Locations:
             {
                 // Locations nest (campus › building › room); show the whole path so "Room 101" is unambiguous.
@@ -188,11 +188,53 @@ public sealed class FreshserviceClient : IFreshserviceClient
         }
     }
 
+    /// <summary>
+    /// Checks the connection in two steps, so a failure says which part is wrong: first the ticket list
+    /// (every Freshservice account has it, so "not found" there means the address is wrong), then the
+    /// agent group list (used by group lookups and "assign to group" settings).
+    /// </summary>
     public async Task<string> TestConnectionAsync(CancellationToken ct = default)
     {
-        using var doc = await SendAsync(HttpMethod.Get, "api/v2/groups?per_page=100", null, ct);
-        var count = doc!.RootElement.TryGetProperty("groups", out var groups) && groups.ValueKind == JsonValueKind.Array ? groups.GetArrayLength() : 0;
-        return $"Connected to {_http.BaseAddress?.Host}. Found {count}{(count == 100 ? "+" : "")} agent group{(count == 1 ? "" : "s")}.";
+        var host = _http.BaseAddress?.Host ?? "?";
+        try
+        {
+            using var _ = await SendAsync(HttpMethod.Get, "api/v2/tickets?per_page=1", null, ct);
+        }
+        catch (FreshserviceException ex) when (ex.StatusCode == 404)
+        {
+            throw new FreshserviceException($"{host} answered \"not found\" for the Freshservice API, so the address is probably not your Freshservice account. "
+                + "Set Freshservice:Domain to the address you see when you sign in to Freshservice as an agent (for example bergen.freshservice.com) — "
+                + "not a custom web address, the self-service portal, or a link with a path after the name. Then restart the site.", 404, ex);
+        }
+        catch (FreshserviceException ex) when (ex.StatusCode is 401 or 403)
+        {
+            throw new FreshserviceException($"{host} was reached, but it refused the API key: {ex.Message}", ex.StatusCode, ex);
+        }
+        try
+        {
+            var groups = await GroupsAsync(ct);
+            return $"Connected to {host}: tickets can be read, and {groups.Count}{(groups.Count >= 100 ? "+" : "")} agent group{(groups.Count == 1 ? "" : "s")} were found.";
+        }
+        catch (FreshserviceException ex)
+        {
+            return $"Connected to {host}: tickets can be read. The agent group list could not be read ({ex.Message}), so group lookups may not work — tickets themselves will.";
+        }
+    }
+
+    /// <summary>
+    /// Agent groups. Freshservice serves them at api/v2/groups; accounts on the newer API also have
+    /// api/v2/agent_groups, which is tried when the first answers "not found".
+    /// </summary>
+    private async Task<List<LookupItem>> GroupsAsync(CancellationToken ct)
+    {
+        try
+        {
+            return await ListAllAsync("api/v2/groups", "groups", e => Item(e, "name"), ct);
+        }
+        catch (FreshserviceException ex) when (ex.StatusCode == 404)
+        {
+            return await ListAllAsync("api/v2/agent_groups", "agent_groups", e => Item(e, "name"), ct);
+        }
     }
 
     // ---- plumbing --------------------------------------------------------------------

@@ -102,6 +102,34 @@ public class DefinitionValidatorTests
 
 public class FreshserviceClientTests
 {
+    [Fact]
+    public async Task Connection_test_says_the_address_is_wrong_when_the_api_is_not_there()
+    {
+        var (client, handler) = Client();
+        handler.Responses.Enqueue((HttpStatusCode.NotFound, "<html>Not found</html>"));
+        var ex = await Assert.ThrowsAsync<FreshserviceException>(() => client.TestConnectionAsync());
+        Assert.Contains("Freshservice:Domain", ex.Message);
+        Assert.Equal("/api/v2/tickets?per_page=1", handler.Requests[0].Url);
+    }
+
+    [Fact]
+    public async Task Connection_test_falls_back_to_agent_groups_and_never_fails_on_groups_alone()
+    {
+        var (client, handler) = Client();
+        handler.Responses.Enqueue((HttpStatusCode.OK, "{\"tickets\":[]}"));
+        handler.Responses.Enqueue((HttpStatusCode.NotFound, "{}"));
+        handler.Responses.Enqueue((HttpStatusCode.OK, "{\"agent_groups\":[{\"id\":1,\"name\":\"Tech\"}]}"));
+        var message = await client.TestConnectionAsync();
+        Assert.Contains("1 agent group", message);
+        Assert.StartsWith("/api/v2/agent_groups", handler.Requests[2].Url);
+
+        var (second, again) = Client();
+        again.Responses.Enqueue((HttpStatusCode.OK, "{\"tickets\":[]}"));
+        again.Responses.Enqueue((HttpStatusCode.NotFound, "{}"));
+        again.Responses.Enqueue((HttpStatusCode.NotFound, "{}"));
+        Assert.Contains("tickets can be read", await second.TestConnectionAsync());
+    }
+
     private sealed class FakeHandler : HttpMessageHandler
     {
         public List<(HttpMethod Method, string Url, string? Body, string? Auth)> Requests { get; } = new();
