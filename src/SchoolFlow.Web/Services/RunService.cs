@@ -27,8 +27,9 @@ public sealed class RunService
 
     public RunService(AppDbContext db, IFreshserviceClient freshservice, NotificationService notifications, AttachmentService attachments,
         SchoolCalendar calendar, ILogger<RunService> log, DomainPolicy? domains = null, PerDiemService? perDiem = null,
-        IStudentRoster? roster = null, StudentScopeService? scope = null)
+        IStudentRoster? roster = null, StudentScopeService? scope = null, DefinitionStore? definitions = null)
     {
+        _defs = definitions ?? new DefinitionStore();
         _scope = scope;
         _roster = roster;
         _perDiem = perDiem;
@@ -44,6 +45,7 @@ public sealed class RunService
     private readonly PerDiemService? _perDiem;
     private readonly IStudentRoster? _roster;
     private readonly StudentScopeService? _scope;
+    private readonly DefinitionStore _defs;
 
     /// <summary>District email domains approvers chosen on a form must use; null or empty for any.</summary>
     private readonly IReadOnlyList<string>? _domains;
@@ -59,9 +61,7 @@ public sealed class RunService
         .ToDictionary(t => t.Name, t => (IReadOnlyList<string>)t.MemberList.ToList(), StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Active departments (id → name), the list a Department field accepts.</summary>
-    public async Task<Dictionary<long, string>> ActiveDepartmentsAsync(CancellationToken ct) =>
-        (await _db.Departments.AsNoTracking().Where(d => d.IsActive).Select(d => new { d.Id, d.Name }).ToListAsync(ct))
-        .ToDictionary(d => (long)d.Id, d => d.Name);
+    public Task<Dictionary<long, string>> ActiveDepartmentsAsync(CancellationToken ct) => _calendar.ActiveDepartmentsAsync(ct);
 
     public static Dictionary<string, object?> SubmitterRecord(string email, string name)
     {
@@ -72,9 +72,7 @@ public sealed class RunService
     }
 
     /// <summary>Active locations (id → name), the list a Location field accepts.</summary>
-    public async Task<Dictionary<long, string>> ActiveLocationsAsync(CancellationToken ct) =>
-        (await _db.Locations.AsNoTracking().Where(l => l.IsActive).Select(l => new { l.Id, l.Name }).ToListAsync(ct))
-        .ToDictionary(l => (long)l.Id, l => l.Name);
+    public Task<Dictionary<long, string>> ActiveLocationsAsync(CancellationToken ct) => _calendar.ActiveLocationsAsync(ct);
 
     // ---- starting --------------------------------------------------------------------
 
@@ -143,7 +141,9 @@ public sealed class RunService
     private async Task<int> StartAsync(WorkflowRun run, WorkflowDefinition def, Dictionary<string, object?> context, CancellationToken ct,
         Func<int, Task>? beforeFirstStep = null, string? warning = null)
     {
-        // Save first so the run has an ID that formulas (run.id) and the timeline can use.
+        // Save first so the run has an ID that formulas (run.id) and the timeline can use. The definition is
+        // stored once and shared by every run on this version.
+        run.DefinitionId ??= await _defs.IdForAsync(_db, run.DefinitionJson, ct);
         run.ContextJson = Stored(run, context);
         _db.Runs.Add(run);
         await _db.SaveChangesAsync(ct);
@@ -178,6 +178,7 @@ public sealed class RunService
         if (task is null || task.Status != ApprovalStatus.Pending) return null;
         if (!task.CanBeDecidedBy(email) && !isAdmin) return null;
         var run = await _db.Runs.FirstOrDefaultAsync(r => r.Id == task.RunId, ct);
+        await _defs.FillAsync(_db, run, ct);
         if (run is null || run.Status != RunStatus.WaitingTask || run.CurrentNodeId != task.NodeId) return null;
         var node = Json.ParseDefinition(run.DefinitionJson).Flow.Nodes.FirstOrDefault(n => n.Id == task.NodeId && n.Type == NodeTypes.Task);
         return node is null ? null : (task, run, node, !task.CanBeDecidedBy(email));
@@ -295,6 +296,7 @@ public sealed class RunService
         if (task.Status != ApprovalStatus.Pending) return ActionResult.Fail($"This was already {task.Status.ToLowerInvariant()} by {task.DecidedBy}.");
 
         var run = await _db.Runs.FirstOrDefaultAsync(r => r.Id == task.RunId, ct);
+        await _defs.FillAsync(_db, run, ct);
         if (run is null || run.Status != RunStatus.WaitingApproval || run.CurrentNodeId != task.NodeId)
             return ActionResult.Fail("The request is no longer waiting on this approval.");
 
@@ -473,6 +475,7 @@ public sealed class RunService
         if (task is null || task.Status != ApprovalStatus.Pending) return ActionResult.Fail("This is no longer waiting on anyone. Refresh to see the latest.");
         if (!task.CanBeDecidedBy(email) && !isAdmin && !canManage) return ActionResult.Fail("This is not yours to pass on.");
         var run = await _db.Runs.FirstOrDefaultAsync(r => r.Id == task.RunId, ct);
+        await _defs.FillAsync(_db, run, ct);
         if (run is null || !RunStatus.IsWaitingOnPeople(run.Status) || run.CurrentNodeId != task.NodeId)
             return ActionResult.Fail("The request is no longer waiting on this step.");
 
@@ -576,6 +579,7 @@ public sealed class RunService
     public async Task<(FormResult? Form, ActionResult Result)> ResubmitAsync(int runId, Dictionary<string, object?> input, string email, string name, CancellationToken ct)
     {
         var run = await _db.Runs.FirstOrDefaultAsync(r => r.Id == runId, ct);
+        await _defs.FillAsync(_db, run, ct);
         if (run is null || run.SubmitterEmail != email || email.Length == 0) return (null, ActionResult.Fail("Request not found."));
         if (run.Status != RunStatus.ChangesRequested) return (null, ActionResult.Fail("This request is not waiting for changes."));
 
@@ -637,6 +641,7 @@ public sealed class RunService
     public async Task<ActionResult> WithdrawAsync(int runId, string email, string name, CancellationToken ct)
     {
         var run = await _db.Runs.FirstOrDefaultAsync(r => r.Id == runId, ct);
+        await _defs.FillAsync(_db, run, ct);
         if (run is null || run.SubmitterEmail != email || email.Length == 0) return ActionResult.Fail("Request not found.");
         if (run.Status is not (RunStatus.WaitingApproval or RunStatus.ChangesRequested))
             return ActionResult.Fail("This request can no longer be withdrawn: it has already been approved or has finished.");
@@ -737,6 +742,7 @@ public sealed class RunService
     {
         var runIds = tasks.Select(t => t.RunId).Distinct().ToList();
         var runs = await _db.Runs.Where(r => runIds.Contains(r.Id)).ToDictionaryAsync(r => r.Id, ct);
+        await _defs.FillAsync(_db, runs.Values, ct);
         int reminded = 0, escalated = 0;
 
         foreach (var task in tasks)
@@ -833,6 +839,7 @@ public sealed class RunService
         var recently = nowUtc.AddMinutes(-10);
         var waiting = await _db.Runs.Where(r => r.Status == RunStatus.WaitingTicket && r.WaitingTicketId != null && (r.LastPolledAt == null || r.LastPolledAt < recently))
             .OrderBy(r => r.LastPolledAt).ThenBy(r => r.Id).Take(40).ToListAsync(ct);
+        await _defs.FillAsync(_db, waiting, ct);
         var moved = 0;
         foreach (var run in waiting)
         {
@@ -878,6 +885,7 @@ public sealed class RunService
     public async Task<ActionResult> RetryAsync(int runId, CancellationToken ct)
     {
         var run = await _db.Runs.FirstOrDefaultAsync(r => r.Id == runId, ct);
+        await _defs.FillAsync(_db, run, ct);
         if (run is null) return ActionResult.Fail("Request not found.");
         if (run.Status != RunStatus.Failed) return ActionResult.Fail("Only failed requests can be retried.");
         var def = Json.ParseDefinition(run.DefinitionJson);
@@ -889,6 +897,7 @@ public sealed class RunService
     public async Task<ActionResult> CancelAsync(int runId, string by, CancellationToken ct)
     {
         var run = await _db.Runs.FirstOrDefaultAsync(r => r.Id == runId, ct);
+        await _defs.FillAsync(_db, run, ct);
         if (run is null) return ActionResult.Fail("Request not found.");
         if (RunStatus.IsFinished(run.Status)) return ActionResult.Fail("This request has already finished.");
 
@@ -932,6 +941,7 @@ public sealed class RunService
 
         var resumed = 0;
         var waiting = await _db.Runs.Where(r => r.Status == RunStatus.WaitingTicket && r.WaitingTicketId == ticketId).ToListAsync(ct);
+        await _defs.FillAsync(_db, waiting, ct);
         foreach (var run in waiting)
         {
             var def = Json.ParseDefinition(run.DefinitionJson);

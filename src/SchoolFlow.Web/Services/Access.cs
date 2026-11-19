@@ -256,6 +256,33 @@ public sealed class SchoolCalendar
 
     public void InvalidateRates() => _cache.Remove("rates");
 
+    /// <summary>
+    /// Active departments and locations (id → name), the lists Department and Location fields accept. Asked
+    /// for on every check of a form while someone types, so they are kept for 30 seconds; the admin pages
+    /// that change them call <see cref="InvalidateLists"/>.
+    /// </summary>
+    public async Task<Dictionary<long, string>> ActiveDepartmentsAsync(CancellationToken ct = default) =>
+        (await _cache.GetOrCreateAsync("departments", async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(30);
+            return (await _db.Departments.AsNoTracking().Where(d => d.IsActive).Select(d => new { d.Id, d.Name }).ToListAsync(ct))
+                .ToDictionary(d => (long)d.Id, d => d.Name);
+        }))!;
+
+    public async Task<Dictionary<long, string>> ActiveLocationsAsync(CancellationToken ct = default) =>
+        (await _cache.GetOrCreateAsync("locations", async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(30);
+            return (await _db.Locations.AsNoTracking().Where(l => l.IsActive).Select(l => new { l.Id, l.Name }).ToListAsync(ct))
+                .ToDictionary(l => (long)l.Id, l => l.Name);
+        }))!;
+
+    public void InvalidateLists()
+    {
+        _cache.Remove("departments");
+        _cache.Remove("locations");
+    }
+
     /// <summary>School days that have passed going from one moment to another (the starting day is not counted).</summary>
     public async Task<int> SchoolDaysBetweenAsync(DateTime from, DateTime to, CancellationToken ct = default) =>
         SchoolDaysBetween(from, to, await ClosedDaysAsync(ct));

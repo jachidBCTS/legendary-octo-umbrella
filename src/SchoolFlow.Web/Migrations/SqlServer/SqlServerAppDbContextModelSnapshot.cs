@@ -219,6 +219,8 @@ namespace SchoolFlow.Web.Migrations.SqlServer
 
                     b.HasKey("Id");
 
+                    b.HasIndex("DecidedBy");
+
                     b.HasIndex("RunId");
 
                     b.HasIndex("Status");
@@ -641,6 +643,34 @@ namespace SchoolFlow.Web.Migrations.SqlServer
                     b.ToTable("RunComments");
                 });
 
+            modelBuilder.Entity("SchoolFlow.Web.Data.RunDefinition", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Hash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Json")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Hash")
+                        .IsUnique();
+
+                    b.ToTable("RunDefinitions");
+                });
+
             modelBuilder.Entity("SchoolFlow.Web.Data.RunEventRow", b =>
                 {
                     b.Property<int>("Id")
@@ -830,9 +860,8 @@ namespace SchoolFlow.Web.Migrations.SqlServer
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
-                    b.Property<string>("DefinitionJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                    b.Property<int?>("DefinitionId")
+                        .HasColumnType("int");
 
                     b.Property<long?>("DepartmentId")
                         .HasColumnType("bigint");
@@ -847,6 +876,10 @@ namespace SchoolFlow.Web.Migrations.SqlServer
 
                     b.Property<DateTime?>("LastPolledAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("LegacyDefinitionJson")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("DefinitionJson");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -892,6 +925,10 @@ namespace SchoolFlow.Web.Migrations.SqlServer
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("DefinitionId");
+
                     b.HasIndex("DepartmentId");
 
                     b.HasIndex("SubmitterEmail");
@@ -935,6 +972,14 @@ namespace SchoolFlow.Web.Migrations.SqlServer
                         .IsUnique();
 
                     b.ToTable("WorkflowVersions");
+                });
+
+            modelBuilder.Entity("SchoolFlow.Web.Data.WorkflowRun", b =>
+                {
+                    b.HasOne("SchoolFlow.Web.Data.RunDefinition", null)
+                        .WithMany()
+                        .HasForeignKey("DefinitionId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 #pragma warning restore 612, 618
         }

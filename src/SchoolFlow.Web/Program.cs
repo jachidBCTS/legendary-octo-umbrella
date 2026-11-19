@@ -85,8 +85,8 @@ builder.Services.AddScoped<AccessService>();
 // Students:View); a development site without one uses a few made-up students.
 var rosterConnection = config["Students:ConnectionString"];
 if (!string.IsNullOrWhiteSpace(rosterConnection))
-    builder.Services.AddSingleton<IStudentRoster>(new SqlServerStudentRoster(rosterConnection, config["Students:View"],
-        SqlServerStudentRoster.Parts.ToDictionary(p => p, p => config[$"Students:Columns:{p}"])));
+    builder.Services.AddSingleton<IStudentRoster>(new CachedStudentRoster(new SqlServerStudentRoster(rosterConnection, config["Students:View"],
+        SqlServerStudentRoster.Parts.ToDictionary(p => p, p => config[$"Students:Columns:{p}"]))));
 else if (builder.Environment.IsDevelopment())
     builder.Services.AddSingleton<IStudentRoster, SampleStudentRoster>();
 else
@@ -173,9 +173,11 @@ Directory.CreateDirectory(attachmentSettings.Folder); // fail at start-up, not o
 builder.Services.AddSingleton(attachmentSettings);
 builder.Services.AddScoped<AttachmentService>();
 builder.Services.AddHostedService<AttachmentCleanupWorker>();
-builder.Services.AddScoped<RetentionService>();
+builder.Services.AddScoped(sp => new RetentionService(sp.GetRequiredService<AppDbContext>(), sp.GetRequiredService<AttachmentService>(), sp.GetRequiredService<IConfiguration>())
+    { Definitions = sp.GetRequiredService<DefinitionStore>() });
 builder.Services.AddHostedService<RetentionWorker>();
 
+builder.Services.AddSingleton<DefinitionStore>();
 builder.Services.AddScoped<RunService>();
 builder.Services.AddRazorPages(options =>
 {
@@ -198,6 +200,8 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     DatabaseSetup.Migrate(db, scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("SchoolFlow.Database"));
+    // Once, after the update that shared definitions between runs: move older runs' own copies over.
+    DefinitionStore.MoveLegacy(db, scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("SchoolFlow.Database"));
     SeedData.EnsureStarterWorkflows(db, sampleDepartments: app.Environment.IsDevelopment());
 }
 

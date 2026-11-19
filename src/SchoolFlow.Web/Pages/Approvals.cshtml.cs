@@ -29,7 +29,7 @@ public class ApprovalsModel : PageModel
         var tasks = await _db.ApprovalTasks.AsNoTracking()
             .Where(t => t.Status == ApprovalStatus.Pending && (t.Assignees.Contains(needle) || t.Extra.Contains(needle)) && !t.ApprovedBy.Contains(needle)).OrderBy(t => t.CreatedAt).ToListAsync();
         var runIds = tasks.Select(t => t.RunId).ToList();
-        var runs = await _db.Runs.AsNoTracking().Where(r => runIds.Contains(r.Id)).ToDictionaryAsync(r => r.Id);
+        var runs = await _db.Runs.AsNoTracking().Where(r => runIds.Contains(r.Id)).Select(WorkflowRun.ListColumns).ToDictionaryAsync(r => r.Id);
         Pending = tasks.Where(t => runs.ContainsKey(t.RunId)).Select(t => (t, runs[t.RunId])).ToList();
         Stops = await Journey.CurrentStopsAsync(_db, _calendar, runs.Values.ToList());
         Decided = await _db.ApprovalTasks.AsNoTracking().Where(t => t.DecidedBy == email)

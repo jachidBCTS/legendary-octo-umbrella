@@ -34,7 +34,7 @@ public class IndexModel : PageModel
             .OrderBy(w => w.Name).ToListAsync()).Where(w => AccessService.CanSubmit(User, w)).ToList();
         Groups = live.GroupBy(w => w.Category).OrderBy(g => g.Key.Length == 0).ThenBy(g => g.Key).ToList();
         Recent = await _db.Runs.AsNoTracking().Where(r => r.SubmitterEmail == email && email != "")
-            .OrderByDescending(r => r.UpdatedAt).Take(6).ToListAsync();
+            .OrderByDescending(r => r.UpdatedAt).Take(6).Select(WorkflowRun.ListColumns).ToListAsync();
         Stops = await Journey.CurrentStopsAsync(_db, _calendar, Recent);
         var drafts = await _db.FormDrafts.AsNoTracking().Where(d => d.OwnerEmail == email && email != "")
             .OrderByDescending(d => d.UpdatedAt).ToListAsync();

@@ -247,3 +247,45 @@ public sealed class StudentAnswers
         }
     }
 }
+
+/// <summary>
+/// Remembers students looked up by number for two minutes. A form with a Student field is checked again
+/// every time the person pauses while typing, and each check looks its student up; this keeps those
+/// checks from going to the district's SQL Server every time. Searches are never cached (they are the
+/// person's own typing), and nothing is written anywhere: the memory goes when the site restarts.
+/// </summary>
+public sealed class CachedStudentRoster : IStudentRoster
+{
+    private static readonly TimeSpan Keep = TimeSpan.FromMinutes(2);
+    private const int MaxEntries = 5000;
+    private readonly IStudentRoster _inner;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (StudentInfo? Student, DateTime Until)> _byId = new(StringComparer.OrdinalIgnoreCase);
+
+    public CachedStudentRoster(IStudentRoster inner) => _inner = inner;
+
+    public bool IsConfigured => _inner.IsConfigured;
+    public Task<IReadOnlyList<StudentInfo>> SearchAsync(IReadOnlyList<string> words, int max, StudentFilter filter, CancellationToken ct) => _inner.SearchAsync(words, max, filter, ct);
+    public Task<string> TestAsync(CancellationToken ct) => _inner.TestAsync(ct);
+
+    public async Task<IReadOnlyDictionary<string, StudentInfo>> FindAsync(IReadOnlyCollection<string> ids, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var result = new Dictionary<string, StudentInfo>(StringComparer.OrdinalIgnoreCase);
+        var missing = new List<string>();
+        foreach (var id in ids.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (_byId.TryGetValue(id, out var hit) && hit.Until > now) { if (hit.Student is not null) result[id] = hit.Student; }
+            else missing.Add(id);
+        }
+        if (missing.Count == 0) return result;
+        var found = await _inner.FindAsync(missing, ct);
+        if (_byId.Count > MaxEntries) _byId.Clear();
+        foreach (var id in missing)
+        {
+            found.TryGetValue(id, out var student);
+            _byId[id] = (student, now + Keep);     // "not on the roster" is remembered too, briefly
+            if (student is not null) result[id] = student;
+        }
+        return result;
+    }
+}

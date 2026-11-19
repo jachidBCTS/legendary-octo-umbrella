@@ -1032,6 +1032,7 @@ public sealed class RunServiceTests : IDisposable
 
         await using var done = Db();
         var finished = await done.Runs.SingleAsync(r => r.Id == runId);
+        await new DefinitionStore().FillAsync(done, finished);
         Assert.Equal(RunStatus.Completed, finished.Status);
         Assert.Contains(await done.Notifications.Where(n => n.UserEmail == "t@school.org").ToListAsync(), n => n.Title.StartsWith("Travel reconciled"));
         Assert.Equal(3, await done.ApprovalTasks.CountAsync(t => t.RunId == runId && t.Kind == TaskKinds.Task && t.Status == ApprovalStatus.Done));
@@ -1278,6 +1279,7 @@ public sealed class RunServiceTests : IDisposable
 
         // Only the student number is stored (owner's rule); nothing else about the student, nor what was worked out from it.
         var runs = await db.Runs.AsNoTracking().ToListAsync();
+        await new DefinitionStore().FillAsync(db, runs);
         var stored = runs.Single().ContextJson;
         Assert.Contains("\"student\":{\"id\":\"20451\"}", stored);
         foreach (var detail in new[] { "Okafor", "Maya", "Teterboro", "Aerospace", "label" }) Assert.DoesNotContain(detail, stored);
@@ -1485,7 +1487,9 @@ public sealed class RunServiceTests : IDisposable
         }
         await SubmitTripAsync("Science");
         await using var read = Db();
-        var csv = RequestExport.ToCsv(await read.Runs.AsNoTracking().OrderBy(r => r.Id).ToListAsync());
+        var exported = await read.Runs.AsNoTracking().OrderBy(r => r.Id).ToListAsync();
+        await new DefinitionStore().FillAsync(read, exported);
+        var csv = RequestExport.ToCsv(exported);
         var header = csv.Split('\n')[0];
         Assert.StartsWith("\"Request #\",\"Form\",\"Status\",\"Submitted by\",\"Email\",\"Department\"", header);
         Assert.Contains("\"What do you need?\"", header);              // a purchase question
@@ -1935,6 +1939,7 @@ public sealed class RunServiceTests : IDisposable
     {
         await using var db = Db();
         var run = await db.Runs.SingleAsync(r => r.Id == runId);
+        await new DefinitionStore().FillAsync(db, run);
         var tasks = await db.ApprovalTasks.Where(t => t.RunId == runId).ToListAsync();
         var nameOf = await Journey.NamesAsync(db, tasks.SelectMany(t => t.AssigneeList));
         return Journey.Build(Json.ParseDefinition(run.DefinitionJson), run, Json.ToValues(run.ContextJson), tasks, DateTime.UtcNow,
@@ -2174,5 +2179,73 @@ public sealed class RunServiceTests : IDisposable
         Assert.True(StudentVisibility.MaySee(false, false, bcts, new[] { "20452" }, known));                             // the whole district
         Assert.True(StudentVisibility.MaySee(false, true, teterboro, new[] { "20452" }, known));                          // their own request
         Assert.False(StudentVisibility.MaySee(false, false, bcts, new[] { "99999" }, known));                             // not on the roster: cannot tell
+    }
+
+    // ---- shared definitions (stored once, not per request) --------------------------------------
+
+    [Fact]
+    public async Task Requests_ShareOneStoredDefinition_PerVersion()
+    {
+        var (first, _) = await SubmitTravelAsync("Bergen County Technical Schools", input => input["registration"] = 100m);
+        var (second, _) = await SubmitTravelAsync("Bergen County Special Services", input => input["registration"] = 100m);
+        await using var db = Db();
+        var runs = await db.Runs.Where(r => r.Id == first || r.Id == second).ToListAsync();
+        Assert.All(runs, r => Assert.NotNull(r.DefinitionId));
+        Assert.Single(runs.Select(r => r.DefinitionId).Distinct());                 // one stored copy for both
+        Assert.All(runs, r => Assert.Null(r.LegacyDefinitionJson));
+        Assert.Throws<InvalidOperationException>(() => runs[0].DefinitionJson);     // never read without loading it
+        await new DefinitionStore().FillAsync(db, runs);
+        Assert.Contains(Json.ParseDefinition(runs[0].DefinitionJson).Form.Fields, f => f.Key == "dest_zip");
+    }
+
+    [Fact]
+    public async Task OlderRequests_WithTheirOwnCopy_AreMovedToSharedDefinitions()
+    {
+        var (runId, _) = await SubmitTravelAsync("Bergen County Technical Schools", input => input["registration"] = 100m);
+        await using (var db = Db())
+        {
+            // As a request from before the change looked: its own copy, no shared definition.
+            var run = await db.Runs.SingleAsync(r => r.Id == runId);
+            await new DefinitionStore().FillAsync(db, run);
+            run.LegacyDefinitionJson = run.DefinitionJson;
+            run.DefinitionId = null;
+            await db.SaveChangesAsync();
+            db.RunDefinitions.RemoveRange(db.RunDefinitions);
+            await db.SaveChangesAsync();
+        }
+        await using (var db = Db())
+            Assert.Equal(1, DefinitionStore.MoveLegacy(db, NullLogger.Instance));
+        await using var check = Db();
+        var moved = await check.Runs.SingleAsync(r => r.Id == runId);
+        Assert.NotNull(moved.DefinitionId);
+        Assert.Null(moved.LegacyDefinitionJson);
+        await using (var again = Db()) Assert.Equal(0, DefinitionStore.MoveLegacy(again, NullLogger.Instance));   // once only
+        // and the request still works: an approver can act on it.
+        await DecideAsync(runId, "principal@example.org");
+    }
+
+    private sealed class CountingRoster : IStudentRoster
+    {
+        public int Finds;
+        public bool IsConfigured => true;
+        public Task<IReadOnlyList<SchoolFlow.Core.StudentInfo>> SearchAsync(IReadOnlyList<string> words, int max, StudentFilter filter, CancellationToken ct) => Task.FromResult<IReadOnlyList<SchoolFlow.Core.StudentInfo>>(Array.Empty<SchoolFlow.Core.StudentInfo>());
+        public Task<string> TestAsync(CancellationToken ct) => Task.FromResult("");
+        public async Task<IReadOnlyDictionary<string, SchoolFlow.Core.StudentInfo>> FindAsync(IReadOnlyCollection<string> ids, CancellationToken ct)
+        {
+            Finds++;
+            return await new SampleStudentRoster().FindAsync(ids, ct);
+        }
+    }
+
+    [Fact]
+    public async Task StudentLookups_AreRememberedBriefly_SoTypingDoesNotAskTheServerEachTime()
+    {
+        var inner = new CountingRoster();
+        var roster = new CachedStudentRoster(inner);
+        for (var i = 0; i < 5; i++) Assert.Equal("Okafor", (await roster.FindAsync(new[] { "20451" }, default))["20451"].LastName);
+        Assert.Equal(1, inner.Finds);
+        Assert.Empty(await roster.FindAsync(new[] { "99999" }, default));
+        Assert.Empty(await roster.FindAsync(new[] { "99999" }, default));
+        Assert.Equal(2, inner.Finds);                                        // "not found" is remembered too
     }
 }

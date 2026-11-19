@@ -99,6 +99,7 @@ public sealed class FormsController : ControllerBase
     {
         var email = User.Email();
         var run = await _db.Runs.AsNoTracking().FirstOrDefaultAsync(r => r.Id == runId, ct);
+        await HttpContext.RequestServices.GetRequiredService<DefinitionStore>().FillAsync(_db, run, ct);
         return run is not null && email.Length > 0 && run.SubmitterEmail == email && run.Status == RunStatus.ChangesRequested ? run : null;
     }
 

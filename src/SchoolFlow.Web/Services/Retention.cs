@@ -37,6 +37,9 @@ public sealed class RetentionService
     /// that age. A request that is still in progress is never deleted, however old. The audit log is
     /// never touched, and each purge adds an entry to it.
     /// </summary>
+    /// <summary>The app's definition cache, told which shared definitions were removed (null in tests).</summary>
+    public DefinitionStore? Definitions { get; init; }
+
     public async Task<PurgeResult> PurgeAsync(DateTime nowUtc, CancellationToken ct)
     {
         if (Years <= 0) return new PurgeResult(0, 0, 0, 0);
@@ -67,6 +70,17 @@ public sealed class RetentionService
             files += attachments.Count;
             oldest = oldest is null || batch.Min(r => r.UpdatedAt) < oldest ? batch.Min(r => r.UpdatedAt) : oldest;
             newest = newest is null || batch.Max(r => r.UpdatedAt) > newest ? batch.Max(r => r.UpdatedAt) : newest;
+        }
+
+        // Shared definitions no request uses any more (a day's grace, so one being handed to a new request
+        // right now is never removed under it).
+        if (requests > 0)
+        {
+            var graceUtc = nowUtc.AddDays(-1);
+            var unused = await _db.RunDefinitions.Where(d => d.CreatedAt < graceUtc && !_db.Runs.Any(r => r.DefinitionId == d.Id)).Select(d => d.Id).ToListAsync(ct);
+            foreach (var batch in unused.Chunk(500))
+                await _db.RunDefinitions.Where(d => batch.Contains(d.Id)).ExecuteDeleteAsync(ct);
+            Definitions?.Forget(unused);
         }
 
         var notifications = await _db.Notifications.Where(n => n.CreatedAt < cutoff).ExecuteDeleteAsync(ct);

@@ -9,6 +9,10 @@ namespace SchoolFlow.Web.Pages.Admin;
 
 public class LocationsModel : PageModel
 {
+    /// <summary>After any change here, forms see the new list straight away (it is otherwise kept for 30 seconds).</summary>
+    public override void OnPageHandlerExecuted(Microsoft.AspNetCore.Mvc.Filters.PageHandlerExecutedContext context) =>
+        context.HttpContext.RequestServices.GetRequiredService<SchoolFlow.Web.Services.SchoolCalendar>().InvalidateLists();
+
     private readonly AppDbContext _db;
     private readonly IFreshserviceClient _freshservice;
 

@@ -63,8 +63,17 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
 ## How the pieces fit
 
 - **Definition JSON** (`WorkflowDefinition`): `trigger`, `form.fields[]`, `flow.nodes[]/edges[]`.
-  Stored as `Workflow.DraftJson` (being edited) and `PublishedJson` (what runs). Each run snapshots
-  the definition, so edits never change a request in flight.
+  Stored as `Workflow.DraftJson` (being edited) and `PublishedJson` (what runs). Each run keeps the
+  definition it started with, so edits never change a request in flight. **Since Nov 19, 2026 that
+  snapshot is shared**: `RunDefinitions` (one row per distinct definition, unique SHA-256 `Hash`) and
+  `WorkflowRun.DefinitionId`. `WorkflowRun.DefinitionJson` is **not a column**: `DefinitionStore`
+  (singleton, in-memory, definitions are immutable) fills it after loading — call
+  `DefinitionStore.FillAsync(db, run(s))` wherever a run is read and its definition used (reading it
+  unfilled throws, on purpose). New runs get `DefinitionId` in `RunService.StartAsync` (`IdForAsync`).
+  `DefinitionStore.MoveLegacy` runs on every start and moves runs that still have their own copy (old
+  column "DefinitionJson", now `LegacyDefinitionJson`, emptied) — a one-time cost after the upgrade
+  (6,000 runs ≈ 5 s). Retention deletes definitions no run uses (after a day's grace) and `Forget`s them.
+  Migration `ShareRunDefinitions` (also indexes `Runs.CreatedAt`, `ApprovalTasks.DecidedBy`).
 - **Formulas are evaluated on the server only.** The browser posts current answers to
   `/api/forms/evaluate` and renders what comes back; submit re-runs the same `FormEvaluator`.
   Do not add a JavaScript copy of the formula engine — one source of truth was a deliberate choice.
@@ -153,6 +162,13 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   district-kept now; the old `meal_*` rates are no longer seeded. **Not verified against the real GSA
   API** (the reply shape in `GsaPerDiemClient.Parse` follows GSA's documentation; this workspace cannot
   reach api.gsa.gov). An existing site keeps its old Travel workflow until the new one is imported.
+- **Performance (Nov 19, 2026, measured with ~6,000 runs / 7,500 approvals / 18,000 notifications):** every
+  page 4–14 ms, Reports 40 ms, CSV export of 5,000 runs 0.43 s (was 1.2 s), ≤ 9 queries a page. Keep:
+  list pages read `WorkflowRun.ListColumns` (no answers); department/location lists are cached 30 s in
+  `SchoolCalendar` (`InvalidateLists` from the admin pages' `OnPageHandlerExecuted`); student lookups by
+  number are cached 2 min (`CachedStudentRoster`, wraps the SQL roster only; searches are not cached);
+  exports key parsed definitions by `DefinitionId`. Install script sets Preload Enabled and a 3 a.m.
+  recycle instead of every 29 h.
 - **Approval follow-up**: `ApprovalTask` carries `RemindDays`/`EscalateDays`/`EscalateTo` copied
   from the node config, `StandIns` (from `Delegations`, applied when the task is created and when a
   delegation is added) and `Escalated`. Who may decide = `ApprovalTask.CanBeDecidedBy`. A stand-in's

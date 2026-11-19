@@ -88,6 +88,7 @@ public class DetailModel : PageModel
     {
         var run = await _db.Runs.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id);
         if (run is null) return false;
+        await HttpContext.RequestServices.GetRequiredService<DefinitionStore>().FillAsync(_db, run);
         var email = User.Email();
         var tasks = await _db.ApprovalTasks.AsNoTracking().Where(t => t.RunId == id).ToListAsync();
         if (!await _access.CanViewRunAsync(User, run)) return false;

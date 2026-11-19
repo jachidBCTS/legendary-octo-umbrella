@@ -210,6 +210,8 @@ namespace SchoolFlow.Web.Migrations.Sqlite
 
                     b.HasKey("Id");
 
+                    b.HasIndex("DecidedBy");
+
                     b.HasIndex("RunId");
 
                     b.HasIndex("Status");
@@ -610,6 +612,32 @@ namespace SchoolFlow.Web.Migrations.Sqlite
                     b.ToTable("RunComments");
                 });
 
+            modelBuilder.Entity("SchoolFlow.Web.Data.RunDefinition", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Hash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Json")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Hash")
+                        .IsUnique();
+
+                    b.ToTable("RunDefinitions");
+                });
+
             modelBuilder.Entity("SchoolFlow.Web.Data.RunEventRow", b =>
                 {
                     b.Property<int>("Id")
@@ -789,9 +817,8 @@ namespace SchoolFlow.Web.Migrations.Sqlite
                         .HasMaxLength(100)
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("DefinitionJson")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
+                    b.Property<int?>("DefinitionId")
+                        .HasColumnType("INTEGER");
 
                     b.Property<long?>("DepartmentId")
                         .HasColumnType("INTEGER");
@@ -806,6 +833,10 @@ namespace SchoolFlow.Web.Migrations.Sqlite
 
                     b.Property<DateTime?>("LastPolledAt")
                         .HasColumnType("TEXT");
+
+                    b.Property<string>("LegacyDefinitionJson")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("DefinitionJson");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -851,6 +882,10 @@ namespace SchoolFlow.Web.Migrations.Sqlite
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("DefinitionId");
+
                     b.HasIndex("DepartmentId");
 
                     b.HasIndex("SubmitterEmail");
@@ -892,6 +927,14 @@ namespace SchoolFlow.Web.Migrations.Sqlite
                         .IsUnique();
 
                     b.ToTable("WorkflowVersions");
+                });
+
+            modelBuilder.Entity("SchoolFlow.Web.Data.WorkflowRun", b =>
+                {
+                    b.HasOne("SchoolFlow.Web.Data.RunDefinition", null)
+                        .WithMany()
+                        .HasForeignKey("DefinitionId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 #pragma warning restore 612, 618
         }

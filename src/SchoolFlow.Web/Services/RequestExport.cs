@@ -17,15 +17,16 @@ public static class RequestExport
         IReadOnlySet<int>? hiddenStudents = null)
     {
         // Requests on different forms (or versions of a form) have different questions; a column is a question's label.
-        var forms = new Dictionary<string, FormDefinition>();
+        // Keyed by the shared definition's ID: requests on the same version are read once.
+        var forms = new Dictionary<int, FormDefinition>();
         FormDefinition FormOf(WorkflowRun run)
         {
-            if (!forms.TryGetValue(run.DefinitionJson, out var form))
+            if (!forms.TryGetValue(run.DefinitionId ?? -run.Id, out var form))
             {
                 // The form's questions, then what Task steps collect along the way.
                 var def = Json.ParseDefinition(run.DefinitionJson);
                 form = new FormDefinition { Fields = def.Form.Fields.Concat(def.Flow.Nodes.Where(n => n.Type == NodeTypes.Task).SelectMany(n => n.Fields ?? new List<FieldDef>())).ToList() };
-                forms[run.DefinitionJson] = form;
+                forms[run.DefinitionId ?? -run.Id] = form;
             }
             return form;
         }
@@ -60,15 +61,17 @@ public static class RequestExport
         return csv.ToString();
     }
 
-    [ThreadStatic] private static Dictionary<string, HashSet<string>>? _studentKeys;
+    [ThreadStatic] private static Dictionary<int, HashSet<string>>? _studentKeys;
 
     /// <summary>The answers on this request's version of the workflow that carry student information.</summary>
     private static HashSet<string> StudentKeysOf(WorkflowRun run)
     {
-        _studentKeys ??= new Dictionary<string, HashSet<string>>();
+        _studentKeys ??= new Dictionary<int, HashSet<string>>();
         if (_studentKeys.Count > 50) _studentKeys.Clear();
-        if (!_studentKeys.TryGetValue(run.DefinitionJson, out var keys))
-            _studentKeys[run.DefinitionJson] = keys = SchoolFlow.Core.Forms.StudentData.KeysOf(Json.ParseDefinition(run.DefinitionJson));
+        // Definitions never change once stored, so their ID is a safe key.
+        if (run.DefinitionId is not int id) return SchoolFlow.Core.Forms.StudentData.KeysOf(Json.ParseDefinition(run.DefinitionJson));
+        if (!_studentKeys.TryGetValue(id, out var keys))
+            _studentKeys[id] = keys = SchoolFlow.Core.Forms.StudentData.KeysOf(Json.ParseDefinition(run.DefinitionJson));
         return keys;
     }
 

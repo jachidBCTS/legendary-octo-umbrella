@@ -41,14 +41,56 @@ public class Workflow
     public bool HasUnpublishedChanges => PublishedJson is not null && PublishedJson != DraftJson;
 }
 
+/// <summary>A workflow definition as runs started with it: stored once, however many runs use it (see <see cref="WorkflowRun.DefinitionId"/>).</summary>
+public class RunDefinition
+{
+    public int Id { get; set; }
+    /// <summary>SHA-256 of <see cref="Json"/> (hex), so the same definition is never stored twice.</summary>
+    public string Hash { get; set; } = "";
+    public string Json { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
+}
+
 public class WorkflowRun
 {
     public int Id { get; set; }
     public int WorkflowId { get; set; }
     public string WorkflowName { get; set; } = "";
     public int WorkflowVersion { get; set; }
-    /// <summary>Snapshot of the definition this run started with, so later edits never change a run in flight.</summary>
-    public string DefinitionJson { get; set; } = "{}";
+    /// <summary>
+    /// The definition this run started with, so later edits never change a run in flight. Shared: every
+    /// run on the same version points at one <see cref="RunDefinition"/> row. Null only on runs from before
+    /// that change until <see cref="SchoolFlow.Web.Services.DefinitionStore.MoveLegacy"/> has moved them (on start).
+    /// </summary>
+    public int? DefinitionId { get; set; }
+    /// <summary>Where each run's own copy used to be kept (column "DefinitionJson"). Emptied on start; never read otherwise.</summary>
+    public string? LegacyDefinitionJson { get; set; }
+    private string? _definitionJson;
+    /// <summary>
+    /// The definition's JSON, filled in by <see cref="SchoolFlow.Web.Services.DefinitionStore"/> after loading
+    /// (not a column). Reading it before it was filled is a programming error, so it says so.
+    /// </summary>
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+    public string DefinitionJson
+    {
+        get => _definitionJson ?? throw new InvalidOperationException($"Request #{Id}: its definition was not loaded (call DefinitionStore.FillAsync after reading it).");
+        set => _definitionJson = value;
+    }
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+    public bool HasDefinition => _definitionJson is not null;
+
+    /// <summary>
+    /// What request lists read: everything but the answers (<see cref="ContextJson"/>) and the old copy, so
+    /// a page of requests moves only a few hundred bytes per row from the database.
+    /// </summary>
+    public static readonly System.Linq.Expressions.Expression<Func<WorkflowRun, WorkflowRun>> ListColumns = r => new WorkflowRun
+    {
+        Id = r.Id, WorkflowId = r.WorkflowId, WorkflowName = r.WorkflowName, WorkflowVersion = r.WorkflowVersion, DefinitionId = r.DefinitionId,
+        Status = r.Status, CurrentNodeId = r.CurrentNodeId, SubmitterEmail = r.SubmitterEmail, SubmitterName = r.SubmitterName,
+        WaitingTicketId = r.WaitingTicketId, TicketId = r.TicketId, TriggerTicketId = r.TriggerTicketId, Error = r.Error,
+        DepartmentId = r.DepartmentId, DepartmentName = r.DepartmentName, CreatedAt = r.CreatedAt, UpdatedAt = r.UpdatedAt,
+        Version = r.Version, LastPolledAt = r.LastPolledAt,
+    };
     public string Status { get; set; } = "";
     public string? CurrentNodeId { get; set; }
     public string ContextJson { get; set; } = "{}";
@@ -432,6 +474,7 @@ public class AppDbContext : DbContext
 
     public DbSet<Workflow> Workflows => Set<Workflow>();
     public DbSet<WorkflowRun> Runs => Set<WorkflowRun>();
+    public DbSet<RunDefinition> RunDefinitions => Set<RunDefinition>();
     public DbSet<RunEventRow> RunEvents => Set<RunEventRow>();
     public DbSet<ApprovalTask> ApprovalTasks => Set<ApprovalTask>();
     public DbSet<AppUser> Users => Set<AppUser>();
@@ -462,6 +505,9 @@ public class AppDbContext : DbContext
             e.Property(x => x.DepartmentName).HasMaxLength(200);
             e.HasIndex(x => x.DepartmentId);
             e.HasIndex(x => x.SubmitterEmail);
+            e.HasIndex(x => x.CreatedAt);                       // reports by date
+            e.Property(x => x.LegacyDefinitionJson).HasColumnName("DefinitionJson");
+            e.HasOne<RunDefinition>().WithMany().HasForeignKey(x => x.DefinitionId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => x.WaitingTicketId);
             e.HasIndex(x => new { x.WorkflowId, x.TriggerTicketId });
         });
@@ -481,6 +527,12 @@ public class AppDbContext : DbContext
             e.Property(x => x.Position).HasMaxLength(40);
             e.HasIndex(x => x.RunId);
             e.HasIndex(x => x.Status);
+            e.HasIndex(x => x.DecidedBy);                       // "your recent decisions"
+        });
+        b.Entity<RunDefinition>(e =>
+        {
+            e.Property(x => x.Hash).HasMaxLength(64);
+            e.HasIndex(x => x.Hash).IsUnique();
         });
         b.Entity<AppUser>(e =>
         {

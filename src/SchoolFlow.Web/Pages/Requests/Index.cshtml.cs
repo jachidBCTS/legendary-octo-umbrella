@@ -48,7 +48,7 @@ public class IndexModel : PageModel
     public async Task OnGetAsync()
     {
         var query = await FilteredAsync();
-        var rows = await query.OrderByDescending(r => r.Id).Skip((PageNumber - 1) * PageSize).Take(PageSize + 1).ToListAsync();
+        var rows = await query.OrderByDescending(r => r.Id).Skip((PageNumber - 1) * PageSize).Take(PageSize + 1).Select(WorkflowRun.ListColumns).ToListAsync();
         HasMore = rows.Count > PageSize;
         Runs = rows.Take(PageSize).ToList();
         Stops = await Journey.CurrentStopsAsync(_db, _calendar, Runs);
@@ -59,6 +59,7 @@ public class IndexModel : PageModel
     {
         const int MaxRows = 5000;
         var runs = await (await FilteredAsync()).OrderByDescending(r => r.Id).Take(MaxRows).ToListAsync();
+        await HttpContext.RequestServices.GetRequiredService<DefinitionStore>().FillAsync(_db, runs);
         // Requests keep only student numbers. Each request's students are looked up now (all at once) and shown
         // only to people who may see them: those asked to act on it, its requester with student access, or
         // people whose student access covers the students' location or district.
@@ -67,7 +68,13 @@ public class IndexModel : PageModel
         var contexts = new Dictionary<int, Dictionary<string, object?>>();
         var hidden = new HashSet<int>();
         var answers = new StudentAnswers(roster, _calendar);
-        var withStudents = runs.Select(r => (Run: r, Def: SchoolFlow.Core.Json.ParseDefinition(r.DefinitionJson), Context: SchoolFlow.Core.Json.ToValues(r.ContextJson)))
+        // Each definition is read once (runs on the same version share it); only runs whose form has a
+        // Student field have their answers looked at.
+        var defs = new Dictionary<int, SchoolFlow.Core.WorkflowDefinition>();
+        SchoolFlow.Core.WorkflowDefinition DefOf(WorkflowRun r) =>
+            defs.TryGetValue(r.DefinitionId ?? 0, out var d) ? d : defs[r.DefinitionId ?? 0] = SchoolFlow.Core.Json.ParseDefinition(r.DefinitionJson);
+        var withStudents = runs.Where(r => DefOf(r).Form.Fields.Any(f => f.Type == SchoolFlow.Core.FieldTypes.Student))
+            .Select(r => (Run: r, Def: DefOf(r), Context: SchoolFlow.Core.Json.ToValues(r.ContextJson)))
             .Where(x => StudentAnswers.IdsOf(x.Def, x.Context).Any()).ToList();
         if (withStudents.Count > 0)
         {

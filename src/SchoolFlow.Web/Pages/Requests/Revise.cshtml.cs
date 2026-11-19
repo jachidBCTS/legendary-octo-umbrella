@@ -26,6 +26,7 @@ public class ReviseModel : PageModel
         var email = User.Email();
         var run = await _db.Runs.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id);
         if (run is null || email.Length == 0 || run.SubmitterEmail != email) return NotFound();
+        await HttpContext.RequestServices.GetRequiredService<DefinitionStore>().FillAsync(_db, run);
         if (run.Status != RunStatus.ChangesRequested) return Redirect($"/Requests/Detail/{id}");
 
         Run = run;

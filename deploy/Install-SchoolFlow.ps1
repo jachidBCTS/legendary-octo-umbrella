@@ -38,9 +38,15 @@ New-WebAppPool -Name SchoolFlow | Out-Null
 Set-ItemProperty IIS:\AppPools\SchoolFlow -Name managedRuntimeVersion -Value ''
 Set-ItemProperty IIS:\AppPools\SchoolFlow -Name startMode -Value 'AlwaysRunning'
 Set-ItemProperty IIS:\AppPools\SchoolFlow -Name processModel.idleTimeout -Value ([TimeSpan]::Zero)
+# Restart the pool once a night at 3 a.m. instead of every 29 hours (which lands during the school day)
+Set-ItemProperty IIS:\AppPools\SchoolFlow -Name recycling.periodicRestart.time -Value ([TimeSpan]::Zero)
+Clear-ItemProperty IIS:\AppPools\SchoolFlow -Name recycling.periodicRestart.schedule
+New-ItemProperty IIS:\AppPools\SchoolFlow -Name recycling.periodicRestart.schedule -Value @{ value = '03:00:00' } | Out-Null
 
 # Site
 New-Website -Name SchoolFlow -Port 80 -HostHeader $HostName -PhysicalPath $SitePath -ApplicationPool SchoolFlow | Out-Null
+# Start the app as soon as the pool starts (after the nightly restart), not on the first visitor's request
+Set-ItemProperty IIS:\Sites\SchoolFlow -Name applicationDefaults.preloadEnabled -Value $true
 if ($CertThumbprint) {
   New-WebBinding -Name SchoolFlow -Protocol https -Port 443 -HostHeader $HostName -SslFlags 1
   (Get-WebBinding -Name SchoolFlow -Protocol https).AddSslCertificate($CertThumbprint.Replace(' ', ''), 'My')

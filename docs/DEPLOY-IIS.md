@@ -85,6 +85,10 @@ Add this database to your normal SQL Server backups.
    - *Identity*: your service account (recommended), or leave as `ApplicationPoolIdentity`.
    - *Start Mode*: `AlwaysRunning`
    - *Idle Time-out (minutes)*: `0`
+   - *Recycling → Regular Time Interval (minutes)*: `0`, and *Specific Times*: `3:00 AM` (the default
+     restart every 29 hours otherwise lands during the school day)
+   - On the **site** (after creating it below): *Advanced Settings → Preload Enabled* = `True`, so the
+     app starts with the pool instead of on the first visitor's request
 
    The last two keep the site awake. If the pool is allowed to go idle, queued notification emails
    wait until the next person opens the site.
