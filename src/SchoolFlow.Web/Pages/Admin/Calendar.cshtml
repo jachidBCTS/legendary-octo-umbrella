@@ -4,7 +4,7 @@
     ViewData["Title"] = "School calendar";
 }
 <div class="page-head">
-    <div><h1>School calendar</h1><p class="sub">Days the school is closed. “School day” rules on forms, approval reminders and escalation all skip them.</p></div>
+    <div><h1>School calendar</h1><p class="sub" data-tip>Days the school is closed. “School day” rules on forms, approval reminders and escalation all skip them.</p></div>
 </div>
 
 <section class="panel">
@@ -15,7 +15,7 @@
         <div><label class="lbl" for="c-to">Last day <span class="muted">(leave blank for one day)</span></label><input id="c-to" name="to" type="date" /></div>
         <div class="dept-save"><button class="btn primary">Add</button></div>
     </form>
-    <p class="muted small">Weekends are never school days, so only the weekdays in the range are added. Example of what this changes: a rule such as
+    <p class="muted small" data-tip>Weekends are never school days, so only the weekdays in the range are added. Example of what this changes: a rule such as
         <code>trip_date &gt;= DATEADD(TODAY(), 10, 'weekdays')</code> counts ten days the school is actually open.</p>
 </section>
 

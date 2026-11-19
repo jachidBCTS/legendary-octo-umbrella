@@ -4,10 +4,16 @@
     ViewData["Title"] = "Locations";
 }
 <div class="page-head">
-    <div><h1>Locations</h1><p class="sub">Buildings and rooms people can choose on forms with a Location field.</p></div>
-    <form method="post" asp-page-handler="Sync"><button class="btn primary">Sync from Freshservice</button></form>
+    <div><h1>Locations</h1><p class="sub" data-tip>Buildings and rooms people can choose on forms with a Location field.</p></div>
+    <div class="row wrap">
+        @if (Model.SettingsLocations.Count > 0)
+        {
+            <form method="post" asp-page-handler="FromSettings"><button class="btn">Add the district's @Model.SettingsLocations.Count locations</button></form>
+        }
+        <form method="post" asp-page-handler="Sync"><button class="btn primary">Sync from Freshservice</button></form>
+    </div>
 </div>
-<p class="muted">Sync adds locations that are new in Freshservice, renames ones that changed, and switches off ones that were removed there.
+<p class="muted" data-tip="page">Sync adds locations that are new in Freshservice, renames ones that changed, and switches off ones that were removed there.
     It never touches locations you added by hand and never switches one back on.
     @if (!Model.IsLive) { <strong>Freshservice is in simulation mode, so a sync brings in sample locations.</strong> }</p>
 
@@ -51,4 +57,4 @@ else
         </table>
     </div>
 }
-<p class="muted small">Locations from Freshservice are renamed there, not here. A switched-off location is no longer offered on forms; requests that already used it keep it.</p>
+<p class="muted small" data-tip="page">Locations from Freshservice are renamed there, not here. A switched-off location is no longer offered on forms; requests that already used it keep it.</p>

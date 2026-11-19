@@ -24,6 +24,8 @@ public interface IStaffDirectory
     /// <summary>Staff whose first name, last name or email starts with every one of the words.</summary>
     Task<IReadOnlyList<StaffMember>> SearchAsync(IReadOnlyList<string> words, int max, CancellationToken ct);
     Task<string> TestAsync(CancellationToken ct);
+    /// <summary>The distinct, non-blank departments on the staff list (for Admin → Departments' starting list).</summary>
+    Task<IReadOnlyList<string>> DepartmentsAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
 }
 
 /// <summary>
@@ -107,6 +109,20 @@ public sealed class SqlServerStaffDirectory : IStaffDirectory
         }
     }
 
+    public async Task<IReadOnlyList<string>> DepartmentsAsync(CancellationToken ct)
+    {
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(ct);
+        await using var command = connection.CreateCommand();
+        var column = _col["Department"];
+        command.CommandText = $"SELECT DISTINCT TOP (500) LTRIM(RTRIM(CAST({column} AS nvarchar(200)))) FROM {_view} WHERE {column} IS NOT NULL AND LTRIM(RTRIM(CAST({column} AS nvarchar(200)))) <> '' ORDER BY 1";
+        command.CommandTimeout = 15;
+        var list = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) if (!reader.IsDBNull(0)) list.Add(reader.GetString(0));
+        return list;
+    }
+
     private static async Task<IReadOnlyList<StaffMember>> ReadAsync(SqlCommand command, CancellationToken ct)
     {
         var list = new List<StaffMember>();
@@ -139,6 +155,9 @@ public sealed class SampleStaffDirectory : IStaffDirectory
             || s.LastName.StartsWith(w, StringComparison.OrdinalIgnoreCase) || s.Email.StartsWith(w, StringComparison.OrdinalIgnoreCase))).Take(max).ToList());
 
     public Task<string> TestAsync(CancellationToken ct) => Task.FromResult($"Example staff list ({Staff.Length} made-up people): this is a test site.");
+
+    public Task<IReadOnlyList<string>> DepartmentsAsync(CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<string>>(Staff.Select(s => s.Department).Distinct().OrderBy(d => d).ToList());
 }
 
 public sealed class NoStaffDirectory : IStaffDirectory

@@ -4,7 +4,7 @@
     ViewData["Title"] = "Away / stand-in";
 }
 <div class="page-head">
-    <div><h1>Away / stand-in</h1><p class="sub">Going to be out? Name someone who can approve in your place for those dates.</p></div>
+    <div><h1>Away / stand-in</h1><p class="sub" data-tip>Going to be out? Name someone who can approve in your place for those dates.</p></div>
 </div>
 
 <section class="panel">
@@ -15,7 +15,7 @@
         <div><label class="lbl" for="to-date">Until (inclusive)</label><input id="to-date" name="endsOn" type="date" required /></div>
         <div class="dept-save"><button class="btn primary">Save</button></div>
     </form>
-    <p class="muted small">While it is active, your stand-in is notified of approvals sent to you and can approve, reject or send them back. You can still decide them yourself.
+    <p class="muted small" data-tip>While it is active, your stand-in is notified of approvals sent to you and can approve, reject or send them back. You can still decide them yourself.
         Each request's history shows who decided and that they were standing in for you. A stand-in is never asked to approve their own request.</p>
 </section>
 

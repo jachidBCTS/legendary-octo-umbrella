@@ -4,7 +4,7 @@
     ViewData["Title"] = "Notifications";
 }
 <div class="page-head">
-    <div><h1>Notifications</h1><p class="sub">Approvals waiting for you and updates on your requests.</p></div>
+    <div><h1>Notifications</h1><p class="sub" data-tip>Approvals waiting for you and updates on your requests.</p></div>
     @if (Model.Items.Any(n => n.ReadAt == null))
     {
         <form method="post" asp-page-handler="ReadAll"><button class="btn">Mark all as read</button></form>

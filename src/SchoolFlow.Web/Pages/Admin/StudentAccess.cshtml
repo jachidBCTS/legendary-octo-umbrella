@@ -4,7 +4,7 @@
     ViewData["Title"] = "Student access";
 }
 <div class="page-head">
-    <div><h1>Student access</h1><p class="sub">Who may look students up on forms and see student details on requests. Nobody can until they are added here — administrators included.</p></div>
+    <div><h1>Student access</h1><p class="sub" data-tip>Who may look students up on forms and see student details on requests. Nobody can until they are added here — administrators included.</p></div>
 </div>
 
 <section class="panel">
@@ -43,9 +43,9 @@
             </tbody>
         </table></div>
     }
-    <p class="muted small"><strong>Own location</strong>: students at the location(s) the staff list gives for the person. <strong>Whole district</strong>: every student in their district (e.g. athletics). <strong>All districts</strong>: everyone.
+    <p class="muted small" data-tip><strong>Own location</strong>: students at the location(s) the staff list gives for the person. <strong>Whole district</strong>: every student in their district (e.g. athletics). <strong>All districts</strong>: everyone.
         People asked to act on a request (approvers, task owners) see its student whatever their access.</p>
-    <p class="muted small">With access, a person can search the roster in a <em>Student</em> field, and sees the student on requests they are allowed to open and in spreadsheet exports.
+    <p class="muted small" data-tip>With access, a person can search the roster in a <em>Student</em> field, and sees the student on requests they are allowed to open and in spreadsheet exports.
         Without it, a Student field cannot be filled in and student answers show as “Restricted”. Every change here is recorded in the audit log.</p>
 </section>
 

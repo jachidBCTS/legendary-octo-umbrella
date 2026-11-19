@@ -550,7 +550,7 @@
     /** A dropdown over a list the admins maintain (departments, locations). Value: { id, name }. */
     function buildListed(field, id, control, url, emptyText, noun) {
       const select = h('select', { id, disabled: true }, h('option', { value: '' }, 'Loading…'));
-      const hint = h('p', { class: 'sf-help', hidden: true });
+      const hint = h('p', { class: 'sf-help no-tip', hidden: true });
       let items = [];
       let wanted = null;
       let loaded = false;
@@ -803,7 +803,7 @@
     function buildStudentLookup(field, id, control) {
       const box = h('input', { id, type: 'text', autocomplete: 'off', placeholder: field.placeholder || 'Type a student\'s name or ID…', role: 'combobox', 'aria-expanded': 'false', 'aria-autocomplete': 'list' });
       const list = h('div', { class: 'sf-suggest', hidden: true, role: 'listbox' });
-      const chosen = h('p', { class: 'sf-help sf-student', hidden: true });
+      const chosen = h('p', { class: 'sf-help sf-student no-tip', hidden: true });
       const detail = (s) => ['ID ' + s.id, s.school, s.grade ? 'Grade ' + s.grade : '', s.academy].filter(Boolean).join(' · ');
       const show = (s) => { chosen.textContent = s ? detail(s) : ''; chosen.hidden = !s; };
       let latest = 0;

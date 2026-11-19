@@ -4,7 +4,7 @@
     ViewData["Title"] = "Audit log";
 }
 <div class="page-head">
-    <div><h1>Audit log</h1><p class="sub">Who changed roles, groups, workflows and departments, and when an admin acted on someone's behalf.</p></div>
+    <div><h1>Audit log</h1><p class="sub" data-tip>Who changed roles, groups, workflows and departments, and when an admin acted on someone's behalf.</p></div>
 </div>
 <form method="get" class="filters">
     <input type="search" name="q" value="@Model.Q" placeholder="Search by person, workflow or action…" aria-label="Search the audit log" />
@@ -38,4 +38,4 @@ else
         @if (Model.HasMore) { <a class="btn" href="@Model.PageUrl(Model.PageNumber + 1)">Older</a> }
     </div>
 }
-<p class="muted small">Entries are never edited or deleted by SchoolFlow. Decisions made by the people a step was assigned to are on each request's own timeline, not here.</p>
+<p class="muted small" data-tip="page">Entries are never edited or deleted by SchoolFlow. Decisions made by the people a step was assigned to are on each request's own timeline, not here.</p>

@@ -4,7 +4,7 @@
     ViewData["Title"] = "Teams";
 }
 <div class="page-head">
-    <div><h1>Teams</h1><p class="sub">Groups of staff that workflow steps can name, such as the business office. When someone changes role, change the team here — not every workflow.</p></div>
+    <div><h1>Teams</h1><p class="sub" data-tip>Groups of staff that workflow steps can name, such as the business office. When someone changes role, change the team here — not every workflow.</p></div>
 </div>
 
 @if (Model.Teams.Any(t => t.Members.Length == 0 && Model.UsedBy.ContainsKey(t.Name)))
@@ -58,5 +58,5 @@
         </div>
         <div class="actions"><button class="btn primary">Add team</button></div>
     </form>
-    <p class="muted small">Any one person in a team can approve or complete a step sent to the team, and everyone in it is notified. A change here applies to approvals and tasks created from then on. Every change is recorded in the audit log.</p>
+    <p class="muted small" data-tip>Any one person in a team can approve or complete a step sent to the team, and everyone in it is notified. A change here applies to approvals and tasks created from then on. Every change is recorded in the audit log.</p>
 </section>

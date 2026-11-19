@@ -15,11 +15,28 @@ public class LocationsModel : PageModel
 
     private readonly AppDbContext _db;
     private readonly IFreshserviceClient _freshservice;
+    private readonly IConfiguration _config;
 
-    public LocationsModel(AppDbContext db, IFreshserviceClient freshservice)
+    public LocationsModel(AppDbContext db, IFreshserviceClient freshservice, IConfiguration config)
     {
         _db = db;
         _freshservice = freshservice;
+        _config = config;
+    }
+
+    /// <summary>The district's locations named in the settings file's location matches.</summary>
+    public IReadOnlyList<string> SettingsLocations => StartingLocations.From(_config);
+
+    /// <summary>Adds the district's locations from the settings file (Students:Match:Locations) that are not here yet.</summary>
+    public async Task<IActionResult> OnPostFromSettingsAsync(CancellationToken ct)
+    {
+        var names = SettingsLocations;
+        if (names.Count == 0) return Flash("The settings file has no location list (Students:Match:Locations).", false);
+        var existing = new HashSet<string>(await _db.Locations.Select(l => l.Name).ToListAsync(ct), StringComparer.OrdinalIgnoreCase);
+        var added = names.Where(existing.Add).ToList();
+        foreach (var name in added) _db.Locations.Add(new Location { Name = name, UpdatedAt = DateTime.UtcNow });
+        if (added.Count > 0) await _db.SaveChangesAsync(ct);
+        return Flash(added.Count == 0 ? "Every location in the settings file is already here." : $"Added {added.Count} location{(added.Count == 1 ? "" : "s")} from the settings file.", true);
     }
 
     public List<Location> Locations { get; private set; } = new();

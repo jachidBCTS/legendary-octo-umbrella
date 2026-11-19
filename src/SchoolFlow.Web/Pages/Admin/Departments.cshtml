@@ -4,7 +4,11 @@
     ViewData["Title"] = "Departments";
 }
 <div class="page-head">
-    <div><h1>Departments</h1><p class="sub">Requests are categorised by department. The people you set here always give the final approval, whatever chain the requester builds.</p></div>
+    <div><h1>Departments</h1><p class="sub" data-tip>Requests are categorised by department. The people you set here always give the final approval, whatever chain the requester builds.</p></div>
+    @if (Model.HasStaffList)
+    {
+        <form method="post" asp-page-handler="FromStaff"><button class="btn">Add departments from the staff list</button></form>
+    }
 </div>
 
 <section class="panel">
@@ -22,15 +26,26 @@
 {
     <div class="empty small"><p>No departments yet. Add the first one above.</p></div>
 }
+<div class="team-list">
+@{ var openDept = TempData["OpenDepartment"] as int?; }
 @foreach (var d in Model.Departments)
 {
-    <section class="panel @(d.IsActive ? "" : "inactive")">
+    var noApprover = d.FinalApproverList.Count == 0;
+    <details class="panel team-card @(d.IsActive ? "" : "inactive")" open="@(openDept == d.Id ? "open" : null)">
+        <summary><span class="team-head">
+            <span class="team-name">@d.Name</span>
+            @if (!d.IsActive) { <span class="pill muted">Off</span> }
+            @if (noApprover) { <span class="pill @(d.IsActive ? "bad" : "warn")">No final approver</span> }
+            else { <span class="muted small">Final: @string.Join(", ", d.FinalApproverList)@(d.FinalApproverList.Count > 1 ? (d.FinalRule == "all" ? " (all)" : " (any one)") : "")</span> }
+            <span class="team-use muted small">@Model.RunCounts.GetValueOrDefault(d.Id) request@(Model.RunCounts.GetValueOrDefault(d.Id) == 1 ? "" : "s")</span>
+        </span></summary>
+        <div class="team-body">
         <form method="post" asp-page-handler="Save" class="dept-form">
             <input type="hidden" name="id" value="@d.Id" />
             <div><label class="lbl" for="name-@d.Id">Name</label><input id="name-@d.Id" name="name" required maxlength="200" value="@d.Name" /></div>
             <div><label class="lbl" for="approvers-@d.Id">Final approver(s)</label>
                 <input id="approvers-@d.Id" name="approvers" value="@string.Join(", ", d.FinalApproverList)" placeholder="email addresses, separated by commas" autocomplete="off" data-people="multi" />
-                @if (d.IsActive && d.FinalApproverList.Count == 0) { <div class="sf-error">No final approver: requests for this department will stop with an error until one is set.</div> }
+                @if (d.IsActive && noApprover) { <div class="sf-error">No final approver: requests for this department will stop with an error until one is set.</div> }
             </div>
             <div><label class="lbl" for="rule-@d.Id">If more than one</label>
                 <select id="rule-@d.Id" name="rule">
@@ -40,9 +55,10 @@
             <div class="dept-save">
                 <label class="b-toggle"><input type="checkbox" name="active" value="true" checked="@d.IsActive" /> <span>Active</span></label>
                 <button class="btn">Save</button>
-                <span class="muted small">@Model.RunCounts.GetValueOrDefault(d.Id) request@(Model.RunCounts.GetValueOrDefault(d.Id) == 1 ? "" : "s")</span>
             </div>
         </form>
-    </section>
+        </div>
+    </details>
 }
-<p class="muted small">Departments cannot be deleted once requests refer to them; untick <em>Active</em> to stop offering one on forms. Requests already in progress keep the approvers they started with.</p>
+</div>
+<p class="muted small" data-tip="page">Departments cannot be deleted once requests refer to them; untick <em>Active</em> to stop offering one on forms. Requests already in progress keep the approvers they started with.</p>

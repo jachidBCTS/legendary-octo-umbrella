@@ -6,10 +6,12 @@
 <div class="page-head">
     <div>
         <h1>@Model.Greeting, @User.DisplayName().Split(' ')[0]</h1>
-        <p class="sub">Start a request, or pick up where you left off.</p>
+        <p class="sub" data-tip>Start a request, or pick up where you left off.</p>
     </div>
 </div>
 
+<div class="home-grid">
+<div class="home-main">
 @if (Model.Pending.Count > 0)
 {
     <section class="callout">
@@ -53,49 +55,48 @@
 }
 @foreach (var group in Model.Groups)
 {
-    @if (Model.Groups.Count > 1 || group.Key.Length > 0)
-    {
-        <div class="group-label">@(group.Key.Length == 0 ? "Other" : group.Key)</div>
-    }
-    <div class="card-grid">
-        @foreach (var w in group)
-        {
-            <a class="wf-card tone-@w.Color" href="/Start/@w.Id">
-                <span class="wf-dot"><partial name="_Icons" model="Ui.WorkflowIcon(w.Name, w.Category)" /></span>
-                <span class="wf-body">
-                    <strong>@w.Name</strong>
-                    <span>@w.Description</span>
-                    @if (SchoolFlow.Core.Json.ParseDefinition(w.PublishedJson!).Form.ClosedMessage(DateTime.Today) is string closed) { <span class="pill muted tiny">@closed.Replace("This form ", "").TrimEnd('.')</span> }
-                </span>
-                <span class="wf-go"><partial name="_Icons" model='"arrow"' /></span>
-            </a>
-        }
-    </div>
+    var groupName = group.Key.Length == 0 ? "Other" : group.Key;
+    <details class="form-group" open data-fold="home:@groupName">
+        <summary><span class="form-group-name">@groupName</span> <span class="pal-count">@group.Count()</span></summary>
+        <div class="card-grid">
+            @foreach (var w in group)
+            {
+                <a class="wf-card tone-@w.Color" href="/Start/@w.Id">
+                    <span class="wf-dot"><partial name="_Icons" model="Ui.WorkflowIcon(w.Name, w.Category)" /></span>
+                    <span class="wf-body">
+                        <strong>@w.Name</strong>
+                        <span>@w.Description</span>
+                        @if (SchoolFlow.Core.Json.ParseDefinition(w.PublishedJson!).Form.ClosedMessage(DateTime.Today) is string closed) { <span class="pill muted tiny">@closed.Replace("This form ", "").TrimEnd('.')</span> }
+                    </span>
+                    <span class="wf-go"><partial name="_Icons" model='"arrow"' /></span>
+                </a>
+            }
+        </div>
+    </details>
 }
+</div>
 
-<h2 class="section-title">Your recent requests</h2>
-@if (Model.Recent.Count == 0)
-{
-    <div class="empty small"><p>Requests you submit will appear here.</p></div>
-}
-else
-{
-    <div class="panel table-wrap">
-        <table class="table stack">
-            <thead><tr><th>Request</th><th>Status</th><th>Ticket</th><th>Updated</th></tr></thead>
-            <tbody>
+<aside class="home-side" aria-labelledby="recent-title">
+    <div class="row-between"><h2 class="section-title" id="recent-title">Your recent requests</h2>
+        @if (Model.Recent.Count > 0) { <a class="small" href="/Requests">See all</a> }</div>
+    @if (Model.Recent.Count == 0)
+    {
+        <div class="empty small"><p>Requests you submit will appear here.</p></div>
+    }
+    else
+    {
+        <ul class="panel recent-list">
             @foreach (var r in Model.Recent)
             {
                 var (label, css) = Ui.Status(r.Status);
-                <tr>
-                    <td><a href="/Requests/Detail/@r.Id"><strong>@r.WorkflowName</strong></a> <span class="muted">#@r.Id</span></td>
-                    <td data-label="Status"><span class="pill @css">@label</span>
-                        @if (Model.Stops.TryGetValue(r.Id, out var stop)) { <partial name="_CurrentStop" model="stop" /> }</td>
-                    <td data-label="Ticket">@(r.TicketId is long t ? "#" + t : "—")</td>
-                    <td class="muted" data-label="Updated">@Ui.When(r.UpdatedAt)</td>
-                </tr>
+                <li>
+                    <a class="recent-name" href="/Requests/Detail/@r.Id"><strong>@r.WorkflowName</strong> <span class="muted">#@r.Id</span></a>
+                    <div class="recent-meta"><span class="pill @css">@label</span>
+                        <span class="muted small">@Ui.When(r.UpdatedAt)@(r.TicketId is long t ? " · ticket #" + t : "")</span></div>
+                    @if (Model.Stops.TryGetValue(r.Id, out var stop)) { <partial name="_CurrentStop" model="stop" /> }
+                </li>
             }
-            </tbody>
-        </table>
-    </div>
-}
+        </ul>
+    }
+</aside>
+</div>

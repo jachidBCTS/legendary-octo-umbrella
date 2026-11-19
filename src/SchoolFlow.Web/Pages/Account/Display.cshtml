@@ -4,7 +4,7 @@
     ViewData["Title"] = "Accessibility";
 }
 <div class="page-head">
-    <div><h1>Accessibility</h1><p class="sub">Make Bergen Forms easier to read and use on this device.</p></div>
+    <div><h1>Accessibility</h1><p class="sub" data-tip>Make Bergen Forms easier to read and use on this device.</p></div>
 </div>
 
 <section class="panel">
@@ -21,7 +21,7 @@
         <input type="hidden" name="on" value="@(Model.On ? "false" : "true")" />
         <button class="btn primary lg">Turn accessibility mode @(Model.On ? "off" : "on")</button>
     </form>
-    <p class="muted small">The choice is remembered on this device and browser only. You can change it at any time from <em>Accessibility</em> in the menu.</p>
+    <p class="muted small" data-tip>The choice is remembered on this device and browser only. You can change it at any time from <em>Accessibility</em> in the menu.</p>
 </section>
 
 <section class="panel">
@@ -32,5 +32,5 @@
         <li>On forms with several pages, <em>Next</em> checks the current page and takes you to the first problem.</li>
         <li>Your browser's own zoom (<kbd>Ctrl</kbd> + <kbd>+</kbd>) also works on every page.</li>
     </ul>
-    <p class="muted small">The drag-and-connect flow designer (for workflow builders) is the one screen that still needs a mouse or touch.</p>
+    <p class="muted small" data-tip>The drag-and-connect flow designer (for workflow builders) is the one screen that still needs a mouse or touch.</p>
 </section>

@@ -14,11 +14,42 @@ public class DepartmentsModel : PageModel
 
     private readonly AppDbContext _db;
     private readonly SchoolFlow.Web.Services.AuditService _audit;
+    private readonly SchoolFlow.Web.Services.IStaffDirectory _staff;
 
-    public DepartmentsModel(AppDbContext db, SchoolFlow.Web.Services.AuditService audit)
+    public DepartmentsModel(AppDbContext db, SchoolFlow.Web.Services.AuditService audit, SchoolFlow.Web.Services.IStaffDirectory staff)
     {
         _db = db;
         _audit = audit;
+        _staff = staff;
+    }
+
+    public bool HasStaffList => _staff.IsConfigured;
+
+    /// <summary>
+    /// Adds every department on the district's staff list that is not here yet, switched off: an admin sets
+    /// its final approver(s) and switches it on, so nobody can pick a department that has no approver.
+    /// </summary>
+    public async Task<IActionResult> OnPostFromStaffAsync(CancellationToken ct)
+    {
+        if (!_staff.IsConfigured) return Fail("The staff list is not connected (Staff:ConnectionString in the settings file).");
+        IReadOnlyList<string> names;
+        try { names = await _staff.DepartmentsAsync(ct); }
+        catch (Exception ex) when (ex is Microsoft.Data.SqlClient.SqlException or InvalidOperationException)
+        {
+            return Fail("Could not read the staff list: " + ex.Message);
+        }
+        var existing = new HashSet<string>(await _db.Departments.Select(d => d.Name).ToListAsync(ct), StringComparer.OrdinalIgnoreCase);
+        var added = names.Select(n => n.Trim()).Where(n => n.Length is > 0 and <= 200 && existing.Add(n)).ToList();
+        foreach (var name in added) _db.Departments.Add(new Department { Name = name, IsActive = false });
+        if (added.Count > 0)
+        {
+            _audit.Record(User, "department.created", "staff list", $"Added {added.Count} department(s) from the staff list, switched off: {string.Join(", ", added)}.");
+            await _db.SaveChangesAsync(ct);
+        }
+        TempData["Flash"] = added.Count == 0
+            ? "Every department on the staff list is already here."
+            : $"Added {added.Count} department{(added.Count == 1 ? "" : "s")} from the staff list. They are switched off: open each one, add its final approver and tick Active.";
+        return RedirectToPage();
     }
 
     public List<Department> Departments { get; private set; } = new();
@@ -71,6 +102,7 @@ public class DepartmentsModel : PageModel
         department.FinalRule = newRule;
         await _db.SaveChangesAsync();
         TempData["Flash"] = $"Saved {name}.";
+        if (id is int saved) TempData["OpenDepartment"] = saved;
         return RedirectToPage();
     }
 

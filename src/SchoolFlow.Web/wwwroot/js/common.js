@@ -89,32 +89,91 @@
   }
 
   // ---- staff email suggestions ---------------------------------------------------------
-  // Any <input data-people> suggests staff addresses as you type (from /api/people). With
-  // data-people="multi" the box holds several addresses separated by commas or semicolons and only the
-  // last one is completed. Inputs built later by scripts work too: the listener is on the document.
-  let peopleUid = 0;
+  // Any <input data-people> suggests staff addresses as you type (from /api/people), in a list just
+  // below the box. With data-people="multi" the box holds several addresses separated by commas or
+  // semicolons and only the last one is completed. Inputs built later by scripts work too: the
+  // listeners are on the document. Up/Down move through the list, Enter picks, Escape closes.
   const peopleCache = new Map();
+  const pop = { el: null, input: null, items: [], active: -1, head: '' };
+  let quiet = false;   // set while we fill the box ourselves, so that does not start a new lookup
+
+  function popEl() {
+    if (!pop.el) {
+      pop.el = h('ul', { class: 'people-pop', role: 'listbox', id: 'sf-people-pop', hidden: true });
+      pop.el.addEventListener('mousedown', (e) => {
+        const li = e.target.closest('li[data-i]');
+        e.preventDefault();   // keep the focus in the box
+        if (li) choosePerson(Number(li.getAttribute('data-i')));
+      });
+      document.body.appendChild(pop.el);
+    }
+    return pop.el;
+  }
+  function placePop() {
+    if (!pop.input || !pop.el || pop.el.hidden) return;
+    const r = pop.input.getBoundingClientRect();
+    const width = Math.max(r.width, 260);
+    pop.el.style.width = Math.min(width, window.innerWidth - 16) + 'px';
+    pop.el.style.left = Math.max(8, Math.min(r.left, window.innerWidth - Math.min(width, window.innerWidth - 16) - 8)) + 'px';
+    // Always under the box; it is kept short enough to fit the space below.
+    pop.el.style.top = (r.bottom + 4) + 'px';
+    pop.el.style.maxHeight = Math.max(120, Math.min(280, window.innerHeight - r.bottom - 12)) + 'px';
+  }
+  function closePop() {
+    if (pop.el) pop.el.hidden = true;
+    if (pop.input) { pop.input.setAttribute('aria-expanded', 'false'); pop.input.removeAttribute('aria-activedescendant'); }
+    pop.items = []; pop.active = -1;
+  }
+  function markActive(i) {
+    pop.active = i;
+    [...popEl().children].forEach((li, n) => li.setAttribute('aria-selected', n === i ? 'true' : 'false'));
+    const li = popEl().children[i];
+    if (li) { pop.input.setAttribute('aria-activedescendant', li.id); li.scrollIntoView({ block: 'nearest' }); }
+    else pop.input.removeAttribute('aria-activedescendant');
+  }
+  function showPeople(input, people, head) {
+    const el = popEl();
+    pop.input = input; pop.items = people; pop.head = head; pop.active = -1;
+    input.setAttribute('role', 'combobox');
+    input.setAttribute('aria-autocomplete', 'list');
+    input.setAttribute('aria-controls', el.id);
+    if (!people.length) { closePop(); return; }
+    el.replaceChildren(...people.map((p, i) => h('li', { role: 'option', id: 'sf-person-' + i, 'data-i': i, 'aria-selected': 'false' },
+      h('strong', null, p.name || p.email), p.name ? h('span', null, p.email) : null)));
+    el.hidden = false;
+    input.setAttribute('aria-expanded', 'true');
+    // Too close to the bottom of the screen for the list to show under the box: bring the box up first.
+    if (window.innerHeight - input.getBoundingClientRect().bottom < 160) input.scrollIntoView({ block: 'center' });
+    placePop();
+  }
+  function choosePerson(i) {
+    const input = pop.input;
+    const person = pop.items[i];
+    if (!input || !person) return;
+    const head = pop.head;
+    closePop();
+    quiet = true;
+    input.value = (head && !/\s$/.test(head) ? head + ' ' : head) + person.email;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    quiet = false;
+    if (input.hasAttribute('data-people-add')) addPerson(input);
+  }
+
   const lookupPeople = debounce(async (input) => {
     const multi = input.getAttribute('data-people') === 'multi';
     const text = input.value;
     const cut = multi ? Math.max(text.lastIndexOf(','), text.lastIndexOf(';')) + 1 : 0;
     const head = text.slice(0, cut);
     const query = text.slice(cut).trim();
-    if (query.length < 2) return;
+    if (query.length < 2) { closePop(); return; }
     let people = peopleCache.get(query.toLowerCase());
     if (!people) {
       try { people = await api('GET', '/api/people?q=' + encodeURIComponent(query)); } catch (e) { return; }
       peopleCache.set(query.toLowerCase(), people || []);
     }
-    if (input.value !== text) return; // they kept typing; a newer lookup will fill the list
-    let list = input.list;
-    if (!list) {
-      list = h('datalist', { id: 'sf-people-' + (++peopleUid) });
-      document.body.appendChild(list);
-      input.setAttribute('list', list.id);
-    }
-    list.replaceChildren(...(people || []).map((p) =>
-      h('option', { value: (head && !/\s$/.test(head) ? head + ' ' : head) + p.email }, p.name ? p.name : p.email)));
+    if (input.value !== text || document.activeElement !== input) return; // they kept typing, or left the box
+    showPeople(input, people || [], head);
   }, 250);
 
   function addPerson(input) {
@@ -131,18 +190,155 @@
 
   document.addEventListener('input', (e) => {
     const input = e.target;
-    if (!input.matches || !input.matches('input[data-people]')) return;
-    // Picking a suggestion in a "add to the list" box adds it straight away.
-    if (e.inputType === 'insertReplacementText' || (!e.inputType && input.list && [...input.list.options].some((o) => o.value === input.value))) {
-      if (input.hasAttribute('data-people-add')) { addPerson(input); return; }
-    }
+    if (quiet || !input.matches || !input.matches('input[data-people]')) return;
     lookupPeople(input);
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && e.target.matches && e.target.matches('input[data-people-add]')) { e.preventDefault(); addPerson(e.target); }
+    const input = e.target;
+    if (!input.matches || !input.matches('input[data-people]')) return;
+    const open = pop.input === input && pop.el && !pop.el.hidden && pop.items.length > 0;
+    if (open && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      e.preventDefault();
+      const n = pop.items.length;
+      markActive(e.key === 'ArrowDown' ? (pop.active + 1) % n : (pop.active <= 0 ? n - 1 : pop.active - 1));
+    } else if (open && e.key === 'Enter' && pop.active >= 0) {
+      e.preventDefault();
+      choosePerson(pop.active);
+    } else if (open && e.key === 'Escape') {
+      e.preventDefault();
+      closePop();
+    } else if (e.key === 'Enter' && input.matches('input[data-people-add]')) {
+      e.preventDefault();
+      closePop();
+      addPerson(input);
+    }
   });
+  document.addEventListener('focusout', (e) => { if (e.target === pop.input) setTimeout(() => { if (document.activeElement !== pop.input) closePop(); }, 120); });
+  window.addEventListener('resize', placePop);
+  document.addEventListener('scroll', placePop, true);
 
-  window.SF = { api, h, debounce, toast };
+  // ---- information tips (ⓘ) -----------------------------------------------------------
+  // Instructions sit behind a small "i" next to the heading or label they belong to, and open on
+  // hover, on keyboard focus, or with a tap (which keeps them open until tapped again, Escape, or a tap
+  // elsewhere). Pages mark them with data-tip (data-tip="page" ties one to the page title); scripts use
+  // SF.tip(content) or SF.tipify(root), which turns help paragraphs (.b-help, .sf-help) into tips.
+  let tipUid = 0;
+  let pinned = null;
+  function tip(content) {
+    const id = 'sf-tip-' + (++tipUid);
+    const text = h('span', { class: 'tip-text', role: 'tooltip', id, hidden: true }, content);
+    const button = h('button', { type: 'button', class: 'tip-btn', 'aria-label': 'More information', 'aria-describedby': id }, 'i');
+    return h('span', { class: 'tip' }, button, text);
+  }
+  function placeTip(wrap) {
+    const button = wrap.querySelector('.tip-btn');
+    const text = wrap.querySelector('.tip-text');
+    const r = button.getBoundingClientRect();
+    const width = Math.min(340, window.innerWidth - 16);
+    text.style.maxWidth = width + 'px';
+    const w = Math.min(text.offsetWidth || width, width);
+    text.style.left = Math.max(8, Math.min(r.left + r.width / 2 - 24, window.innerWidth - w - 8)) + 'px';
+    const below = window.innerHeight - r.bottom;
+    if (below < text.offsetHeight + 12 && r.top > below) { text.style.top = (r.top - text.offsetHeight - 8) + 'px'; text.classList.add('above'); }
+    else { text.style.top = (r.bottom + 8) + 'px'; text.classList.remove('above'); }
+    text.style.setProperty('--arrow', Math.max(10, r.left + r.width / 2 - parseFloat(text.style.left) - 5) + 'px');
+  }
+  function showTip(wrap) {
+    const text = wrap && wrap.querySelector('.tip-text');
+    if (!text) return;
+    text.hidden = false;
+    placeTip(wrap);
+  }
+  function hideTip(wrap) {
+    if (!wrap || wrap === pinned) return;
+    const text = wrap.querySelector('.tip-text');
+    if (text) text.hidden = true;
+  }
+  function unpin() {
+    const was = pinned;
+    pinned = null;
+    if (was) { was.querySelector('.tip-btn').setAttribute('aria-expanded', 'false'); hideTip(was); }
+  }
+  document.addEventListener('pointerover', (e) => {
+    const wrap = e.pointerType === 'mouse' && e.target.closest && e.target.closest('.tip');
+    if (wrap) showTip(wrap);
+  });
+  document.addEventListener('pointerout', (e) => {
+    const wrap = e.pointerType === 'mouse' && e.target.closest && e.target.closest('.tip');
+    if (wrap && !wrap.contains(e.relatedTarget)) hideTip(wrap);
+  });
+  document.addEventListener('focusin', (e) => { if (e.target.matches && e.target.matches('.tip-btn')) showTip(e.target.parentElement); });
+  document.addEventListener('focusout', (e) => { if (e.target.matches && e.target.matches('.tip-btn')) hideTip(e.target.parentElement); });
+  document.addEventListener('click', (e) => {
+    const button = e.target.closest && e.target.closest('.tip-btn');
+    if (button) {
+      e.preventDefault();   // a tip inside a <label> must not move the focus to the label's box
+      e.stopPropagation();
+      const wrap = button.parentElement;
+      if (pinned === wrap) { unpin(); return; }
+      unpin();
+      pinned = wrap;
+      button.setAttribute('aria-expanded', 'true');
+      showTip(wrap);
+      return;
+    }
+    if (pinned && !(e.target.closest && e.target.closest('.tip-text'))) unpin();
+  }, true);
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const open = document.querySelector('.tip-text:not([hidden])');
+    if (open) { unpin(); open.hidden = true; }
+  });
+  document.addEventListener('scroll', () => { unpin(); document.querySelectorAll('.tip-text:not([hidden])').forEach((t) => { t.hidden = true; }); }, true);
+
+  const HEADING = 'h1, h2, h3, h4, summary';
+  const LABEL = 'label, .lbl, .b-label, .sf-label, .b-toggle';
+  // The heading or label a piece of help belongs to: the label just before it (help under a box), else
+  // the nearest heading before it, looking outwards through the containers it sits in.
+  function anchorFor(el) {
+    if (el.getAttribute('data-tip') === 'page') return document.querySelector('main .page-head h1');
+    // Look back through what comes before it, then through the containers it sits in. Only at its own
+    // level does a label count (help inside a field belongs to the field's label).
+    for (let node = el, depth = 0; node && depth < 6 && !node.matches('main, body, .bld-body'); node = node.parentElement, depth++) {
+      if (depth > 0 && node.matches('summary')) return node;
+      for (let sib = node.previousElementSibling; sib; sib = sib.previousElementSibling) {
+        if (sib.matches(HEADING) || (depth === 0 && sib.matches(LABEL))) return sib;
+        if (sib.matches('.tip, .people-add, .b-row, .sf-field, form, .row, .b-pair, .fld-list, .bld-center')) continue;
+        const inner = sib.querySelectorAll(HEADING);
+        if (inner.length) return inner[inner.length - 1];
+      }
+    }
+    return null;
+  }
+  function tipify(root) {
+    (root || document).querySelectorAll('[data-tip], .b-help, .sf-help').forEach((el) => {
+      if (el.hidden || el.classList.contains('no-tip') || el.closest('.tip-text') || !el.textContent.trim()) return;
+      const anchor = anchorFor(el);
+      if (!anchor) return;   // nowhere sensible to put it: leave the text where it is
+      const content = h('span', { class: 'tip-par' }, ...el.childNodes);
+      // A summary or heading that holds more than text gets the tip after its own text.
+      const existing = anchor.querySelector('.tip');
+      if (existing) existing.querySelector('.tip-text').appendChild(content);
+      else {
+        const at = anchor.matches('summary') ? anchor.querySelector('.team-name, span, strong') : null;
+        (at || anchor).appendChild(tip(content));
+      }
+      el.remove();
+    });
+  }
+
+  window.SF = { api, h, debounce, toast, tip, tipify };
+  tipify(document);
+  // Screens built by scripts (the builder, forms, tasks) get the same treatment as they are drawn. The
+  // observer runs before the browser paints, so the help never flashes up as a paragraph first.
+  new MutationObserver((records) => {
+    for (const record of records)
+      for (const node of record.addedNodes)
+        if (node.nodeType === 1 && node.isConnected && !node.closest('.tip')) {
+          if (node.matches('[data-tip], .b-help, .sf-help')) tipify(node.parentElement || node);
+          else if (node.querySelector('[data-tip], .b-help, .sf-help')) tipify(node);
+        }
+  }).observe(document.body, { childList: true, subtree: true });
 
   // Sidebar groups (Build, Admin) remember whether they were left open or closed, on this device only.
   // The group holding the page you are on is always open.
@@ -152,6 +348,14 @@
       try { const saved = localStorage.getItem(key); if (saved !== null) group.open = saved === '1'; } catch (e) { /* storage blocked */ }
     }
     // Only the person's own click (or Enter/Space on the heading) is remembered, not the automatic opening.
+    const heading = group.querySelector('summary');
+    if (heading) heading.addEventListener('click', () => { try { localStorage.setItem(key, group.open ? '0' : '1'); } catch (e) { /* ignore */ } });
+  });
+
+  // Fold-out groups marked data-fold (e.g. the form groups on Home) remember being folded, on this device.
+  document.querySelectorAll('details[data-fold]').forEach((group) => {
+    const key = 'sf_fold_' + group.getAttribute('data-fold');
+    try { const saved = localStorage.getItem(key); if (saved !== null) group.open = saved === '1'; } catch (e) { /* storage blocked */ }
     const heading = group.querySelector('summary');
     if (heading) heading.addEventListener('click', () => { try { localStorage.setItem(key, group.open ? '0' : '1'); } catch (e) { /* ignore */ } });
   });

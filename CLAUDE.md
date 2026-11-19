@@ -129,8 +129,22 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   owner/admin/escalation replaces everyone; never the requester; `Auth:AllowedDomains`
   applies; chain record and stand-ins updated; audit `approval.forwarded`/`task.forwarded`.
 - **People suggestions**: `/api/people?q=` (`PeopleController`, 2+ characters, 20 results, allowed
-  domains only). Any `<input data-people>` gets a datalist from `common.js` (`data-people="multi"`
-  completes the last of several addresses; `data-people-add="<textarea id>"` appends to a list).
+  domains only). Any `<input data-people>` gets a list **under the box** from `common.js` (one shared
+  `ul.people-pop` combobox listbox, Up/Down/Enter/Escape; not a `<datalist>`, which browsers draw beside
+  the box — owner, Nov 19, 2026). `data-people="multi"` completes the last of several addresses;
+  `data-people-add="<textarea id>"` appends to a list.
+- **Owner's UI preferences (Nov 19, 2026):** fold-out (accordion) sections wherever it makes sense, tight
+  spacing, and instructions behind an ⓘ next to their heading or label rather than as paragraphs.
+  **Tips**: `SF.tip(content)` / `SF.tipify(root)` in `common.js`; Razor pages mark instruction paragraphs
+  with `data-tip` (`data-tip="page"` = beside the page title), scripts' `.b-help`/`.sf-help` are converted
+  automatically (a MutationObserver catches screens drawn later; `.no-tip` keeps a live hint as text).
+  Status messages, errors and empty states stay visible — only instructions become tips. Home: form groups
+  are `details[data-fold]` (folds remembered per device), recent requests in the right column (`.home-grid`).
+  Departments are folded cards like Teams.
+- **Starting lists**: Admin → Departments "Add departments from the staff list" (`IStaffDirectory.DepartmentsAsync`,
+  DISTINCT Department; added **switched off** until an admin sets the final approver — owner's choice);
+  Admin → Locations "Add the district's locations" (`StartingLocations.From`: the student-side names in
+  `Students:Match:Locations`, number codes replaced by the staff name, e.g. 20 → "Academy").
 - **Zip download**: `GET /files/run/{id}/zip` (`FilesController.Zip`, built in a temp file, names
   de-duplicated); shown on Detail when a request has 2+ files. Builder: `duplicateNode`, `undo()`
   with `remember()` before every structural change (30 snapshots of `state.def`).

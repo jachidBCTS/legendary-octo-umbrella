@@ -129,7 +129,7 @@
                 <input type="hidden" name="taskId" value="@task.Id" />
                 <label class="lbl" for="return-@task.Id">What needs changing? <span class="muted">(required)</span></label>
                 <textarea id="return-@task.Id" name="comment" rows="2" maxlength="2000" required></textarea>
-                <p class="muted small">@(Model.TaskReturnsTo is { } back ? $"It goes back to the “{back}” step, with your note; this task comes back to you afterwards." : "It goes back to the requester to edit and resubmit.")</p>
+                <p class="muted small" data-tip>@(Model.TaskReturnsTo is { } back ? $"It goes back to the “{back}” step, with your note; this task comes back to you afterwards." : "It goes back to the requester to edit and resubmit.")</p>
                 <div class="actions"><button class="btn">Send back</button></div>
             </form>
         </details>
@@ -143,7 +143,7 @@
                     <input id="to-@task.Id" name="to" type="email" required maxlength="254" autocomplete="off" data-people />
                     <label class="lbl" for="note-@task.Id">Note <span class="muted">(optional, sent to them)</span></label>
                     <input id="note-@task.Id" name="note" type="text" maxlength="1000" />
-                    <p class="muted small">@(task.IsAssignedTo(User.Email()) ? "They take your place on this step." : task.StandsInFor(User.Email()) is { } covered ? $"They take the place of {covered}, whom you stand in for." : "They replace everyone this step is waiting for.") It is recorded on the request and in the audit log.</p>
+                    <p class="muted small" data-tip>@(task.IsAssignedTo(User.Email()) ? "They take your place on this step." : task.StandsInFor(User.Email()) is { } covered ? $"They take the place of {covered}, whom you stand in for." : "They replace everyone this step is waiting for.") It is recorded on the request and in the audit log.</p>
                     <div class="actions"><button class="btn">Pass it on</button></div>
                 </form>
             </details>
@@ -188,7 +188,7 @@
                     <input id="to-@task.Id" name="to" type="email" required maxlength="254" autocomplete="off" data-people />
                     <label class="lbl" for="note-@task.Id">Note <span class="muted">(optional, sent to them)</span></label>
                     <input id="note-@task.Id" name="note" type="text" maxlength="1000" />
-                    <p class="muted small">@(task.IsAssignedTo(User.Email()) ? "They take your place on this step." : task.StandsInFor(User.Email()) is { } covered ? $"They take the place of {covered}, whom you stand in for." : "They replace everyone this step is waiting for.") It is recorded on the request and in the audit log.</p>
+                    <p class="muted small" data-tip>@(task.IsAssignedTo(User.Email()) ? "They take your place on this step." : task.StandsInFor(User.Email()) is { } covered ? $"They take the place of {covered}, whom you stand in for." : "They replace everyone this step is waiting for.") It is recorded on the request and in the audit log.</p>
                     <div class="actions"><button class="btn">Pass it on</button></div>
                 </form>
             </details>
@@ -211,7 +211,7 @@
                     <input id="to-@task.Id" name="to" type="email" required maxlength="254" autocomplete="off" data-people />
                     <label class="lbl" for="note-@task.Id">Note <span class="muted">(optional, sent to them)</span></label>
                     <input id="note-@task.Id" name="note" type="text" maxlength="1000" />
-                    <p class="muted small">@(task.IsAssignedTo(User.Email()) ? "They take your place on this step." : task.StandsInFor(User.Email()) is { } covered ? $"They take the place of {covered}, whom you stand in for." : "They replace everyone this step is waiting for.") It is recorded on the request and in the audit log.</p>
+                    <p class="muted small" data-tip>@(task.IsAssignedTo(User.Email()) ? "They take your place on this step." : task.StandsInFor(User.Email()) is { } covered ? $"They take the place of {covered}, whom you stand in for." : "They replace everyone this step is waiting for.") It is recorded on the request and in the audit log.</p>
                     <div class="actions"><button class="btn">Pass it on</button></div>
                 </form>
             </details>
