@@ -161,13 +161,71 @@ public class FreshserviceClientTests
         Assert.Contains("\"item_category\":\"Laptop\"", body);
     }
 
+    [Fact]
+    public async Task Custom_fields_are_matched_to_the_ticket_form_by_name_or_label_and_choices_spelled_its_way()
+    {
+        var (client, handler) = Client();
+        handler.FormFields = """
+        {"ticket_fields":[
+          {"name":"category","label":"Category","field_type":"default_category","default_field":true,"choices":[{"value":"Printer & Copier Supplies"},{"value":"Hardware","nested_options":[{"value":"Projector"}]}]},
+          {"name":"cf_room_number","label":"Room Number","field_type":"custom_text","default_field":false},
+          {"name":"cf_please_note_your_availability__free_periods","label":"Please Note Your Availability / Free Periods","field_type":"custom_text","default_field":false},
+          {"name":"cf_location","label":"Location","field_type":"custom_lookup_bigint","default_field":false},
+          {"name":"cf_building","label":"Building","field_type":"custom_dropdown","default_field":false,"choices":["540 Farview","Teterboro"]}
+        ]}
+        """;
+        handler.Locations = "{\"locations\":[{\"id\":77,\"name\":\"540 Farview\"}]}";
+        handler.Responses.Enqueue((HttpStatusCode.Created, "{\"ticket\":{\"id\":9}}"));
+        var ticket = new TicketCreate
+        {
+            Subject = "s", DescriptionHtml = "d", RequesterEmail = "a@x.org", Category = "hardware", SubCategory = "projector",
+            CustomFields =
+            {
+                ["Room Number"] = "214",                                              // by label
+                ["cf_please_note_your_availability_free_periods"] = "Period 3",       // a near miss of the real name
+                ["Location"] = "540 farview",                                         // a lookup: sent as the location's number
+                ["cf_building"] = "teterboro",                                        // a dropdown: its own spelling
+                ["cf_nonsense"] = "x",                                                // not on the form: left out
+            },
+        };
+        await client.CreateTicketAsync(ticket);
+        var body = handler.Requests.Single().Body!;
+        Assert.Contains("\"cf_room_number\":\"214\"", body);
+        Assert.Contains("\"cf_please_note_your_availability__free_periods\":\"Period 3\"", body);
+        Assert.Contains("\"cf_location\":77", body);
+        Assert.Contains("\"cf_building\":\"Teterboro\"", body);
+        Assert.Contains("\"category\":\"Hardware\"", body);
+        Assert.Contains("\"sub_category\":\"Projector\"", body);
+        Assert.DoesNotContain("cf_nonsense", body);
+        Assert.Contains(ticket.Notes, n => n.Contains("cf_nonsense"));
+    }
+
+    [Fact]
+    public void A_category_that_is_not_a_choice_is_left_out_with_a_note()
+    {
+        var notes = new List<string>();
+        var form = new[] { new TicketField("cf_building", "Building", "custom_dropdown", false, new[] { "Teterboro" }) };
+        var result = FreshserviceClient.MatchCustomFields(form, new Dictionary<string, object?> { ["Building"] = "Mars" }, notes);
+        Assert.Empty(result);
+        Assert.Contains("not one of the choices", notes.Single());
+    }
+
     private sealed class FakeHandler : HttpMessageHandler
     {
         public List<(HttpMethod Method, string Url, string? Body, string? Auth)> Requests { get; } = new();
         public Queue<(HttpStatusCode Status, string Body)> Responses { get; } = new();
+        /// <summary>What GET api/v2/ticket_form_fields answers (read before a ticket is created); not found when null.</summary>
+        public string? FormFields { get; set; }
+        /// <summary>What GET api/v2/locations answers.</summary>
+        public string? Locations { get; set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
+            var path = request.RequestUri!.AbsolutePath;
+            if (path == "/api/v2/ticket_form_fields")
+                return new HttpResponseMessage(FormFields is null ? HttpStatusCode.NotFound : HttpStatusCode.OK) { Content = new StringContent(FormFields ?? "{}", Encoding.UTF8, "application/json") };
+            if (path == "/api/v2/locations")
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(request.RequestUri.Query.Contains("page=1") ? Locations ?? "{\"locations\":[]}" : "{\"locations\":[]}", Encoding.UTF8, "application/json") };
             Requests.Add((request.Method, request.RequestUri!.PathAndQuery,
                 request.Content is null ? null : await request.Content.ReadAsStringAsync(ct), request.Headers.Authorization?.ToString()));
             var (status, body) = Responses.Dequeue();

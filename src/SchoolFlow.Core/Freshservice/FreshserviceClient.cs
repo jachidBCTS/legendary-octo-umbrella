@@ -42,6 +42,28 @@ public sealed class FreshserviceClient : IFreshserviceClient
 
     public async Task<Dictionary<string, object?>> CreateTicketAsync(TicketCreate ticket, CancellationToken ct = default)
     {
+        if (await FieldsForMatchingAsync(ct) is { } form)
+        {
+            ticket.CustomFields = MatchCustomFields(form, ticket.CustomFields, ticket.Notes, await LocationsForMatchingAsync(form, ct));
+            var category = form.FirstOrDefault(f => f.Name == "category");
+            if (category is { Choices.Count: > 0 })
+            {
+                // Each level must be one of the ticket form's choices, spelled exactly as Freshservice has it.
+                var path = new List<string>();
+                foreach (var (level, set) in new (string?, Action<string?>)[] { (ticket.Category, v => ticket.Category = v),
+                             (ticket.SubCategory, v => ticket.SubCategory = v), (ticket.ItemCategory, v => ticket.ItemCategory = v) })
+                {
+                    if (string.IsNullOrWhiteSpace(level)) { set(null); continue; }
+                    var prefix = path.Count == 0 ? "" : string.Join(" > ", path) + " > ";
+                    var options = category.Choices.Where(c => c.StartsWith(prefix, StringComparison.Ordinal) && !c[prefix.Length..].Contains(" > ")).Select(c => c[prefix.Length..]).ToList();
+                    var match = MatchChoice(level, options);
+                    if (match is null) { ticket.Notes.Add($"category “{level}” is not one of Freshservice's choices, so it was left out"); set(null); break; }
+                    set(match);
+                    path.Add(match);
+                }
+                if (ticket.Category is null) { ticket.SubCategory = null; ticket.ItemCategory = null; }
+            }
+        }
         var body = new Dictionary<string, object?>
         {
             ["subject"] = ticket.Subject,
@@ -66,6 +88,8 @@ public sealed class FreshserviceClient : IFreshserviceClient
 
     public async Task<Dictionary<string, object?>> UpdateTicketAsync(long ticketId, TicketUpdate update, CancellationToken ct = default)
     {
+        if (update.CustomFields.Count > 0 && await FieldsForMatchingAsync(ct) is { } form)
+            update.CustomFields = MatchCustomFields(form, update.CustomFields, update.Notes, await LocationsForMatchingAsync(form, ct));
         var body = new Dictionary<string, object?>
         {
             ["priority"] = update.Priority,
@@ -237,6 +261,112 @@ public sealed class FreshserviceClient : IFreshserviceClient
         {
             return await ListAllAsync("api/v2/agent_groups", "agent_groups", e => Item(e, "name"), ct);
         }
+    }
+
+    // ---- matching custom fields to the ticket form ------------------------------------------
+
+    private IReadOnlyList<TicketField>? _form;
+    private DateTime _formAt;
+    private IReadOnlyList<LookupItem>? _places;
+    private DateTime _placesAt;
+
+    /// <summary>The ticket form (kept 30 minutes), or null when it cannot be read: values are then sent as given.</summary>
+    private async Task<IReadOnlyList<TicketField>?> FieldsForMatchingAsync(CancellationToken ct)
+    {
+        if (_form is not null && DateTime.UtcNow - _formAt < TimeSpan.FromMinutes(30)) return _form;
+        try
+        {
+            var fields = await TicketFieldsAsync(ct);
+            if (fields.Count == 0) return null;
+            _form = fields;
+            _formAt = DateTime.UtcNow;
+            return fields;
+        }
+        catch (Exception ex) when (ex is FreshserviceException or HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Freshservice locations (for a location field that stores a location's number), only when the form has such a field.</summary>
+    private async Task<IReadOnlyList<LookupItem>> LocationsForMatchingAsync(IReadOnlyList<TicketField> form, CancellationToken ct)
+    {
+        if (!form.Any(f => IsLocationLookup(f))) return Array.Empty<LookupItem>();
+        if (_places is not null && DateTime.UtcNow - _placesAt < TimeSpan.FromMinutes(30)) return _places;
+        try
+        {
+            _places = await LookupAsync(LookupSources.Locations, null, null, ct);
+            _placesAt = DateTime.UtcNow;
+            return _places;
+        }
+        catch (Exception ex) when (ex is FreshserviceException or HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
+        {
+            return Array.Empty<LookupItem>();
+        }
+    }
+
+    private static bool IsLocationLookup(TicketField f) =>
+        f.Choices.Count == 0 && f.Type.Contains("lookup", StringComparison.OrdinalIgnoreCase)
+        && (Simple(f.Name).Contains("location") || Simple(f.Label).Contains("location"));
+
+    /// <summary>Lower case, letters and digits only, without a leading "cf": "Room Number", "cf_room_number" and "room-number" all read "roomnumber".</summary>
+    public static string Simple(string? text)
+    {
+        var t = new string((text ?? "").Trim().ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
+        return (text ?? "").Trim().StartsWith("cf_", StringComparison.OrdinalIgnoreCase) && t.StartsWith("cf") ? t[2..] : t;
+    }
+
+    /// <summary>The choice that is meant: exactly, ignoring case, or ignoring spacing and punctuation. Null when none fits.</summary>
+    public static string? MatchChoice(string value, IReadOnlyList<string> choices)
+    {
+        var v = value.Trim();
+        return choices.FirstOrDefault(c => c == v)
+            ?? choices.FirstOrDefault(c => string.Equals(c.Trim(), v, StringComparison.OrdinalIgnoreCase))
+            ?? choices.FirstOrDefault(c => Simple(c) == Simple(v) && Simple(v).Length > 0);
+    }
+
+    /// <summary>
+    /// Puts each value under the ticket form's own name for the field — found by its name or its label, so a
+    /// step can say "Room Number" or "cf_room_number" — and, for a dropdown, as one of its choices. A field
+    /// the form does not have, or a value that is not one of the choices, is left out (and noted) rather than
+    /// making Freshservice refuse the whole ticket.
+    /// </summary>
+    public static Dictionary<string, object?> MatchCustomFields(IReadOnlyList<TicketField> form, Dictionary<string, object?> given,
+        List<string> notes, IReadOnlyList<LookupItem>? locations = null)
+    {
+        var result = new Dictionary<string, object?>();
+        var custom = form.Where(f => !f.IsDefault).ToList();
+        foreach (var (key, value) in given)
+        {
+            var field = custom.FirstOrDefault(f => f.Name == key)
+                ?? custom.FirstOrDefault(f => Simple(f.Name) == Simple(key))
+                ?? custom.FirstOrDefault(f => Simple(f.Label) == Simple(key));
+            if (field is null)
+            {
+                notes.Add($"“{key}” is not a field on the Freshservice ticket form, so it was left out");
+                continue;
+            }
+            var output = value;
+            if (value is string text && text.Trim().Length > 0)
+            {
+                // Dropdowns: one of the choices (the first level, for a nested one).
+                var top = field.Choices.Where(c => !c.Contains(" > ")).ToList();
+                if (top.Count > 0)
+                {
+                    var match = MatchChoice(text, top);
+                    if (match is null) { notes.Add($"“{text}” is not one of the choices for {field.Label}, so it was left out"); continue; }
+                    output = match;
+                }
+                else if (IsLocationLookup(field) && locations is { Count: > 0 })
+                {
+                    var place = locations.FirstOrDefault(l => MatchChoice(text, new[] { l.Name }) is not null);
+                    if (place is null) { notes.Add($"“{text}” is not a Freshservice location, so {field.Label} was left out"); continue; }
+                    output = long.TryParse(place.Id, out var number) ? number : place.Id;
+                }
+            }
+            result[field.Name] = output;
+        }
+        return result;
     }
 
     /// <summary>GET api/v2/ticket_form_fields: every field on the ticket form, default and custom.</summary>

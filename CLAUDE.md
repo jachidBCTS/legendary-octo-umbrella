@@ -383,10 +383,14 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   `item_category` (node config `itemCategory`) and `cc_emails` (node config `cc`, split on , ; space).
   **"Report an Issue"** (`deploy/templates/Report an Issue (import in Workflows).json`): the owner's Freshservice
   portal form rebuilt (requester = staff field defaulting to the submitter, CC, subject, location, room, phone,
-  the owner's 10 categories, description, files, availability). The custom field names in its Create ticket step
-  (`cf_location`, `cf_room_number`, `cf_best_number_to_reach_you`, `cf_please_note_your_availability_free_periods`)
-  are **guesses from the labels** until the owner sends the "Show ticket fields" list; "Printer & Copier Supplies"
-  was cut off in their screenshot. The connection test checks `api/v2/tickets` first (404 = wrong
+  the owner's 10 categories, description, files, availability). Its Create ticket step names custom fields by their **labels**. `FreshserviceClient`
+  reads the ticket form (cached 30 min) before creating/updating a ticket and `MatchCustomFields` maps each key by
+  exact name, simplified name or label (`Simple`: lower-case alphanumerics, no `cf_`), matches dropdown values and
+  the category levels to the form's choices (`MatchChoice`), turns a location *lookup* field's text into the
+  Freshservice location id, and **drops** anything that does not fit with a note (`TicketCreate/TicketUpdate.Notes`
+  → timeline warning) rather than letting Freshservice refuse the ticket. Unreadable form = values sent as given.
+  The owner's category and location routing lives in Freshservice automators and applies to these tickets
+  (source = Portal). "Printer & Copier Supplies" was cut off in their screenshot (choice matching covers spelling). The connection test checks `api/v2/tickets` first (404 = wrong
   `Freshservice:Domain`), then groups (`api/v2/groups`, falling back to `api/v2/agent_groups`).
 - **Freshservice**: `IFreshserviceClient` has a live client and `SimulatedFreshserviceClient`
   (used when no domain/API key is configured; timeline entries are prefixed `[Simulated]`).

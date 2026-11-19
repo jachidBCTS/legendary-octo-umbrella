@@ -23,6 +23,8 @@ public sealed class TicketCreate
     public string? ItemCategory { get; set; }
     /// <summary>People copied on the ticket (Freshservice cc_emails).</summary>
     public List<string> CcEmails { get; set; } = new();
+    /// <summary>Filled in by the client: values it had to leave out or change to fit the ticket form (shown on the timeline).</summary>
+    public List<string> Notes { get; } = new();
     public List<string> Tags { get; set; } = new();
     public Dictionary<string, object?> CustomFields { get; set; } = new();
 }
@@ -41,6 +43,8 @@ public sealed class TicketUpdate
     public long? GroupId { get; set; }
     public long? ResponderId { get; set; }
     public Dictionary<string, object?> CustomFields { get; set; } = new();
+    /// <summary>Filled in by the client: values it had to leave out (shown on the timeline).</summary>
+    public List<string> Notes { get; } = new();
 
     public bool IsEmpty => Priority is null && Status is null && GroupId is null && ResponderId is null && CustomFields.Count == 0;
 }

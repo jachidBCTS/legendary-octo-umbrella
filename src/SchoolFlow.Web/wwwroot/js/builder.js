@@ -1332,7 +1332,7 @@
     const render = () => {
       box.textContent = '';
       rows.forEach((r, i) => {
-        const name = h('input', { type: 'text', value: r.name, placeholder: 'Field name in Freshservice', class: 'mono', spellcheck: 'false' });
+        const name = h('input', { type: 'text', value: r.name, placeholder: 'Field label or name in Freshservice', class: 'mono', spellcheck: 'false' });
         name.addEventListener('input', () => { r.name = name.value; commit(); });
         box.appendChild(h('div', { class: 'b-cf-row' },
           h('div', { class: 'row-between' }, name,
@@ -1343,7 +1343,7 @@
     };
     render();
     return h('div', null, h('h4', { class: 'b-section' }, 'Custom ticket fields'),
-      h('p', { class: 'b-help' }, 'Use the field\'s API name from Freshservice (Admin → Field Manager). A single {{formula}} keeps its type, so numbers stay numbers.'), box);
+      h('p', { class: 'b-help' }, 'Name each field as it appears on the Freshservice ticket form — its label (e.g. Room Number) or its API name (cf_room_number). Bergen Forms matches it to the form when the ticket is created, and matches dropdown values to the field\'s choices; anything that does not fit is left out and noted on the request\'s timeline instead of stopping the ticket. A single {{formula}} keeps its type, so numbers stay numbers.'), box);
   }
 
   function renderNodeInspector(panel, node) {

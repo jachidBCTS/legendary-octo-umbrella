@@ -126,10 +126,10 @@
       "attachFiles": "true"
      },
      "customFields": {
-      "cf_location": "{{location.name}}",
-      "cf_room_number": "{{room}}",
-      "cf_best_number_to_reach_you": "{{phone}}",
-      "cf_please_note_your_availability_free_periods": "{{availability}}"
+      "Location": "{{location.name}}",
+      "Room Number": "{{room}}",
+      "Best number to reach you": "{{phone}}",
+      "Please Note Your Availability / Free Periods": "{{availability}}"
      }
     },
     {

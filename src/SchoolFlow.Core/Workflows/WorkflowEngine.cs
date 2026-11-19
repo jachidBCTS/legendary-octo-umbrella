@@ -603,6 +603,7 @@ public sealed class WorkflowEngine
                 var ticket = await _freshservice.CreateTicketAsync(request, ct);
                 state.Context["ticket"] = ticket;
                 Log(state, node.Id, "ticket", $"{Sim()}Created Freshservice ticket #{Values.ToText(ticket.GetValueOrDefault("id"))}: {request.Subject}");
+                if (request.Notes.Count > 0) Log(state, node.Id, "warning", $"On the ticket: {string.Join("; ", request.Notes)}.");
                 if (node.Get("attachFiles") == "true" && Values.TryToNumber(ticket.GetValueOrDefault("id"), out var newTicketId))
                     await AttachRequestFilesAsync(state, node, (long)newTicketId, ct);
                 Follow(flow, state, node, "next");
@@ -639,6 +640,7 @@ public sealed class WorkflowEngine
                 var ticket = await _freshservice.UpdateTicketAsync(ticketId, update, ct);
                 MergeTicket(state, ticket);
                 Log(state, node.Id, "ticket", $"{Sim()}Updated Freshservice ticket #{ticketId}");
+                if (update.Notes.Count > 0) Log(state, node.Id, "warning", $"On the ticket: {string.Join("; ", update.Notes)}.");
                 Follow(flow, state, node, "next");
                 break;
             }
