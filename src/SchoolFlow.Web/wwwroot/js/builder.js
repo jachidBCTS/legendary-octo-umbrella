@@ -1551,6 +1551,7 @@
           row('Subject', tpl('subject', 1, 'e.g. Purchase request: {{title}}')),
           row('Description', tpl('description', 6, 'Plain text. Use {{field}} placeholders.')),
           row('Requester email', tpl('requesterEmail', 1, '{{submitter.email}}'), 'Leave blank for the person who submitted the form.'),
+          row('CC', tpl('cc', 1, 'e.g. {{cc}}'), 'People copied on the ticket: addresses separated by commas, or a form field that holds them.'),
           h('div', { class: 'b-pair' },
             row('Priority', select(c.priority || '2', PRIORITY, set('priority'))),
             row('Status', statusControl(c, false))),

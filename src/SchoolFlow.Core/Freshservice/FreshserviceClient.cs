@@ -56,6 +56,7 @@ public sealed class FreshserviceClient : IFreshserviceClient
             ["category"] = ticket.Category,
             ["sub_category"] = ticket.SubCategory,
             ["item_category"] = ticket.ItemCategory,
+            ["cc_emails"] = ticket.CcEmails.Count > 0 ? ticket.CcEmails : null,
             ["tags"] = ticket.Tags.Count > 0 ? ticket.Tags : null,
             ["custom_fields"] = ticket.CustomFields.Count > 0 ? ticket.CustomFields : null,
         };

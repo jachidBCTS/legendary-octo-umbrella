@@ -380,7 +380,13 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
 - **Freshservice ticket fields (Nov 19, 2026):** Admin → Settings → "Show ticket fields" lists the ticket form
   (`IFreshserviceClient.TicketFieldsAsync` → `GET api/v2/ticket_form_fields`, `FreshserviceClient.ParseTicketFields`;
   nested choices flattened as "A > B > C") so Create ticket steps can be mapped exactly. Create ticket also sends
-  `item_category` (node config `itemCategory`). The connection test checks `api/v2/tickets` first (404 = wrong
+  `item_category` (node config `itemCategory`) and `cc_emails` (node config `cc`, split on , ; space).
+  **"Report an Issue"** (`deploy/templates/Report an Issue (import in Workflows).json`): the owner's Freshservice
+  portal form rebuilt (requester = staff field defaulting to the submitter, CC, subject, location, room, phone,
+  the owner's 10 categories, description, files, availability). The custom field names in its Create ticket step
+  (`cf_location`, `cf_room_number`, `cf_best_number_to_reach_you`, `cf_please_note_your_availability_free_periods`)
+  are **guesses from the labels** until the owner sends the "Show ticket fields" list; "Printer & Copier Supplies"
+  was cut off in their screenshot. The connection test checks `api/v2/tickets` first (404 = wrong
   `Freshservice:Domain`), then groups (`api/v2/groups`, falling back to `api/v2/agent_groups`).
 - **Freshservice**: `IFreshserviceClient` has a live client and `SimulatedFreshserviceClient`
   (used when no domain/API key is configured; timeline entries are prefixed `[Simulated]`).

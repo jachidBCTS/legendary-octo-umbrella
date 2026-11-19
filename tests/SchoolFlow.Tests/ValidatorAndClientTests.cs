@@ -149,6 +149,18 @@ public class FreshserviceClientTests
         Assert.Equal(new[] { "Academy", "Teterboro" }, fields[2].Choices);
     }
 
+    [Fact]
+    public async Task Create_ticket_sends_cc_and_item_category()
+    {
+        var (client, handler) = Client();
+        handler.Responses.Enqueue((HttpStatusCode.Created, "{\"ticket\":{\"id\":5}}"));
+        await client.CreateTicketAsync(new TicketCreate { Subject = "s", DescriptionHtml = "d", RequesterEmail = "a@x.org", Category = "Hardware",
+            ItemCategory = "Laptop", CcEmails = { "b@x.org", "c@x.org" } });
+        var body = handler.Requests[0].Body!;
+        Assert.Contains("\"cc_emails\":[\"b@x.org\",\"c@x.org\"]", body);
+        Assert.Contains("\"item_category\":\"Laptop\"", body);
+    }
+
     private sealed class FakeHandler : HttpMessageHandler
     {
         public List<(HttpMethod Method, string Url, string? Body, string? Auth)> Requests { get; } = new();

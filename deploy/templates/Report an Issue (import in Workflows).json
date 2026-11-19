@@ -1,0 +1,157 @@
+{
+ "schoolflow": 1,
+ "name": "Report an Issue",
+ "description": "Get help from the technology department: something broken, missing or not working.",
+ "category": "Help Desk",
+ "color": "teal",
+ "definition": {
+  "trigger": {
+   "type": "form"
+  },
+  "form": {
+   "submitLabel": "Submit",
+   "fields": [
+    {
+     "key": "requester",
+     "label": "Requester",
+     "type": "staff",
+     "required": true,
+     "default": "submitter.email",
+     "help": "You, unless you are reporting this for someone else."
+    },
+    {
+     "key": "cc",
+     "label": "CC",
+     "type": "text",
+     "placeholder": "Email addresses, separated by commas",
+     "help": "Anyone who should be copied on the ticket.",
+     "rules": [
+      {
+       "check": "ISBLANK(cc) || MATCHES(cc, '^\\s*[^@\\s,;]+@[^@\\s,;]+(\\s*[,;]\\s*[^@\\s,;]+@[^@\\s,;]+)*\\s*$')",
+       "message": "Enter email addresses separated by commas."
+      }
+     ]
+    },
+    {
+     "key": "subject",
+     "label": "Subject",
+     "type": "text",
+     "required": true,
+     "placeholder": "A few words about the problem"
+    },
+    {
+     "key": "location",
+     "label": "Location",
+     "type": "location",
+     "required": true,
+     "width": "half"
+    },
+    {
+     "key": "room",
+     "label": "Room Number",
+     "type": "text",
+     "required": true,
+     "width": "half"
+    },
+    {
+     "key": "phone",
+     "label": "Best number to reach you",
+     "type": "phone",
+     "width": "half"
+    },
+    {
+     "key": "category",
+     "label": "Category",
+     "type": "select",
+     "required": true,
+     "width": "half",
+     "options": [
+      "Community Pass",
+      "E-mail",
+      "Event Setup",
+      "Hardware",
+      "MakerSpace",
+      "Ordering",
+      "Printer & Copier Supplies",
+      "School Cash",
+      "Software",
+      "Other"
+     ]
+    },
+    {
+     "key": "description",
+     "label": "Description",
+     "type": "textarea",
+     "required": true,
+     "placeholder": "What is happening, and what have you tried?"
+    },
+    {
+     "key": "files",
+     "label": "Attach files",
+     "type": "attachments",
+     "maxFiles": 5
+    },
+    {
+     "key": "availability",
+     "label": "Please Note Your Availability / Free Periods",
+     "type": "text",
+     "required": true
+    }
+   ]
+  },
+  "flow": {
+   "nodes": [
+    {
+     "id": "start",
+     "type": "start",
+     "label": "Form submitted",
+     "x": 290,
+     "y": 40
+    },
+    {
+     "id": "create",
+     "type": "fs_create_ticket",
+     "label": "Open help desk ticket",
+     "x": 290,
+     "y": 180,
+     "config": {
+      "subject": "{{subject}}",
+      "description": "{{description}}\n\nLocation: {{location.name}}\nRoom: {{room}}\nBest number to reach: {{COALESCE(phone, 'not given')}}\nAvailability / free periods: {{availability}}",
+      "requesterEmail": "{{requester.email}}",
+      "cc": "{{cc}}",
+      "priority": "2",
+      "status": "2",
+      "category": "{{category}}",
+      "tags": "bergen-forms",
+      "attachFiles": "true"
+     },
+     "customFields": {
+      "cf_location": "{{location.name}}",
+      "cf_room_number": "{{room}}",
+      "cf_best_number_to_reach_you": "{{phone}}",
+      "cf_please_note_your_availability_free_periods": "{{availability}}"
+     }
+    },
+    {
+     "id": "done",
+     "type": "end",
+     "label": "Ticket opened",
+     "x": 290,
+     "y": 330
+    }
+   ],
+   "edges": [
+    {
+     "from": "start",
+     "port": "next",
+     "to": "create"
+    },
+    {
+     "from": "create",
+     "port": "next",
+     "to": "done"
+    }
+   ]
+  }
+ }
+}

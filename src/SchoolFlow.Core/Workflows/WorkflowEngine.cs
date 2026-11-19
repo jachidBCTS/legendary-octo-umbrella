@@ -590,6 +590,9 @@ public sealed class WorkflowEngine
                     Category = NullIfBlank(Template.Render(node.Get("category"), scope)),
                     SubCategory = NullIfBlank(Template.Render(node.Get("subCategory"), scope)),
                     ItemCategory = NullIfBlank(Template.Render(node.Get("itemCategory"), scope)),
+                    // Several addresses, separated by commas, semicolons or spaces; anything that is not an address is left out.
+                    CcEmails = Template.Render(node.Get("cc"), scope).Split(new[] { ',', ';', ' ', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                        .Where(e => e.Contains('@') && e.Length <= 320).Select(e => e.ToLowerInvariant()).Distinct().Take(50).ToList(),
                     Tags = Template.Render(node.Get("tags"), scope).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList(),
                     CustomFields = ResolveCustomFields(node, scope),
                 };

@@ -21,6 +21,8 @@ public sealed class TicketCreate
     public string? SubCategory { get; set; }
     /// <summary>The third level of the category ("Item"), below the sub-category.</summary>
     public string? ItemCategory { get; set; }
+    /// <summary>People copied on the ticket (Freshservice cc_emails).</summary>
+    public List<string> CcEmails { get; set; } = new();
     public List<string> Tags { get; set; } = new();
     public Dictionary<string, object?> CustomFields { get; set; } = new();
 }
