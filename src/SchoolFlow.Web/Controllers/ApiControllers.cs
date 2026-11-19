@@ -140,10 +140,12 @@ public sealed class FormsController : ControllerBase
         FormDefinition form;
         WorkflowDefinition? whole = null;   // for the district-address check; not for the builder's preview
         Dictionary<string, AttachmentInfo>? usableFiles = null;
+        Dictionary<string, object?>? locked = null;
         if (request.RunId is int revisingId)
         {
             var revising = await RevisableAsync(revisingId, ct);
             if (revising is null) return NotFound();
+            locked = Json.ToValues(revising.ContextJson);
             whole = Json.ParseDefinition(revising.DefinitionJson);
             form = whole.Form;
             usableFiles = await _attachments.UsableForRunAsync(User.Email(), revising, ct);
@@ -173,7 +175,10 @@ public sealed class FormsController : ControllerBase
             students: request.Definition is not null ? null : await new AccessService(_db, HttpContext.RequestServices.GetService<IStudentRoster>()).StudentsForAsync(form, Json.ToValues(request.Values), User.Email(), ct,
                 HttpContext.RequestServices.GetService<StudentScopeService>()),
             allowedDomains: _domains.Domains,
-            perDiem: await HttpContext.RequestServices.GetRequiredService<PerDiemService>().DirectoryForAsync(form, Json.ToValues(request.Values), ct));
+            perDiem: await HttpContext.RequestServices.GetRequiredService<PerDiemService>().DirectoryForAsync(form, Json.ToValues(request.Values), ct),
+            // The builder's preview takes a picked person as given (like students); real forms check the staff list.
+            staff: request.Definition is not null ? null : await HttpContext.RequestServices.GetRequiredService<StaffLookup>().ForAsync(form.Fields, Json.ToValues(request.Values), ct, User.Email()),
+            places: await _calendar.PlacesAsync(ct), locked: locked);
         if (whole is not null) DistrictAddresses.Check(whole, result, _domains.Domains);
         return new JsonResult(Shape(result), Json.Options);
     }
@@ -519,7 +524,63 @@ public sealed class BuilderController : ControllerBase
             isAdmin = User.IsAdmin(),
             canEditForm = AccessService.CanEditForm(User),
             teams = await _db.Teams.AsNoTracking().OrderBy(t => t.Name).Select(t => t.Name).ToListAsync(ct),
+            categories = await Categories.NamesAsync(_db, ct),
+            letterhead = await LetterheadInfoAsync(w.Id, ct),
         }, Json.Options);
+    }
+
+    // ---- letterhead ------------------------------------------------------------------
+
+    public const int MaxLetterheadBytes = 2 * 1024 * 1024;
+
+    private async Task<object?> LetterheadInfoAsync(int workflowId, CancellationToken ct) =>
+        await _db.FormImages.AsNoTracking().Where(i => i.WorkflowId == workflowId)
+            .Select(i => new { i.FileName, i.UpdatedAt }).FirstOrDefaultAsync(ct) is { } image
+            ? new { url = Letterhead.UrlFor(workflowId, image.UpdatedAt), fileName = image.FileName } : null;
+
+    /// <summary>Puts a letterhead image on the form (shown at the top of the form and of its printout). Admins only, like the rest of the form.</summary>
+    [HttpPost("{id:int}/letterhead")]
+    [RequestSizeLimit(MaxLetterheadBytes + 64 * 1024)]
+    public async Task<IActionResult> UploadLetterhead(int id, IFormFile? file, CancellationToken ct)
+    {
+        var w = await ManagedAsync(id, tracked: false, ct);
+        if (w is null) return NotFound();
+        if (!AccessService.CanEditForm(User)) return StatusCode(403, new { error = "Only an administrator can change the form's letterhead." });
+        if (file is null || file.Length == 0) return BadRequest(new { error = "Choose an image file." });
+        if (file.Length > MaxLetterheadBytes) return BadRequest(new { error = "The image is too large (2 MB at most). Save it smaller, e.g. as a JPEG about 1600 pixels wide." });
+        using var buffer = new MemoryStream();
+        await file.CopyToAsync(buffer, ct);
+        var bytes = buffer.ToArray();
+        var type = Letterhead.ContentTypeOf(bytes);
+        if (type is null) return BadRequest(new { error = "That is not a PNG, JPEG, GIF or WebP image." });
+        var name = Path.GetFileName(file.FileName ?? "letterhead");
+        if (name.Length > 200) name = name[^200..];
+        var row = await _db.FormImages.FirstOrDefaultAsync(i => i.WorkflowId == id, ct);
+        if (row is null) _db.FormImages.Add(row = new FormImage { WorkflowId = id });
+        row.ContentType = type;
+        row.Data = bytes;
+        row.FileName = name;
+        row.UpdatedAt = DateTime.UtcNow;
+        row.UpdatedBy = User.Email();
+        _audit.Record(User, "workflow.letterhead", w.Name, $"Letterhead set to “{name}” ({bytes.Length / 1024} KB).");
+        await _db.SaveChangesAsync(ct);
+        return Ok(new { letterhead = new { url = Letterhead.UrlFor(id, row.UpdatedAt), fileName = name } });
+    }
+
+    [HttpDelete("{id:int}/letterhead")]
+    public async Task<IActionResult> RemoveLetterhead(int id, CancellationToken ct)
+    {
+        var w = await ManagedAsync(id, tracked: false, ct);
+        if (w is null) return NotFound();
+        if (!AccessService.CanEditForm(User)) return StatusCode(403, new { error = "Only an administrator can change the form's letterhead." });
+        var row = await _db.FormImages.FirstOrDefaultAsync(i => i.WorkflowId == id, ct);
+        if (row is not null)
+        {
+            _db.FormImages.Remove(row);
+            _audit.Record(User, "workflow.letterhead", w.Name, "Letterhead removed.");
+            await _db.SaveChangesAsync(ct);
+        }
+        return Ok(new { letterhead = (object?)null });
     }
 
     /// <summary>Applies the "who can edit" and "who can submit" settings; returns an error message or null.</summary>

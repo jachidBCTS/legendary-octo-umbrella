@@ -4,7 +4,8 @@
     ViewData["Title"] = "Edit and resubmit";
 }
 <a class="back-link" href="/Requests/Detail/@Model.Run.Id"><partial name="_Icons" model='"back"' /> Back to the request</a>
-<div class="form-shell">
+<div class="form-shell@(Model.LetterheadUrl is null ? "" : " has-letterhead")">
+    @if (Model.LetterheadUrl is string letterhead) { <img class="letterhead" src="@letterhead" alt="@Model.Run.WorkflowName letterhead" /> }
     <header class="form-head">
         <div>
             <h1>@Model.Run.WorkflowName <span class="muted">#@Model.Run.Id</span></h1>

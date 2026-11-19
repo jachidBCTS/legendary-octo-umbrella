@@ -145,6 +145,30 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   DISTINCT Department; added **switched off** until an admin sets the final approver — owner's choice);
   Admin → Locations "Add the district's locations" (`StartingLocations.From`: the student-side names in
   `Students:Match:Locations`, number codes replaced by the staff name, e.g. 20 → "Academy").
+- **Read-only fields, districts, staff field (Nov 19, 2026):** `FieldDef.ReadOnly` (any answer-holding type
+  except calculated/perdiem; `IsReadOnly`, `[JsonIgnore]`): `FormEvaluator` **never uses the browser's value** —
+  it takes `locked` (answers already on the request: resubmit, revise evaluate, task re-do, student restore) or
+  else the field's `Default`; the checker warns if there is no default; never copied (`FormCopy`). Browser:
+  `lockField` (readOnly/disabled, "Filled in for you"), and the server's value is applied on every evaluation.
+  `Location.District` (migration `AddLocationDistrict`; Admin → Locations column; "Add the district's locations"
+  fills blanks from `IStaffDirectory.PlacesAsync` = DISTINCT DistrictShort/Location). Location and staff fields
+  may set `District` (fixed code) or `DistrictField` (another field: a district question — full names map to codes
+  via `Students:Match:Districts`, `SchoolCalendar.DistrictAliases` — or a location/staff answer). Checked on the
+  server (`PlaceDistricts`, `FormEvaluator.WantedDistrict`); `/api/locations` returns `district` + `districts`
+  aliases so `form-runtime.js` narrows the list. `FieldTypes.Staff`: browser sends an email; `StaffLookup.ForAsync`
+  (singleton, 2-min cache, also looks up the submitter so `default: submitter.email` works) gives `StaffDirectory`;
+  stored `{ email, name, title, location, department, district }` (several places joined with ", "); search
+  `/api/staff?q=&district=`. Allowed in tasks too.
+- **Categories (Nov 19, 2026):** `Categories` table (`WorkflowCategory`, Admin → Categories: add, rename — renames
+  every workflow's `Category` —, order, remove → "Other"). `Workflow.Category` stays a name. Filled once from
+  existing workflows on start (`Categories.EnsureFromWorkflows`). Builder Settings picks from the list; Home
+  orders groups by it.
+- **Letterhead (Nov 19, 2026):** `FormImages` (one per workflow, bytes in the database, migration
+  `AddCategoriesAndLetterheads`), admins upload in the builder's Settings tab (`POST/DELETE api/builder/{id}/letterhead`,
+  PNG/JPEG/GIF/WebP by magic bytes, 2 MB, **no SVG**), served by `/forms/{id}/letterhead?v=` (`LetterheadController`,
+  any signed-in person). Shown on Start, Revise, the builder preview and the Print page. Not versioned, not exported.
+- **Confirmations (Nov 19, 2026):** `SF.toast` is a large green/red bar at the top; `SF.toastAfterLoad` carries one
+  to the next page (submit, resubmit, task done). `.flash.ok/.bad` have an icon and stand out.
 - **Zip download**: `GET /files/run/{id}/zip` (`FilesController.Zip`, built in a temp file, names
   de-duplicated); shown on Detail when a request has 2+ files. Builder: `duplicateNode`, `undo()`
   with `remember()` before every structural change (30 snapshots of `state.def`).
@@ -432,7 +456,6 @@ Known gaps (not requested yet, worth raising):
 - The owner has Entra groups but did not have their IDs to hand; none are registered yet.
 - Reminders, escalation and the missed-ticket check run inside the web process: the IIS app pool
   must be AlwaysRunning (see the deploy guide) or they are late.
-- No staff picker field yet (the staff list is now connected; build one when asked).
 - Departments cannot be deleted (only switched off); chain templates in use by a workflow cannot
   be deleted.
 - The flow builder works on a phone but is cramped; fine on tablet/desktop.

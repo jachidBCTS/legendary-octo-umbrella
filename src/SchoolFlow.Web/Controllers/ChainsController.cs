@@ -44,8 +44,11 @@ public sealed class ChainsController : ControllerBase
     public async Task<IActionResult> Locations(CancellationToken ct)
     {
         var rows = await _db.Locations.AsNoTracking().Where(l => l.IsActive).OrderBy(l => l.Name)
-            .Select(l => new { id = l.Id, name = l.Name }).ToListAsync(ct);
-        return Ok(new { items = rows });
+            .Select(l => new { id = l.Id, name = l.Name, district = l.District ?? "" }).ToListAsync(ct);
+        // The names each district goes by, so a form's district question ("Bergen County Technical
+        // Schools") can narrow the list to the locations marked BCTS.
+        var aliases = SchoolCalendar.DistrictAliases(HttpContext.RequestServices.GetService<IConfiguration>());
+        return Ok(new { items = rows, districts = aliases });
     }
 
     private static object Shape(ApprovalChainTemplate c, bool canEdit) => new

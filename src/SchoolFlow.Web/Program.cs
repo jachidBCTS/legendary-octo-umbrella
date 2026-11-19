@@ -106,6 +106,7 @@ builder.Services.AddScoped<StudentScopeService>();
 builder.Services.AddSingleton<DomainPolicy>();
 builder.Services.AddScoped<AuditService>();
 builder.Services.AddScoped<SchoolCalendar>();
+builder.Services.AddSingleton<StaffLookup>();
 builder.Services.AddHostedService<FollowUpWorker>();
 
 // ---- GSA per diem rates (travel forms) --------------------------------------------------------
@@ -203,6 +204,7 @@ using (var scope = app.Services.CreateScope())
     // Once, after the update that shared definitions between runs: move older runs' own copies over.
     DefinitionStore.MoveLegacy(db, scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("SchoolFlow.Database"));
     SeedData.EnsureStarterWorkflows(db, sampleDepartments: app.Environment.IsDevelopment());
+    Categories.EnsureFromWorkflows(db);
 }
 
 app.UseForwardedHeaders();

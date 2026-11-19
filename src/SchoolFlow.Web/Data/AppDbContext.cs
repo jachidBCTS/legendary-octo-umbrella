@@ -225,6 +225,28 @@ public static class TaskKinds
 /// A named group of staff (for example "Business Office – Technical Schools") that workflow steps
 /// can name as [Team name] instead of listing people, so a change of staff is made in one place.
 /// </summary>
+/// <summary>A category forms are grouped under on the home page (Admin → Categories), in the order admins choose.</summary>
+public class WorkflowCategory
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+    public int SortOrder { get; set; }
+}
+
+/// <summary>
+/// A form's letterhead: an image shown at the top of the form and of its printout / PDF. One per workflow,
+/// kept in the database (small, and backed up with everything else). Like owners, it is not versioned.
+/// </summary>
+public class FormImage
+{
+    public int WorkflowId { get; set; }
+    public string ContentType { get; set; } = "";
+    public string FileName { get; set; } = "";
+    public byte[] Data { get; set; } = Array.Empty<byte>();
+    public DateTime UpdatedAt { get; set; }
+    public string UpdatedBy { get; set; } = "";
+}
+
 public class Team
 {
     public int Id { get; set; }
@@ -309,6 +331,9 @@ public class Location
     public string Name { get; set; } = "";
     /// <summary>The location's ID in Freshservice; null for one added by hand.</summary>
     public long? FreshserviceId { get; set; }
+    /// <summary>The district the location belongs to (its short code, e.g. BCTS); blank when not set.</summary>
+    [System.ComponentModel.DataAnnotations.MaxLength(40)]
+    public string? District { get; set; }
     public bool IsActive { get; set; } = true;
     public DateTime UpdatedAt { get; set; }
 }
@@ -469,6 +494,8 @@ public class AppDbContext : DbContext
     public DbSet<ClosedDay> ClosedDays => Set<ClosedDay>();
     public DbSet<Rate> Rates => Set<Rate>();
     public DbSet<Team> Teams => Set<Team>();
+    public DbSet<WorkflowCategory> Categories => Set<WorkflowCategory>();
+    public DbSet<FormImage> FormImages => Set<FormImage>();
     public DbSet<WorkflowVersion> WorkflowVersions => Set<WorkflowVersion>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 
@@ -570,6 +597,19 @@ public class AppDbContext : DbContext
         {
             e.Property(x => x.PublishedBy).HasMaxLength(320);
             e.HasIndex(x => new { x.WorkflowId, x.Version }).IsUnique();
+        });
+        b.Entity<WorkflowCategory>(e =>
+        {
+            e.Property(x => x.Name).HasMaxLength(100);
+            e.HasIndex(x => x.Name).IsUnique();
+        });
+        b.Entity<FormImage>(e =>
+        {
+            e.HasKey(x => x.WorkflowId);
+            e.Property(x => x.WorkflowId).ValueGeneratedNever();
+            e.Property(x => x.ContentType).HasMaxLength(40);
+            e.Property(x => x.FileName).HasMaxLength(200);
+            e.Property(x => x.UpdatedBy).HasMaxLength(320);
         });
         b.Entity<Team>(e =>
         {

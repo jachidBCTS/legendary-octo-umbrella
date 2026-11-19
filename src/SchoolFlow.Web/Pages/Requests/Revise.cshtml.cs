@@ -20,6 +20,7 @@ public class ReviseModel : PageModel
     public string ValuesJson { get; private set; } = "{}";
     /// <summary>How each answer reads now, so a field the requester changes can say "Was: …".</summary>
     public string PreviousJson { get; private set; } = "{}";
+    public string? LetterheadUrl { get; private set; }
 
     public async Task<IActionResult> OnGetAsync(int id)
     {
@@ -30,6 +31,7 @@ public class ReviseModel : PageModel
         if (run.Status != RunStatus.ChangesRequested) return Redirect($"/Requests/Detail/{id}");
 
         Run = run;
+        LetterheadUrl = await Letterhead.UrlAsync(_db, run.WorkflowId);
         Asked = await _db.ApprovalTasks.AsNoTracking().Where(t => t.RunId == id && t.Status == ApprovalStatus.Returned)
             .OrderByDescending(t => t.Id).FirstOrDefaultAsync();
         var form = Json.ParseDefinition(run.DefinitionJson).Form;

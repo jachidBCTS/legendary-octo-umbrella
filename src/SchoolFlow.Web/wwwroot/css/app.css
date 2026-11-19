@@ -131,7 +131,15 @@ body.has-sidebar { display: grid; grid-template-columns: 236px minmax(0, 1fr); m
 .panel { min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; margin-bottom: 18px; }
 .panel.table-wrap { padding: 4px 0; }
 .flash { border-radius: 10px; padding: 11px 14px; margin: 0 0 16px; border: 1px solid; }
-.flash.ok { background: var(--ok-soft); border-color: #b4e3ca; color: #0a5237; }
+.flash.ok { background: var(--ok-soft); border-color: #8fd3b0; color: #0a5237; }
+/* Messages after an action (saved, approved, sent back…) stand out: bigger, with a tick or a warning sign. */
+.flash.ok, .flash.bad { display: flex; align-items: center; gap: 12px; padding: 14px 16px; font-size: 15px; font-weight: 600; border-width: 1.5px; box-shadow: 0 4px 14px rgba(20, 24, 58, .08); animation: flash-in .35s ease-out; }
+.flash.ok::before, .flash.bad::before { flex: none; width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; color: #fff; }
+.flash.ok::before { content: "✓"; background: var(--ok); }
+.flash.bad::before { content: "!"; background: var(--bad); }
+@keyframes flash-in { from { transform: translateY(-6px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .flash.ok, .flash.bad { animation: none; } }
+html.a11y .flash.ok, html.a11y .flash.bad { animation: none; }
 .flash.bad { background: var(--bad-soft); border-color: #f4bcc4; color: #8f1626; }
 .flash.warn { background: var(--warn-soft); border-color: #f3dca8; color: #6b4000; }
 .callout { display: flex; gap: 14px; align-items: center; background: linear-gradient(100deg, #eef0ff, #f7f0ff); border: 1px solid #d9dcff; border-radius: var(--radius); padding: 14px 18px; margin-bottom: 8px; }
@@ -240,9 +248,14 @@ pre.code { background: #171b3a; color: #e4e7ff; padding: 14px 16px; border-radiu
 .choice small { color: var(--muted); font-size: 13px; }
 .login-card { max-width: 460px; margin: 8vh auto 0; }
 .login-card h1 { margin-bottom: 8px; }
-.toast { position: fixed; left: 50%; bottom: 26px; transform: translate(-50%, 30px); opacity: 0; pointer-events: none; background: #1b1f33; color: #fff; padding: 11px 18px; border-radius: 10px; box-shadow: var(--shadow-lg); z-index: 100; max-width: min(560px, calc(100vw - 32px)); transition: transform .2s, opacity .2s; }
-.toast.show { transform: translate(-50%, 0); opacity: 1; }
-.toast.bad { background: #a61e30; }
+.toast { position: fixed; left: 50%; top: 18px; transform: translate(-50%, -24px); opacity: 0; pointer-events: none; display: flex; align-items: center; gap: 12px;
+  background: #0d7a4c; color: #fff; padding: 14px 22px 14px 16px; border-radius: 12px; box-shadow: 0 14px 40px rgba(10, 60, 38, .35); z-index: 1300;
+  font-size: 15.5px; font-weight: 600; line-height: 1.4; max-width: min(620px, calc(100vw - 32px)); transition: transform .22s ease, opacity .22s ease; cursor: pointer; }
+.toast.show { transform: translate(-50%, 0); opacity: 1; pointer-events: auto; }
+.toast.bad { background: #b0202f; box-shadow: 0 14px 40px rgba(120, 16, 30, .35); }
+.toast-icon { flex: none; width: 28px; height: 28px; border-radius: 50%; background: rgba(255, 255, 255, .22); display: inline-flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 800; }
+@media (prefers-reduced-motion: reduce) { .toast { transition: opacity .01s; } }
+html.a11y .toast { transition: none; font-size: 17px; }
 
 /* ---- live form ---- */
 .form-shell { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); max-width: 780px; overflow: hidden; }
@@ -935,3 +948,27 @@ html.a11y .tip-text { font-size: 15px; }
 @media (prefers-reduced-motion: reduce) { .form-group > summary::after { transition: none; } }
 html.a11y .form-group > summary::after { transition: none; }
 .team-body .dept-form { margin-top: 14px; }
+
+/* ---- read-only fields: filled in by the form, not by the person ---- */
+.sf-readonly input, .sf-readonly select, .sf-readonly textarea { background: #f1f2f7 !important; color: var(--ink-2); cursor: not-allowed; }
+.sf-readonly .sf-label::after { content: "Filled in for you"; margin-left: 8px; font-size: 11px; font-weight: 600; color: var(--muted); background: #eceef4; border-radius: 999px; padding: 1px 7px; vertical-align: middle; white-space: nowrap; }
+.ws-input.sf-readonly input { background: #f1f2f7 !important; }
+
+/* ---- Admin → Categories ---- */
+.cat-list { padding: 4px 0; }
+.cat-row { display: flex; align-items: center; gap: 12px; padding: 9px 16px; border-bottom: 1px solid var(--line); }
+.cat-row:last-child { border-bottom: 0; }
+.cat-move { display: flex; gap: 2px; }
+.cat-move form, .cat-row > form { margin: 0; }
+.cat-count { white-space: nowrap; }
+@media (max-width: 640px) { .cat-row { flex-wrap: wrap; } .cat-row > .row.grow { flex: 1 1 100%; order: 3; } }
+
+/* ---- letterhead: an image across the top of a form and its printout ---- */
+.form-shell.has-letterhead { padding-top: 0; }
+.letterhead { display: block; width: auto; max-width: 100%; max-height: 170px; margin: 0 auto; padding: 18px 26px 6px; object-fit: contain; }
+.has-letterhead > .form-head { border-top-width: 2px; }
+.print-letterhead { padding: 0 0 12px; max-height: 150px; }
+.letterhead-preview { display: grid; gap: 6px; justify-items: start; margin: 8px 0 12px; }
+.letterhead-preview img { max-width: 100%; max-height: 120px; border: 1px solid var(--line); border-radius: 8px; padding: 6px; background: #fff; }
+@media print { .letterhead { max-height: 150px; padding: 0 0 10px; } }
+@media (max-width: 640px) { .letterhead { padding: 12px 14px 4px; max-height: 110px; } }

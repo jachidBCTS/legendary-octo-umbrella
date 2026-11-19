@@ -27,8 +27,9 @@ public sealed class RunService
 
     public RunService(AppDbContext db, IFreshserviceClient freshservice, NotificationService notifications, AttachmentService attachments,
         SchoolCalendar calendar, ILogger<RunService> log, DomainPolicy? domains = null, PerDiemService? perDiem = null,
-        IStudentRoster? roster = null, StudentScopeService? scope = null, DefinitionStore? definitions = null)
+        IStudentRoster? roster = null, StudentScopeService? scope = null, DefinitionStore? definitions = null, StaffLookup? staff = null)
     {
+        _staff = staff;
         _defs = definitions ?? new DefinitionStore();
         _scope = scope;
         _roster = roster;
@@ -43,7 +44,12 @@ public sealed class RunService
     }
 
     private readonly PerDiemService? _perDiem;
+    private readonly StaffLookup? _staff;
     private readonly IStudentRoster? _roster;
+
+    /// <summary>The staff list entries a form's staff fields name (null when there is no staff lookup, as in some tests).</summary>
+    private async Task<StaffDirectory?> StaffForAsync(IEnumerable<FieldDef> fields, IDictionary<string, object?> input, CancellationToken ct, params string?[] also) =>
+        _staff is null ? null : await _staff.ForAsync(fields, input, ct, also);
     private readonly StudentScopeService? _scope;
     private readonly DefinitionStore _defs;
 
@@ -89,7 +95,8 @@ public sealed class RunService
             attachments: await _attachments.PendingForAsync(email, workflow.Id, ct),
             closedDays: await _calendar.ClosedDaysAsync(ct),
             students: await new AccessService(_db, _roster).StudentsForAsync(def.Form, input, email, ct, _scope), allowedDomains: _domains,
-            perDiem: _perDiem is null ? null : await _perDiem.DirectoryForAsync(def.Form, input, ct));
+            perDiem: _perDiem is null ? null : await _perDiem.DirectoryForAsync(def.Form, input, ct),
+            staff: await StaffForAsync(def.Form.Fields, input, ct, email), places: await _calendar.PlacesAsync(ct));
         DistrictAddresses.Check(def, form, _domains);
         if (!form.IsValid) return (form, null);
 
@@ -204,7 +211,9 @@ public sealed class RunService
                      .Select(a => new { a.PublicId, a.FileName, a.Size }).ToListAsync(ct))
             usable.TryAdd(a.PublicId, new AttachmentInfo(a.PublicId, a.FileName, a.Size));
         var result = FormEvaluator.Evaluate(TaskForm(node), input, ambient, applyDefaults: applyDefaults,
-            attachments: usable, closedDays: await _calendar.ClosedDaysAsync(ct));
+            attachments: usable, closedDays: await _calendar.ClosedDaysAsync(ct),
+            staff: await StaffForAsync(TaskForm(node).Fields, input, ct, email, run.SubmitterEmail), places: await _calendar.PlacesAsync(ct),
+            locked: ambient);   // a task done again keeps its read-only answers
         DistrictAddresses.Check(Json.ParseDefinition(run.DefinitionJson), result, _domains);
         return result;
     }
@@ -590,7 +599,9 @@ public sealed class RunService
         var form = FormEvaluator.Evaluate(def.Form, input, ambient, departments: await ActiveDepartmentsAsync(ct), locations: await ActiveLocationsAsync(ct),
             attachments: await _attachments.UsableForRunAsync(email, run, ct), closedDays: await _calendar.ClosedDaysAsync(ct),
             students: await new AccessService(_db, _roster).StudentsForAsync(def.Form, input, email, ct, _scope), allowedDomains: _domains,
-            perDiem: _perDiem is null ? null : await _perDiem.DirectoryForAsync(def.Form, input, ct));
+            perDiem: _perDiem is null ? null : await _perDiem.DirectoryForAsync(def.Form, input, ct),
+            staff: await StaffForAsync(def.Form.Fields, input, ct, email), places: await _calendar.PlacesAsync(ct),
+            locked: Json.ToValues(run.ContextJson));   // read-only answers keep what the request was submitted with
         DistrictAddresses.Check(def, form, _domains);
         if (!form.IsValid) return (form, ActionResult.Fail("Please fix the highlighted fields."));
 

@@ -32,7 +32,10 @@ public class IndexModel : PageModel
         var live = (await _db.Workflows.AsNoTracking()
             .Where(w => w.PublishedJson != null && w.IsEnabled && w.TriggerType == TriggerTypes.Form)
             .OrderBy(w => w.Name).ToListAsync()).Where(w => AccessService.CanSubmit(User, w)).ToList();
-        Groups = live.GroupBy(w => w.Category).OrderBy(g => g.Key.Length == 0).ThenBy(g => g.Key).ToList();
+        // In the order set on Admin → Categories; anything not in that list after, then "Other".
+        var order = await Categories.NamesAsync(_db);
+        int Rank(string name) { var i = order.FindIndex(c => string.Equals(c, name, StringComparison.OrdinalIgnoreCase)); return i < 0 ? int.MaxValue : i; }
+        Groups = live.GroupBy(w => w.Category).OrderBy(g => g.Key.Length == 0).ThenBy(g => Rank(g.Key)).ThenBy(g => g.Key).ToList();
         Recent = await _db.Runs.AsNoTracking().Where(r => r.SubmitterEmail == email && email != "")
             .OrderByDescending(r => r.UpdatedAt).Take(6).Select(WorkflowRun.ListColumns).ToListAsync();
         Stops = await Journey.CurrentStopsAsync(_db, _calendar, Recent);

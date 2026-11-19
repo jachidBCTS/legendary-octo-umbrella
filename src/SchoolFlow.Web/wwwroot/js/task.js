@@ -16,6 +16,6 @@
     previousDisplay: JSON.parse((document.getElementById('task-previous') || {}).textContent || '{}'),
     evaluate: (values, init) => api('POST', '/api/tasks/' + taskId + '/evaluate', { values, init }),
     submit: (values) => api('POST', '/api/tasks/' + taskId + '/complete', { values }),
-    onSuccess: () => { window.location.reload(); },
+    onSuccess: () => { window.SF.toastAfterLoad('Task completed. The request has moved on.'); window.location.reload(); },
   });
 })();

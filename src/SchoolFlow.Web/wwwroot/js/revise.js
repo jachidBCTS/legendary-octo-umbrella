@@ -16,6 +16,6 @@
     previousDisplay: JSON.parse((document.getElementById('form-previous') || {}).textContent || '{}'),
     evaluate: (values, init) => api('POST', '/api/forms/evaluate', { runId, values, init }),
     submit: (values) => api('POST', '/api/forms/resubmit', { runId, values }),
-    onSuccess: () => { window.location.href = '/Requests/Detail/' + encodeURIComponent(runId); },
+    onSuccess: () => { window.SF.toastAfterLoad('Changes sent. The request is back with the approver.'); window.location.href = '/Requests/Detail/' + encodeURIComponent(runId); },
   });
 })();

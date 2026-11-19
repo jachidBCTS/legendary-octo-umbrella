@@ -1,0 +1,50 @@
+@page
+@model SchoolFlow.Web.Pages.Admin.CategoriesModel
+@{
+    ViewData["Title"] = "Categories";
+}
+<div class="page-head">
+    <div><h1>Categories</h1><p class="sub" data-tip>The groups forms appear under on the home page, in this order. Builders pick one in a workflow's Settings tab. Renaming a category renames it on every workflow that uses it.</p></div>
+</div>
+
+@if (Model.List.Count == 0) { <div class="empty small"><p>No categories yet. Add the first one below.</p></div> }
+else
+{
+    <div class="panel cat-list">
+        @for (var i = 0; i < Model.List.Count; i++)
+        {
+            var c = Model.List[i];
+            var used = Model.Counts.GetValueOrDefault(c.Name);
+            <div class="cat-row">
+                <div class="cat-move">
+                    <form method="post" asp-page-handler="Move"><input type="hidden" name="id" value="@c.Id" /><input type="hidden" name="by" value="-1" />
+                        <button class="icon-btn" aria-label="Move @c.Name up" title="Move up" disabled="@(i == 0)">↑</button></form>
+                    <form method="post" asp-page-handler="Move"><input type="hidden" name="id" value="@c.Id" /><input type="hidden" name="by" value="1" />
+                        <button class="icon-btn" aria-label="Move @c.Name down" title="Move down" disabled="@(i == Model.List.Count - 1)">↓</button></form>
+                </div>
+                <form method="post" asp-page-handler="Rename" class="row grow">
+                    <input type="hidden" name="id" value="@c.Id" />
+                    <input name="name" value="@c.Name" required maxlength="100" aria-label="Name of category @(i + 1)" />
+                    <button class="btn small">Rename</button>
+                </form>
+                <span class="muted small cat-count">@used workflow@(used == 1 ? "" : "s")</span>
+                <form method="post" asp-page-handler="Remove" data-confirm="@(used == 0 ? $"Remove “{c.Name}”?" : $"Remove “{c.Name}”? Its {used} workflow(s) will show under “Other” until you give them a category.")">
+                    <input type="hidden" name="id" value="@c.Id" /><button class="btn small ghost-danger">Remove</button></form>
+            </div>
+        }
+    </div>
+}
+
+@if (Model.Unlisted.Count > 0)
+{
+    <div class="flash warn">Used by workflows but not in the list: @string.Join(", ", Model.Unlisted). Add them below to choose where they appear.</div>
+}
+
+<section class="panel">
+    <h2>Add a category</h2>
+    <form method="post" asp-page-handler="Add" class="row wrap">
+        <input name="name" required maxlength="100" placeholder="e.g. Business Office" aria-label="Category name" list="unlisted-categories" />
+        <datalist id="unlisted-categories">@foreach (var u in Model.Unlisted) { <option value="@u"></option> }</datalist>
+        <button class="btn primary">Add category</button>
+    </form>
+</section>

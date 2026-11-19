@@ -197,6 +197,7 @@ public class IndexModel : PageModel
         // Unfinished drafts of a form that no longer exists cannot be completed.
         _db.FormDrafts.RemoveRange(_db.FormDrafts.Where(d => d.WorkflowId == id));
         _db.WorkflowVersions.RemoveRange(_db.WorkflowVersions.Where(v => v.WorkflowId == id));
+        _db.FormImages.RemoveRange(_db.FormImages.Where(i => i.WorkflowId == id));
         await _db.SaveChangesAsync();
         TempData["Flash"] = $"Deleted “{w.Name}”.";
         return RedirectToPage();

@@ -91,6 +91,12 @@ public static class Ui
             return string.Join(" · ", parts.Where(p => p.Length > 0));
         }
         if (type == FieldTypes.PerDiem && value is Dictionary<string, object?> perDiem) return PerDiemText(perDiem);
+        if (type == FieldTypes.Staff && value is Dictionary<string, object?> person)
+        {
+            string Part(string key) => Values.ToText(person.GetValueOrDefault(key)).Trim();
+            var parts = new[] { Part("name"), Part("email"), Part("title"), Part("location") };
+            return string.Join(" · ", parts.Where(p => p.Length > 0).Distinct());
+        }
         if (value is bool b) return b ? "Yes" : "No";
         if (value is decimal d)
         {

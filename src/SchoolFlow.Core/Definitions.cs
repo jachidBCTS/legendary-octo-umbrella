@@ -83,18 +83,20 @@ public static class FieldTypes
         /// <summary>GSA per diem rates for a destination ZIP code and travel dates, looked up by the server.</summary>
         PerDiem = "perdiem",
         /// <summary>Ends the current row: the next field starts on a new line (optionally under a thin line).</summary>
-        Break = "break";
+        Break = "break",
+        /// <summary>A member of staff picked from the district's staff list: { email, name, title, location, department, district }.</summary>
+        Staff = "staff";
 
     public static readonly string[] All =
     {
         Text, TextArea, Email, Number, Currency, Date, Select, Radio, MultiSelect, Checkbox, Lookup, Calculated, Table, Section,
-        Department, ApprovalChain, Location, Attachments, Time, Phone, Signature, Page, Worksheet, Student, PerDiem, Break,
+        Department, ApprovalChain, Location, Attachments, Time, Phone, Signature, Page, Worksheet, Student, PerDiem, Break, Staff,
     };
 
     /// <summary>Field types a Task step can ask its assignee for.</summary>
     public static readonly string[] InTask =
     {
-        Text, TextArea, Email, Number, Currency, Date, Time, Phone, Select, Radio, MultiSelect, Checkbox, Calculated, Attachments, Section,
+        Text, TextArea, Email, Number, Currency, Date, Time, Phone, Select, Radio, MultiSelect, Checkbox, Calculated, Attachments, Section, Staff,
     };
 
     /// <summary>Field types that can be placed inside a worksheet row.</summary>
@@ -151,6 +153,20 @@ public sealed class FieldDef
     public List<WorksheetRow>? Rows { get; set; }
     /// <summary>Per diem fields only: which fields of the form hold the destination ZIP code and the travel dates.</summary>
     public PerDiemSettings? PerDiem { get; set; }
+
+    /// <summary>
+    /// When true, the person filling in the form cannot change the answer: it is always the field's default
+    /// value (worked out by the server), and a request that is sent back keeps the value it was submitted with.
+    /// </summary>
+    public bool? ReadOnly { get; set; }
+    /// <summary>Location and staff fields: only offer those in this district (e.g. "BCTS").</summary>
+    public string? District { get; set; }
+    /// <summary>Location and staff fields: only offer those in the district chosen in this other field of the form.</summary>
+    public string? DistrictField { get; set; }
+
+    /// <summary>Whether the person filling in the form is kept from changing the answer.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsReadOnly => ReadOnly == true && !FieldTypes.IsLayout(Type) && Type != FieldTypes.Calculated && Type != FieldTypes.PerDiem;
 }
 
 /// <summary>The fields a per diem field reads: the destination ZIP code, and the first and last day of travel.</summary>
@@ -200,6 +216,41 @@ public sealed record StudentInfo(string Id, string FirstName, string LastName, s
 public sealed record StudentDirectory(bool Allowed, IReadOnlyDictionary<string, StudentInfo> Known);
 
 public sealed record AttachmentInfo(string Id, string Name, long Size);
+
+/// <summary>A member of staff from the district's staff list.</summary>
+public sealed record StaffInfo(string Email, string Name, string Title, string Location, string Department, string District);
+
+/// <summary>
+/// The staff list entries for the addresses a form's staff fields mention (looked up by the server).
+/// <paramref name="Connected"/> is false when the site has no staff list, so nobody can be picked.
+/// </summary>
+public sealed record StaffDirectory(bool Connected, IReadOnlyDictionary<string, StaffInfo> Known);
+
+/// <summary>
+/// Which district each location is in, and the names a district goes by (its short code, and the full name
+/// a form's district question may use), so "Bergen County Technical Schools" and "BCTS" are the same district.
+/// </summary>
+public sealed class PlaceDistricts
+{
+    public PlaceDistricts(IReadOnlyDictionary<long, string> locationDistricts, IReadOnlyDictionary<string, string>? aliases = null)
+    {
+        LocationDistricts = locationDistricts;
+        Aliases = new Dictionary<string, string>(aliases ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
+    }
+
+    public IReadOnlyDictionary<long, string> LocationDistricts { get; }
+    /// <summary>Any name for a district (code or full name) → its code.</summary>
+    public IReadOnlyDictionary<string, string> Aliases { get; }
+
+    /// <summary>The district code a piece of text names ("Bergen County Technical Schools" → "BCTS"); the text itself when unknown.</summary>
+    public string CodeOf(string? text)
+    {
+        var t = (text ?? "").Trim();
+        return Aliases.TryGetValue(t, out var code) ? code : t;
+    }
+
+    public bool Same(string? a, string? b) => string.Equals(CodeOf(a), CodeOf(b), StringComparison.OrdinalIgnoreCase);
+}
 
 public sealed class RuleDef
 {

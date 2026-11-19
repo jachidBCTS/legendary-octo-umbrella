@@ -76,16 +76,25 @@
   }
 
   let toastTimer = null;
+  // A confirmation that is hard to miss: a coloured bar at the top of the screen with a tick (or a cross),
+  // for a few seconds. "kind" is ok (default) or bad.
   function toast(message, kind) {
     let el = document.getElementById('toast');
     if (!el) {
       el = h('div', { id: 'toast', role: 'status', 'aria-live': 'polite' });
+      el.addEventListener('click', () => { el.className = 'toast'; });
       document.body.appendChild(el);
     }
-    el.textContent = message;
+    const bad = kind === 'bad';
+    el.replaceChildren(h('span', { class: 'toast-icon', 'aria-hidden': 'true' }, bad ? '!' : '✓'), h('span', { class: 'toast-text' }, message));
     el.className = 'toast show ' + (kind || 'ok');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { el.className = 'toast'; }, kind === 'bad' ? 7000 : 3200);
+    toastTimer = setTimeout(() => { el.className = 'toast'; }, bad ? 8000 : 4500);
+  }
+
+  // A confirmation for the page we are about to go to (e.g. "Request submitted" shown on the request).
+  function toastAfterLoad(message, kind) {
+    try { sessionStorage.setItem('sf_toast', JSON.stringify({ message, kind: kind || 'ok' })); } catch (e) { /* storage blocked */ }
   }
 
   // ---- staff email suggestions ---------------------------------------------------------
@@ -327,7 +336,12 @@
     });
   }
 
-  window.SF = { api, h, debounce, toast, tip, tipify };
+  window.SF = { api, h, debounce, toast, toastAfterLoad, tip, tipify };
+  try {
+    const pending = JSON.parse(sessionStorage.getItem('sf_toast') || 'null');
+    sessionStorage.removeItem('sf_toast');
+    if (pending && pending.message) setTimeout(() => toast(pending.message, pending.kind), 150);
+  } catch (e) { /* storage blocked */ }
   tipify(document);
   // Screens built by scripts (the builder, forms, tasks) get the same treatment as they are drawn. The
   // observer runs before the browser paints, so the help never flashes up as a paragraph first.

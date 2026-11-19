@@ -1468,6 +1468,110 @@ async function login(page, email) {
   check(await page.locator('details.nav-group[data-nav-group="admin"]').evaluate((d) => d.open), 'the menu holding the current page is always open');
   await page.screenshot({ path: S + '/shots/64-sidebar.png' });
 
+  note('13v. districts on locations, staff field, read-only fields, categories, letterhead, confirmations');
+  await login(page, 'admin@example.org');
+  await page.goto(base + '/Admin/Locations');
+  await page.click('button:has-text("Add the district\'s locations")');
+  await page.waitForSelector('.flash.ok');
+  const districtOf = async (name) => page.locator(`tr:has(input[value="${name}"]) select[name=district]`).inputValue();
+  check(await districtOf('Academy') === 'BCTS' && await districtOf('N. A. Bleshman Regional Day School') === 'BCSS' && await districtOf('Venture Program') === 'BCSS',
+    'the district\'s locations are added with their district from the staff list');
+  await page.goto(base + '/Admin/Categories');
+  check(await page.locator('.cat-row').count() >= 4, 'categories already used by workflows start the list (' + await page.locator('.cat-row').count() + ')');
+  await page.fill('input[aria-label="Category name"]', 'Business Office');
+  await page.click('button:has-text("Add category")');
+  await page.waitForSelector('.flash.ok');
+  await page.locator('.cat-row:has(input[value="Business Office"]) button[title="Move up"]').click();
+  await page.waitForLoadState();
+  const catNames = await page.locator('.cat-row input[name=name]').evaluateAll((els) => els.map((e) => e.value));
+  check(catNames.indexOf('Business Office') === catNames.length - 2, 'a category can be moved up the list');
+  await page.goto(base + '/Builder');
+  await page.click('[data-open-dialog]');
+  await page.fill('#new-name', 'District demo');
+  await page.click('dialog button.primary');
+  await page.waitForSelector('.bld-palette');
+  const demoId = Number(page.url().split('/').pop());
+  const demoDef = {
+    trigger: { type: 'form' },
+    form: { fields: [
+      { key: 'request_date', label: 'Date of request', type: 'date', default: 'TODAY()', readOnly: true, width: 'half' },
+      { key: 'district', label: 'District', type: 'radio', options: ['Bergen County Technical Schools', 'Bergen County Special Services'], required: true },
+      { key: 'where', label: 'Where', type: 'location', districtField: 'district', required: true },
+      { key: 'supervisor', label: 'Supervisor', type: 'staff', district: 'BCTS' },
+      { key: 'asked_by', label: 'Asked by', type: 'staff', default: 'submitter.email', readOnly: true },
+    ] },
+    flow: { nodes: [{ id: 'start', type: 'start', label: 'Form submitted', x: 0, y: 0, config: {} }, { id: 'done', type: 'end', label: 'Done', x: 0, y: 120, config: {} }],
+      edges: [{ from: 'start', to: 'done', port: 'next' }] },
+  };
+  const demoSaved = await page.evaluate(async ([id, definition]) => {
+    const w = await window.SF.api('GET', '/api/builder/' + id);
+    const body = { name: w.name, description: '', category: 'Business Office', color: w.color, definition };
+    await window.SF.api('PUT', '/api/builder/' + id, body);
+    try { await window.SF.api('POST', '/api/builder/' + id + '/publish', body); return 'ok'; } catch (e) { return e.message; }
+  }, [demoId, demoDef]);
+  check(demoSaved === 'ok', 'a form with district, staff and read-only fields publishes (' + demoSaved + ')');
+  // Letterhead: a tiny PNG uploaded through the builder's endpoint.
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==';
+  const uploaded = await page.evaluate(async ([id, b64]) => {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const data = new FormData();
+    data.append('file', new Blob([bytes], { type: 'image/png' }), 'letterhead.png');
+    const r = await fetch('/api/builder/' + id + '/letterhead', { method: 'POST', body: data, headers: { RequestVerificationToken: document.querySelector('meta[name="csrf-token"]').content } });
+    const svg = new FormData();
+    svg.append('file', new Blob(['<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'], { type: 'image/svg+xml' }), 'x.svg');
+    const bad = await fetch('/api/builder/' + id + '/letterhead', { method: 'POST', body: svg, headers: { RequestVerificationToken: document.querySelector('meta[name="csrf-token"]').content } });
+    return [r.status, bad.status];
+  }, [demoId, png]);
+  check(uploaded[0] === 200 && uploaded[1] === 400, 'a letterhead image can be uploaded, an SVG cannot (' + uploaded + ')');
+  await page.reload();
+  await page.waitForSelector('.bld-tabs');
+  await page.click('.bld-tabs button:has-text("Settings")');
+  check(await page.locator('.letterhead-preview img').count() === 1 && await page.locator('.bld-settings select').first().inputValue() === 'Business Office',
+    'the builder shows the letterhead and picks the category from the list');
+  await page.screenshot({ path: S + '/shots/66-builder-letterhead.png', fullPage: true });
+
+  await login(page, 'teacher@example.org');
+  await page.goto(base + '/Start/' + demoId);
+  await page.waitForSelector('.sf-form');
+  check(await page.locator('img.letterhead').count() === 1, 'the letterhead is at the top of the form');
+  const dateBox = page.locator('.sf-field:has-text("Date of request") input[type=date]');
+  check(await dateBox.evaluate((e) => e.readOnly) && /\d{4}-\d{2}-\d{2}/.test(await dateBox.inputValue()), 'a read-only date shows today and cannot be typed in');
+  await page.waitForFunction(() => /Taylor Teacher/.test(document.querySelector('.sf-field.sf-readonly .sf-typeahead input')?.value || ''), null, { timeout: 5000 }).catch(() => {});
+  check(/Taylor Teacher/.test(await page.locator('.sf-readonly .sf-typeahead input').inputValue()), 'a read-only staff field defaults to the person filling in the form');
+  await page.check('input[type=radio][value="Bergen County Special Services"]');
+  await page.waitForFunction(() => { const o = [...document.querySelectorAll('.sf-field select option')].map((x) => x.textContent); return o.includes('Venture Program') && !o.includes('Academy'); }, null, { timeout: 5000 }).catch(() => {});
+  const offered = await page.locator('.sf-field:has-text("Where") select option').allTextContents();
+  check(offered.includes('N. A. Bleshman Regional Day School') && !offered.includes('Academy'), 'locations follow the district chosen on the form (' + offered.join(', ') + ')');
+  await page.check('input[type=radio][value="Bergen County Technical Schools"]');
+  await page.waitForFunction(() => { const o = [...document.querySelectorAll('.sf-field select option')].map((x) => x.textContent); return o.includes('Academy') && !o.includes('Venture Program'); }, null, { timeout: 5000 }).catch(() => {});
+  check(!(await page.locator('.sf-field:has-text("Where") select option').allTextContents()).includes('Venture Program'), 'changing the district changes the locations offered');
+  await page.locator('.sf-field:has-text("Where") select').selectOption({ label: 'Academy' });
+  const supervisor = page.locator('.sf-field:has-text("Supervisor") .sf-typeahead input');
+  await supervisor.pressSequentially('Bailey', { delay: 30 });
+  await page.waitForSelector('.sf-suggest:not([hidden])');
+  check((await page.locator('.sf-suggest').first().textContent()).includes('No matches in'), 'staff from another district are not offered');
+  await supervisor.fill('');
+  await supervisor.pressSequentially('Pat', { delay: 30 });
+  await page.waitForSelector('.sf-suggest-item:has-text("Pat Principal")');
+  await page.click('.sf-suggest-item:has-text("Pat Principal")');
+  // The browser tries to change the read-only date; the server ignores it.
+  await page.evaluate(() => { const i = document.querySelector('.sf-readonly input[type=date]'); i.value = '2001-01-01'; i.dispatchEvent(new Event('input', { bubbles: true })); });
+  await page.screenshot({ path: S + '/shots/67-district-staff-readonly.png', fullPage: true });
+  await page.click('.sf-form button[type=submit]');
+  await page.waitForSelector('#toast.show');
+  check((await page.locator('#toast').textContent()).includes('submitted'), 'a clear "submitted" confirmation shows on the request page');
+  const toastBox = await page.locator('#toast').boundingBox();
+  check(toastBox && toastBox.y < 80 && toastBox.height >= 44, 'the confirmation is a large bar at the top of the screen');
+  await page.screenshot({ path: S + '/shots/68-submitted.png' });
+  const answers = await page.locator('.answers').textContent();
+  check(answers.includes('Pat Principal') && answers.includes('Academy') && !answers.includes('2001'), 'the request keeps the server\'s date and the staff and location answers');
+  await page.goto(page.url().replace('/Detail/', '/Print/'));
+  check(await page.locator('img.print-letterhead').count() === 1, 'the printout carries the letterhead');
+  await page.screenshot({ path: S + '/shots/69-print-letterhead.png', fullPage: true });
+  await page.goto(base + '/');
+  const groups = await page.locator('details.form-group .form-group-name').allTextContents();
+  check(groups.indexOf('Business Office') >= 0 && groups.indexOf('Business Office') < groups.indexOf('Trips'), 'Home follows the category order (' + groups.join(', ') + ')');
+
   note('14. admin + help + mobile');
   await login(page, 'admin@example.org');
   await page.goto(base + '/Admin/Settings');

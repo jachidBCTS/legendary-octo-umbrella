@@ -26,6 +26,74 @@ public interface IStaffDirectory
     Task<string> TestAsync(CancellationToken ct);
     /// <summary>The distinct, non-blank departments on the staff list (for Admin → Departments' starting list).</summary>
     Task<IReadOnlyList<string>> DepartmentsAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+    /// <summary>The distinct (district, location) pairs on the staff list: which district each staff location is in.</summary>
+    Task<IReadOnlyList<(string District, string Location)>> PlacesAsync(CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<(string, string)>>(Array.Empty<(string, string)>());
+}
+
+/// <summary>
+/// Looks up the people a form's Staff fields name, before the form is checked (so the form check itself
+/// stays free of database calls). A person working at several places is one entry, with every location
+/// and district listed. Lookups are remembered for two minutes.
+/// </summary>
+public sealed class StaffLookup
+{
+    private readonly IStaffDirectory _staff;
+    private readonly IMemoryCache _cache;
+    private readonly ILogger<StaffLookup> _log;
+
+    public StaffLookup(IStaffDirectory staff, IMemoryCache cache, ILogger<StaffLookup> log)
+    {
+        _staff = staff;
+        _cache = cache;
+        _log = log;
+    }
+
+    public bool IsConfigured => _staff.IsConfigured;
+
+    /// <summary>The staff entries the form's staff fields name in these answers (null when the form has no staff field).</summary>
+    /// <param name="also">Addresses a default value may give (the person filling in the form, the requester), looked up too.</param>
+    public async Task<SchoolFlow.Core.StaffDirectory?> ForAsync(IEnumerable<SchoolFlow.Core.FieldDef> fields, IDictionary<string, object?> input, CancellationToken ct,
+        params string?[] also)
+    {
+        var keys = fields.Where(f => f.Type == SchoolFlow.Core.FieldTypes.Staff && !string.IsNullOrWhiteSpace(f.Key)).Select(f => f.Key).ToList();
+        if (keys.Count == 0) return null;
+        var known = new Dictionary<string, SchoolFlow.Core.StaffInfo>(StringComparer.OrdinalIgnoreCase);
+        if (!_staff.IsConfigured) return new SchoolFlow.Core.StaffDirectory(false, known);
+        var emails = keys.Select(k => input.FirstOrDefault(kv => string.Equals(kv.Key, k, StringComparison.OrdinalIgnoreCase)).Value)
+            .Select(SchoolFlow.Core.Forms.FormEvaluator.StaffEmailOf)
+            .Concat(also.Select(a => (a ?? "").Trim().ToLowerInvariant()))
+            .Where(e => e.Length is > 3 and <= 320).Distinct().Take(20);
+        foreach (var email in emails)
+            if (await FindAsync(email, ct) is { } info) known[email] = info;
+        return new SchoolFlow.Core.StaffDirectory(true, known);
+    }
+
+    public async Task<SchoolFlow.Core.StaffInfo?> FindAsync(string email, CancellationToken ct)
+    {
+        email = email.Trim().ToLowerInvariant();
+        if (_cache.TryGetValue("staff:" + email, out SchoolFlow.Core.StaffInfo? hit)) return hit;
+        IReadOnlyList<StaffMember> rows;
+        try { rows = await _staff.FindByEmailAsync(email, ct); }
+        catch (Exception ex) when (ex is SqlException or InvalidOperationException)
+        {
+            _log.LogWarning(ex, "Could not read the staff list for a staff field");
+            return null;   // not cached: try again next time
+        }
+        var info = Merge(rows);
+        _cache.Set("staff:" + email, info, TimeSpan.FromMinutes(2));
+        return info;
+    }
+
+    /// <summary>One person from their staff rows (one row per place they work).</summary>
+    public static SchoolFlow.Core.StaffInfo? Merge(IReadOnlyList<StaffMember> rows)
+    {
+        if (rows.Count == 0) return null;
+        static string Join(IEnumerable<string> parts) => string.Join(", ", parts.Where(p => !string.IsNullOrWhiteSpace(p)).Distinct(StringComparer.OrdinalIgnoreCase));
+        var first = rows[0];
+        return new SchoolFlow.Core.StaffInfo(first.Email, first.Name, Join(rows.Select(r => r.Title)), Join(rows.Select(r => r.Location)),
+            Join(rows.Select(r => r.Department)), Join(rows.Select(r => r.District)));
+    }
 }
 
 /// <summary>
@@ -123,6 +191,21 @@ public sealed class SqlServerStaffDirectory : IStaffDirectory
         return list;
     }
 
+    public async Task<IReadOnlyList<(string District, string Location)>> PlacesAsync(CancellationToken ct)
+    {
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(ct);
+        await using var command = connection.CreateCommand();
+        string Col(string part) => $"LTRIM(RTRIM(CAST({_col[part]} AS nvarchar(200))))";
+        command.CommandText = $"SELECT DISTINCT TOP (2000) {Col("District")}, {Col("Location")} FROM {_view} WHERE {_col["Location"]} IS NOT NULL";
+        command.CommandTimeout = 15;
+        var list = new List<(string, string)>();
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            list.Add((reader.IsDBNull(0) ? "" : reader.GetString(0), reader.IsDBNull(1) ? "" : reader.GetString(1)));
+        return list;
+    }
+
     private static async Task<IReadOnlyList<StaffMember>> ReadAsync(SqlCommand command, CancellationToken ct)
     {
         var list = new List<StaffMember>();
@@ -158,6 +241,12 @@ public sealed class SampleStaffDirectory : IStaffDirectory
 
     public Task<IReadOnlyList<string>> DepartmentsAsync(CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<string>>(Staff.Select(s => s.Department).Distinct().OrderBy(d => d).ToList());
+
+    // The example people's places, plus a few of the district's real staff locations (they match the
+    // example location matches in appsettings.Development.json).
+    public Task<IReadOnlyList<(string District, string Location)>> PlacesAsync(CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<(string, string)>>(Staff.Select(s => (s.District, s.Location))
+            .Concat(new[] { ("BCSS", "BLESHMAN"), ("BCTS", "ACADEMY"), ("BCSS", "VENTURE") }).Distinct().ToList());
 }
 
 public sealed class NoStaffDirectory : IStaffDirectory

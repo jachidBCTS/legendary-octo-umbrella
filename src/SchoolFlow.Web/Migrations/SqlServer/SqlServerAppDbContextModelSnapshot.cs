@@ -484,6 +484,38 @@ namespace SchoolFlow.Web.Migrations.SqlServer
                     b.ToTable("FormDrafts");
                 });
 
+            modelBuilder.Entity("SchoolFlow.Web.Data.FormImage", b =>
+                {
+                    b.Property<int>("WorkflowId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<byte[]>("Data")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.HasKey("WorkflowId");
+
+                    b.ToTable("FormImages");
+                });
+
             modelBuilder.Entity("SchoolFlow.Web.Data.Location", b =>
                 {
                     b.Property<int>("Id")
@@ -491,6 +523,10 @@ namespace SchoolFlow.Web.Migrations.SqlServer
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("District")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
 
                     b.Property<long?>("FreshserviceId")
                         .HasColumnType("bigint");
@@ -839,6 +875,30 @@ namespace SchoolFlow.Web.Migrations.SqlServer
                     b.HasKey("Id");
 
                     b.ToTable("Workflows");
+                });
+
+            modelBuilder.Entity("SchoolFlow.Web.Data.WorkflowCategory", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("Categories");
                 });
 
             modelBuilder.Entity("SchoolFlow.Web.Data.WorkflowRun", b =>

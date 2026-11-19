@@ -223,10 +223,43 @@ public sealed class SchoolCalendar
     private readonly AppDbContext _db;
     private readonly IMemoryCache _cache;
 
-    public SchoolCalendar(AppDbContext db, IMemoryCache cache)
+    private readonly IConfiguration? _config;
+
+    public SchoolCalendar(AppDbContext db, IMemoryCache cache, IConfiguration? config = null)
     {
         _db = db;
         _cache = cache;
+        _config = config;
+    }
+
+    /// <summary>
+    /// Which district each active location is in, and the names districts go by: each code, and the full
+    /// name the settings file matches it to (<c>Students:Match:Districts</c>, e.g. BCTS → "Bergen County
+    /// Technical Schools"), so a form's district question can use either.
+    /// </summary>
+    public async Task<PlaceDistricts> PlacesAsync(CancellationToken ct = default)
+    {
+        var districts = (await _cache.GetOrCreateAsync("location-districts", async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(30);
+            return (await _db.Locations.AsNoTracking().Where(l => l.IsActive && l.District != null && l.District != "")
+                .Select(l => new { l.Id, l.District }).ToListAsync(ct)).ToDictionary(l => (long)l.Id, l => l.District!);
+        }))!;
+        return new PlaceDistricts(districts, DistrictAliases(_config));
+    }
+
+    /// <summary>Full name → code, and code → code, from the settings file's district matches.</summary>
+    public static Dictionary<string, string> DistrictAliases(IConfiguration? config)
+    {
+        var aliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var match in config?.GetSection("Students:Match:Districts").GetChildren() ?? Enumerable.Empty<IConfigurationSection>())
+        {
+            var code = match.Key.Trim();
+            if (code.Length == 0) continue;
+            aliases[code] = code;
+            if (!string.IsNullOrWhiteSpace(match.Value)) aliases[match.Value.Trim()] = code;
+        }
+        return aliases;
     }
 
     public async Task<IReadOnlySet<DateTime>> ClosedDaysAsync(CancellationToken ct = default) =>
@@ -281,6 +314,7 @@ public sealed class SchoolCalendar
     {
         _cache.Remove("departments");
         _cache.Remove("locations");
+        _cache.Remove("location-districts");
     }
 
     /// <summary>School days that have passed going from one moment to another (the starting day is not counted).</summary>

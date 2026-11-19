@@ -4,7 +4,8 @@
     ViewData["Title"] = Model.Workflow.Name;
 }
 <a class="back-link" href="/"><partial name="_Icons" model='"back"' /> All forms</a>
-<div class="form-shell tone-@Model.Workflow.Color">
+<div class="form-shell tone-@Model.Workflow.Color@(Model.LetterheadUrl is null ? "" : " has-letterhead")">
+    @if (Model.LetterheadUrl is string letterhead) { <img class="letterhead" src="@letterhead" alt="@Model.Workflow.Name letterhead" /> }
     <header class="form-head">
         <span class="wf-dot big"><partial name="_Icons" model="Ui.WorkflowIcon(Model.Workflow.Name, Model.Workflow.Category)" /></span>
         <div>

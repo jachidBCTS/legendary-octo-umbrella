@@ -24,6 +24,7 @@
     { type: 'phone', label: 'Phone number', hint: 'Checked for digits' },
     { type: 'lookup', label: 'Freshservice lookup', hint: 'Device, location…' },
     { type: 'student', label: 'Student', hint: 'Needs student access' },
+    { type: 'staff', label: 'Staff member', hint: 'Pick someone from the staff list' },
     { type: 'perdiem', label: 'GSA per diem rates', hint: 'Meals and hotel limit by ZIP' },
     { type: 'department', label: 'Department', hint: 'Sets the final approver' },
     { type: 'approval_chain', label: 'Approval chain', hint: 'Requester picks approvers' },
@@ -41,7 +42,7 @@
   const FIELD_GROUPS = [
     { name: 'Basic answers', types: ['text', 'textarea', 'number', 'currency', 'date', 'time', 'email', 'phone'] },
     { name: 'Choices', types: ['select', 'radio', 'multiselect', 'checkbox'] },
-    { name: 'School information', types: ['department', 'location', 'student', 'approval_chain', 'lookup'] },
+    { name: 'School information', types: ['department', 'location', 'staff', 'student', 'approval_chain', 'lookup'] },
     { name: 'Calculations and tables', types: ['calculated', 'table', 'worksheet', 'perdiem'] },
     { name: 'Files and signing', types: ['attachments', 'signature'] },
     { name: 'Layout', types: ['section', 'break', 'page'] },
@@ -71,7 +72,7 @@
   // Matches FieldTypes.InTask on the server.
   const TASK_FIELD_TYPES = [['text', 'Text'], ['textarea', 'Paragraph'], ['email', 'Email'], ['phone', 'Phone number'], ['number', 'Number'], ['currency', 'Currency'],
     ['date', 'Date'], ['time', 'Time'], ['select', 'Dropdown'], ['radio', 'Choice buttons'], ['multiselect', 'Checkboxes'], ['checkbox', 'Yes / no'],
-    ['attachments', 'Attachments'], ['calculated', 'Calculated'], ['section', 'Section heading']];
+    ['attachments', 'Attachments'], ['calculated', 'Calculated'], ['staff', 'Staff member'], ['section', 'Section heading']];
   NODE_INFO.start = { type: 'start', label: 'Start', hint: '', tone: 'indigo' };
   const APPROVAL_PORTS = [['approved', 'Approved'], ['rejected', 'Rejected']];
   const PORTS = { condition: [['true', 'Yes'], ['false', 'No']], approval: APPROVAL_PORTS, approval_chain: APPROVAL_PORTS, end: [] };
@@ -148,6 +149,8 @@
   async function load() {
     try {
       const data = await api('GET', '/api/builder/' + workflowId);
+      state.categories = data.categories || [];
+      state.letterhead = data.letterhead || null;
       state.meta = { name: data.name, description: data.description || '', category: data.category || '', color: data.color || 'indigo',
         owners: data.owners || [], audienceGroups: data.audienceGroups || [] };
       state.groups = data.groups || [];
@@ -564,6 +567,8 @@
     if (f.requiredWhen) badges.push(['Required when…', 'bad']);
     if (f.visibleWhen) badges.push(['Shown when…', 'info']);
     if (f.type === 'calculated') badges.push(['ƒx', 'ok']);
+    if (f.readOnly) badges.push(['Read only', 'muted']);
+    if (f.district || f.districtField) badges.push([f.district ? f.district + ' only' : 'By district', 'info']);
     if (f.rules && f.rules.length) badges.push([f.rules.length + ' rule' + (f.rules.length === 1 ? '' : 's'), 'warn']);
     if (f.noCopy && state.def.form.allowCopy) badges.push(['Not copied', 'muted']);
     return badges.map(([text, tone]) => h('span', { class: 'pill tiny ' + tone }, text));
@@ -704,6 +709,27 @@
     }
   }
 
+  /** Location and staff fields: offer everything, one district, or the district chosen in another field. */
+  function renderDistrictSetting(panel, field, refresh) {
+    const mode = field.districtField ? 'field' : field.district ? 'fixed' : '';
+    const sources = state.def.form.fields.filter((f) => f.key && f !== field
+      && ['select', 'radio', 'text', 'location', 'staff'].includes(f.type)).map((f) => [f.key, (f.label || f.key) + ' (' + f.key + ')']);
+    const noun = field.type === 'staff' ? 'people' : 'locations';
+    panel.append(h('h4', { class: 'b-section' }, 'Which ' + noun),
+      row('Offer', select(mode, [['', 'All ' + noun], ['fixed', 'Only one district'], ['field', 'The district chosen in another field']], (v) => {
+        if (v === 'fixed') { delete field.districtField; field.district = field.district || 'BCTS'; }
+        else if (v === 'field') { delete field.district; field.districtField = field.districtField || (sources[0] ? sources[0][0] : ''); }
+        else { delete field.district; delete field.districtField; }
+        refresh(); renderAll();
+      })));
+    if (mode === 'fixed')
+      panel.append(row('District', textInput(field.district, (v) => { field.district = v.trim(); refresh(); }, { placeholder: 'e.g. BCTS', maxlength: 40 }),
+        field.type === 'staff' ? 'As on the staff list (DistrictShort), e.g. BCTS or BCSS.' : 'As set for each location on Admin → Locations, e.g. BCTS or BCSS.'));
+    if (mode === 'field')
+      panel.append(row('District comes from', select(field.districtField || '', [['', 'Choose a field…']].concat(sources), (v) => { field.districtField = clean(v); refresh(); }),
+        'Usually a district question, such as choice buttons with "Bergen County Technical Schools" and "Bergen County Special Services" — the full names and the short codes (BCTS, BCSS) both work. It can also be a location or staff field: then its district is used.'));
+  }
+
   function renderFieldInspector(panel, field) {
     const refresh = () => renderFieldList();
     const info = FIELD_TYPES.find((t) => t.type === field.type) || { label: field.type };
@@ -810,8 +836,18 @@
     if (field.type === 'table') renderColumnsEditor(panel, field);
 
     if (!isSection && !isCalc && !['table', 'lookup', 'department', 'approval_chain', 'location', 'attachments', 'perdiem'].includes(field.type))
-      panel.append(row('Default value (formula)', formulaInput(field.default, (v) => { field.default = clean(v); }, { placeholder: field.type === 'date' ? 'TODAY()' : 'e.g. submitter.email' }),
-        'Worked out once when the form opens. Put plain text in quotes.'));
+      panel.append(row('Default value (formula)', formulaInput(field.default, (v) => { field.default = clean(v); refresh(); }, { placeholder: field.type === 'date' ? 'TODAY()' : field.type === 'staff' ? 'submitter.email' : 'e.g. submitter.email' }),
+        'Worked out once when the form opens. Put plain text in quotes.' + (field.type === 'staff' ? ' For the person filling in the form, use submitter.email.' : '')));
+
+    if (field.type === 'location' || field.type === 'staff') renderDistrictSetting(panel, field, refresh);
+
+    if (!isSection && !isCalc && field.type !== 'perdiem') {
+      panel.append(toggle('Read only — people cannot change it', field.readOnly === true, (v) => { if (v) field.readOnly = true; else delete field.readOnly; refresh(); renderAll(); }));
+      if (field.readOnly)
+        panel.append(h('p', { class: 'b-help' }, field.default
+          ? 'Shown greyed out with its default value. The server fills it in, so it cannot be changed in the browser, and a request sent back for changes keeps the value it was first submitted with.'
+          : 'Give it a default value above (for example TODAY() for the date of the request), or it will always be blank.'));
+    }
 
     // ---- logic ----
     if (isPage) return;
@@ -1474,6 +1510,8 @@
             box.append(row('Show only when', formulaInput(f.visibleWhen, (v) => { f.visibleWhen = clean(v); }, { context: 'flow', placeholder: 'Always shown' })));
             if (!['calculated', 'attachments', 'checkbox'].includes(f.type))
               box.append(row('Starts as (formula)', formulaInput(f.default, (v) => { f.default = clean(v); }, { context: 'flow', placeholder: 'e.g. budget_account' }), 'Filled in when the task opens. Can use the request\'s answers.'));
+            if (!['calculated', 'section'].includes(f.type))
+              box.append(toggle('Read only (shows its starting value)', f.readOnly === true, (v) => { if (v) f.readOnly = true; else delete f.readOnly; }));
             box.append(row('Help text', textInput(f.help, (v) => { f.help = clean(v); })));
             list.appendChild(box);
           });
@@ -1570,7 +1608,8 @@
   // ---- preview and settings ----------------------------------------------------------
 
   function renderPreviewTab() {
-    const holder = h('div', { class: 'form-shell tone-' + state.meta.color });
+    const holder = h('div', { class: 'form-shell tone-' + state.meta.color + (state.letterhead ? ' has-letterhead' : '') },
+      state.letterhead ? h('img', { class: 'letterhead', src: state.letterhead.url, alt: 'Letterhead' }) : null);
     body.append(h('section', { class: 'bld-preview' },
       h('p', { class: 'muted' }, 'This is the form as people will see it, using your unsaved changes. Field logic is live; submitting only checks validation.'),
       holder));
@@ -1662,7 +1701,11 @@
       h('h3', null, 'About this workflow'),
       row('Name', textInput(state.meta.name, (v) => { state.meta.name = v; renderTop(); }, { maxlength: 200 })),
       row('Description', textArea(state.meta.description, (v) => { state.meta.description = v; }, 2), 'Shown on the home page card.'),
-      row('Category', textInput(state.meta.category, (v) => { state.meta.category = v; }, { maxlength: 100, placeholder: 'e.g. Help Desk, Purchasing' }), 'Forms are grouped by category on the home page.'),
+      row('Category', select(state.meta.category || '', [['', 'No category (shown under “Other”)']]
+        .concat((state.categories || []).map((c) => [c, c]))
+        .concat(state.meta.category && !(state.categories || []).some((c) => c.toLowerCase() === state.meta.category.toLowerCase()) ? [[state.meta.category, state.meta.category + ' (not in the list)']] : []),
+        (v) => { state.meta.category = v; }),
+        'Forms are grouped by category on the home page.' + (state.isAdmin ? ' Admins add, rename and order categories on Admin → Categories.' : '')),
       row('Colour', swatches),
       h('h3', null, 'Who looks after it'),
       row('Owners', textArea(state.meta.owners.join('\n'), (v) => { state.meta.owners = v.split(/[\s,;]+/).map((o) => o.trim()).filter(Boolean); }, 3),
@@ -1678,7 +1721,52 @@
       if (state.def.form.fields.length) panel.append(h('p', { class: 'flash warn' }, 'This workflow has form fields from when it was form-based. They are ignored while it starts from a ticket event.'));
     }
     body.append(panel);
+    if (trigger.type !== 'ticket') body.append(letterheadPanel());
     body.append(versionsPanel());
+  }
+
+  /** The form's letterhead: an image at the top of the form and of its printout / PDF (admins change it). */
+  function letterheadPanel() {
+    const current = state.letterhead;
+    const status = h('p', { class: 'b-help', role: 'status' });
+    const picker = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp', class: 'sf-file-input', id: 'letterhead-file' });
+    picker.addEventListener('change', async () => {
+      const file = picker.files && picker.files[0];
+      if (!file) return;
+      const data = new FormData();
+      data.append('file', file);
+      status.textContent = 'Uploading…';
+      try {
+        const response = await fetch('/api/builder/' + workflowId + '/letterhead', { method: 'POST', credentials: 'same-origin', body: data, redirect: 'manual',
+          headers: { Accept: 'application/json', RequestVerificationToken: document.querySelector('meta[name="csrf-token"]')?.content || '' } });
+        const result = await response.json().catch(() => null);
+        if (!response.ok) throw new Error((result && result.error) || 'The image could not be uploaded (' + response.status + ').');
+        state.letterhead = result.letterhead;
+        window.SF.toast('Letterhead saved. It shows on the form and its printout straight away.');
+        renderAll();
+      } catch (e) {
+        status.textContent = '';
+        window.SF.toast(e.message, 'bad');
+      }
+    });
+    const remove = async () => {
+      if (!window.confirm('Remove the letterhead from this form?')) return;
+      try {
+        await api('DELETE', '/api/builder/' + workflowId + '/letterhead');
+        state.letterhead = null;
+        window.SF.toast('Letterhead removed.');
+        renderAll();
+      } catch (e) { window.SF.toast(e.message, 'bad'); }
+    };
+    const canChange = state.canEditForm;
+    return h('section', { class: 'bld-settings panel' },
+      h('h3', null, 'Letterhead'),
+      h('p', { class: 'b-help' }, 'An image across the top of the form and of its printout or PDF — for example the district letterhead. PNG, JPEG, GIF or WebP, up to 2 MB; a wide image about 1600 pixels across prints best. It takes effect straight away (it is not part of a published version).'),
+      current ? h('div', { class: 'letterhead-preview' }, h('img', { src: current.url, alt: 'Current letterhead' }), h('span', { class: 'muted small' }, current.fileName)) : h('p', { class: 'muted' }, 'No letterhead yet.'),
+      canChange ? h('div', { class: 'row wrap' },
+        h('label', { class: 'btn small', for: 'letterhead-file' }, current ? 'Replace image' : 'Upload an image'), picker,
+        current ? h('button', { type: 'button', class: 'btn small ghost-danger', onclick: remove }, 'Remove') : null) : h('p', { class: 'muted small' }, 'Only an administrator can change it.'),
+      status);
   }
 
   function versionsPanel() {

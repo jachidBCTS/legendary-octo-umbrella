@@ -237,7 +237,7 @@ public sealed class StudentAnswers
         if (context.TryGetValue("submitter", out var submitter)) ambient["submitter"] = submitter;
         ambient["rates"] = await _calendar.RatesAsync(ct);
         var result = SchoolFlow.Core.Forms.FormEvaluator.Evaluate(def.Form, context, ambient, closedDays: await _calendar.ClosedDaysAsync(ct),
-            students: new StudentDirectory(true, known));
+            students: new StudentDirectory(true, known), locked: context);
         foreach (var key in tainted.Where(k => def.Form.Fields.Any(f => string.Equals(f.Key, k, StringComparison.OrdinalIgnoreCase))))
         {
             var isStudent = keys.Contains(key, StringComparer.OrdinalIgnoreCase);

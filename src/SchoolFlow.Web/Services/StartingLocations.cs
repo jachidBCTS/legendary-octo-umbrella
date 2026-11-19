@@ -12,18 +12,27 @@ public static class StartingLocations
     public static IReadOnlyList<string> From(IConfiguration config) =>
         From(config.GetSection("Students:Match:Locations").GetChildren().Select(c => (c.Key, c.Value)));
 
-    public static IReadOnlyList<string> From(IEnumerable<(string Staff, string? Student)> matches)
+    public static IReadOnlyList<string> From(IEnumerable<(string Staff, string? Student)> matches) =>
+        WithStaffNames(matches).Select(p => p.Name).ToList();
+
+    /// <summary>Each location name with the staff list's names for it (several staff places can share one name).</summary>
+    public static IReadOnlyList<(string Name, IReadOnlyList<string> StaffNames)> WithStaffNames(IConfiguration config) =>
+        WithStaffNames(config.GetSection("Students:Match:Locations").GetChildren().Select(c => (c.Key, c.Value)));
+
+    public static IReadOnlyList<(string Name, IReadOnlyList<string> StaffNames)> WithStaffNames(IEnumerable<(string Staff, string? Student)> matches)
     {
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var list = new List<string>();
+        var byName = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        var order = new List<string>();
         foreach (var (staff, student) in matches)
         {
             var name = (student ?? "").Trim();
             if (name.Length == 0 || name.All(char.IsDigit)) name = Readable(staff);
-            if (name.Length is > 0 and <= 200 && seen.Add(name)) list.Add(name);
+            if (name.Length is 0 or > 200) continue;
+            if (!byName.TryGetValue(name, out var keys)) { byName[name] = keys = new List<string>(); order.Add(name); }
+            keys.Add(staff.Trim());
         }
-        list.Sort(StringComparer.OrdinalIgnoreCase);
-        return list;
+        order.Sort(StringComparer.OrdinalIgnoreCase);
+        return order.Select(n => (n, (IReadOnlyList<string>)byName[n])).ToList();
     }
 
     /// <summary>"APPLIED TECHNOLOGY HS (BCC)" → "Applied Technology HS (BCC)": longer words in title case, short ones (HS, BCC, TEC) kept.</summary>

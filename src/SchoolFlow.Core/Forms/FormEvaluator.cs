@@ -40,6 +40,12 @@ public static class FormEvaluator
     /// </param>
     /// <param name="locations">Active locations (id → name), checked the same way for location fields.</param>
     /// <param name="closedDays">Days the school is closed, so "school day" date formulas skip them.</param>
+    /// <param name="staff">Staff list entries for the addresses in staff fields; null (preview, tests) takes what was given.</param>
+    /// <param name="places">Which district each location is in, for location fields limited to one district.</param>
+    /// <param name="locked">
+    /// Answers already on the request. A read-only field keeps its answer from here (so a request sent back
+    /// days later keeps its original date); without one it gets its default value. The browser's value is never used.
+    /// </param>
     /// <param name="attachments">
     /// Files this person has uploaded and may attach (id → details). When given, attachment fields only
     /// accept these and take the name and size from here, never from the browser.
@@ -48,7 +54,8 @@ public static class FormEvaluator
         IDictionary<string, object?>? ambient = null, bool applyDefaults = false, Func<DateTime>? now = null,
         IReadOnlyDictionary<long, string>? departments = null, IReadOnlyDictionary<long, string>? locations = null,
         IReadOnlyDictionary<string, AttachmentInfo>? attachments = null, IReadOnlySet<DateTime>? closedDays = null,
-        StudentDirectory? students = null, IReadOnlyCollection<string>? allowedDomains = null, PerDiemDirectory? perDiem = null)
+        StudentDirectory? students = null, IReadOnlyCollection<string>? allowedDomains = null, PerDiemDirectory? perDiem = null,
+        StaffDirectory? staff = null, PlaceDistricts? places = null, IDictionary<string, object?>? locked = null)
     {
         var result = new FormResult();
         var submitterEmail = ambient is not null && ambient.TryGetValue("submitter", out var who) && who is Dictionary<string, object?> person
@@ -88,16 +95,25 @@ public static class FormEvaluator
                 else
                 {
                     var hasInput = TryGetInput(input, field.Key, out var raw);
-                    if (!hasInput && applyDefaults && !string.IsNullOrWhiteSpace(field.Default))
+                    if (field.IsReadOnly)
+                    {
+                        // Never what the browser sent: the answer already on the request, else the default.
+                        raw = null;
+                        if (locked is not null && TryGetInput(locked, field.Key, out var kept)) { raw = kept; hasInput = true; }
+                        else hasInput = false;
+                    }
+                    if (!hasInput && (applyDefaults || field.IsReadOnly) && !string.IsNullOrWhiteSpace(field.Default))
                     {
                         try { raw = Formula.Evaluate(field.Default, scope); }
                         catch (ExpressionException ex) { state.Errors.Add($"Default value formula: {ex.Message}"); }
                     }
+                    var district = WantedDistrict(field, result.Values, places);
                     value = field.Type switch
                     {
                         FieldTypes.Table => NormalizeTable(field, raw, scope, state),
                         FieldTypes.Department => NormalizeListed(raw, departments, "department", state.Errors),
-                        FieldTypes.Location => NormalizeListed(raw, locations, "location", state.Errors),
+                        FieldTypes.Location => InDistrict(NormalizeListed(raw, locations, "location", state.Errors), district, places, state.Errors),
+                        FieldTypes.Staff => NormalizeStaff(raw, staff, district, places, state.Errors),
                         FieldTypes.Attachments => NormalizeAttachments(field, raw, attachments, state.Errors),
                         FieldTypes.Student => NormalizeStudent(raw, students, state.Errors),
                         // Worked out by the server from the ZIP code and dates; whatever the browser sends is ignored.
@@ -153,6 +169,8 @@ public static class FormEvaluator
     {
         var refs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         // A default value can read other fields too, so it has to be worked out after them.
+        // A location or staff field limited to the district chosen in another field comes after that field.
+        if (!string.IsNullOrWhiteSpace(field.DistrictField) && byKey.ContainsKey(field.DistrictField.Trim())) refs.Add(field.DistrictField.Trim());
         foreach (var source in new[] { field.VisibleWhen, field.Type == FieldTypes.Calculated ? field.Formula : null, field.Default })
         {
             if (string.IsNullOrWhiteSpace(source)) continue;
@@ -424,6 +442,88 @@ public static class FormEvaluator
         clean["school"] = info.School;
         clean["grade"] = info.Grade;
         clean["academy"] = info.Academy;
+        return clean;
+    }
+
+    /// <summary>
+    /// The district a location or staff field is limited to: the fixed one, or whatever was chosen in the
+    /// field it follows (a district question, or a location/staff answer, whose district is used). "" = any.
+    /// </summary>
+    public static string WantedDistrict(FieldDef field, IDictionary<string, object?> values, PlaceDistricts? places)
+    {
+        if (field.Type is not (FieldTypes.Location or FieldTypes.Staff)) return "";
+        if (!string.IsNullOrWhiteSpace(field.DistrictField))
+        {
+            values.TryGetValue(field.DistrictField.Trim(), out var chosen);
+            if (chosen is Dictionary<string, object?> record)
+            {
+                // A staff answer carries its district; a location answer is looked up.
+                var own = Values.ToText(Member(record, "district")).Trim();
+                if (own.Length > 0) return places?.CodeOf(own) ?? own;
+                if (places is not null && Values.TryToNumber(Member(record, "id"), out var id) && places.LocationDistricts.TryGetValue((long)id, out var d)) return d;
+                return "";
+            }
+            var text = Values.ToText(chosen).Trim();
+            return places?.CodeOf(text) ?? text;
+        }
+        var fixedDistrict = (field.District ?? "").Trim();
+        return places?.CodeOf(fixedDistrict) ?? fixedDistrict;
+    }
+
+    private static object? InDistrict(object? location, string district, PlaceDistricts? places, List<string> errors)
+    {
+        if (location is not Dictionary<string, object?> record || district.Length == 0 || places is null) return location;
+        var id = (long)(decimal)record["id"]!;
+        if (places.LocationDistricts.TryGetValue(id, out var its) && places.Same(its, district)) return location;
+        errors.Add("That location is not in the chosen district. Choose another.");
+        return null;
+    }
+
+    /// <summary>The email of a staff answer (what the browser sends is a record with an email, or just the address).</summary>
+    public static string StaffEmailOf(object? raw) =>
+        (raw is Dictionary<string, object?> record ? Values.ToText(Member(record, "email")) : Values.ToText(raw)).Trim().ToLowerInvariant();
+
+    private static object? NormalizeStaff(object? raw, StaffDirectory? staff, string district, PlaceDistricts? places, List<string> errors)
+    {
+        var email = StaffEmailOf(raw);
+        if (email.Length == 0) return null;
+        if (email.Length > 320 || !EmailPattern.IsMatch(email))
+        {
+            errors.Add("Choose a person from the staff list.");
+            return null;
+        }
+        StaffInfo info;
+        if (staff is null)
+        {
+            // No staff list to check against (the builder's preview, tests): keep what was given.
+            var given = raw as Dictionary<string, object?> ?? new Dictionary<string, object?>();
+            string Part(string key) => Truncate(Values.ToText(Member(given, key)).Trim(), 200);
+            info = new StaffInfo(email, Part("name"), Part("title"), Part("location"), Part("department"), Part("district"));
+        }
+        else if (!staff.Connected)
+        {
+            errors.Add("The staff list is not connected on this site. Ask an administrator.");
+            return null;
+        }
+        else if (!staff.Known.TryGetValue(email, out info!))
+        {
+            errors.Add("That person is not on the staff list. Search again.");
+            return null;
+        }
+        // Someone working in several districts has them listed with commas; any one of them will do.
+        if (district.Length > 0 && staff is not null && !info.District.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                .Any(d => places?.Same(d, district) ?? string.Equals(d, district, StringComparison.OrdinalIgnoreCase)))
+        {
+            errors.Add("That person does not work in the chosen district.");
+            return null;
+        }
+        var clean = Values.NewDict();
+        clean["email"] = info.Email;
+        clean["name"] = info.Name.Length > 0 ? info.Name : info.Email;
+        clean["title"] = info.Title;
+        clean["location"] = info.Location;
+        clean["department"] = info.Department;
+        clean["district"] = info.District;
         return clean;
     }
 

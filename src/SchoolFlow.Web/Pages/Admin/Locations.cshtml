@@ -8,7 +8,7 @@
     <div class="row wrap">
         @if (Model.SettingsLocations.Count > 0)
         {
-            <form method="post" asp-page-handler="FromSettings"><button class="btn">Add the district's @Model.SettingsLocations.Count locations</button></form>
+            <form method="post" asp-page-handler="FromSettings"><button class="btn">Add the district's locations</button></form>
         }
         <form method="post" asp-page-handler="Sync"><button class="btn primary">Sync from Freshservice</button></form>
     </div>
@@ -33,7 +33,7 @@ else
 {
     <div class="panel table-wrap">
         <table class="table stack">
-            <thead><tr><th>Location</th><th>Source</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Location</th><th>District</th><th>Source</th><th>Status</th><th></th></tr></thead>
             <tbody>
             @foreach (var l in Model.Locations)
             {
@@ -43,6 +43,23 @@ else
                             <input type="hidden" name="id" value="@l.Id" />
                             <input name="name" value="@l.Name" required maxlength="200" aria-label="Name" readonly="@(l.FreshserviceId != null)" />
                             @if (l.FreshserviceId == null) { <button class="btn small">Rename</button> }
+                        </form>
+                    </td>
+                    <td data-label="District">
+                        <form method="post" asp-page-handler="District" class="row">
+                            <input type="hidden" name="id" value="@l.Id" />
+                            @if (Model.DistrictChoices.Count > 0)
+                            {
+                                <select name="district" aria-label="District of @l.Name" data-autosubmit>
+                                    <option value="" selected="@string.IsNullOrEmpty(l.District)">—</option>
+                                    @foreach (var d in Model.DistrictChoices) { <option value="@d" selected="@string.Equals(d, l.District, StringComparison.OrdinalIgnoreCase)">@d</option> }
+                                </select>
+                            }
+                            else
+                            {
+                                <input name="district" value="@l.District" maxlength="40" aria-label="District of @l.Name" placeholder="e.g. BCTS" class="district-input" />
+                                <button class="btn small">Set</button>
+                            }
                         </form>
                     </td>
                     <td class="muted" data-label="Source">@(l.FreshserviceId is long fs ? $"Freshservice #{fs}" : "Added by hand")</td>
@@ -57,4 +74,4 @@ else
         </table>
     </div>
 }
-<p class="muted small" data-tip="page">Locations from Freshservice are renamed there, not here. A switched-off location is no longer offered on forms; requests that already used it keep it.</p>
+<p class="muted small" data-tip="page">Locations from Freshservice are renamed there, not here. A switched-off location is no longer offered on forms; requests that already used it keep it. The district decides which locations a Location field limited to one district offers; "Add the district's locations" fills it in from the staff list for locations that have none.</p>

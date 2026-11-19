@@ -148,6 +148,15 @@ public static class DefinitionValidator
                 Needs(f.PerDiem?.From, "the first day of travel", new[] { FieldTypes.Date }, true);
                 Needs(f.PerDiem?.To, "the last day of travel", new[] { FieldTypes.Date }, false);
             }
+            if (f.IsReadOnly && string.IsNullOrWhiteSpace(f.Default))
+                issues.Add(new Issue("warning", "form", f.Key, $"“{name}” is read only but has no default value, so it will always be blank."));
+            if (f.Type is FieldTypes.Location or FieldTypes.Staff && !string.IsNullOrWhiteSpace(f.DistrictField))
+            {
+                var source = form.Fields.FirstOrDefault(x => string.Equals(x.Key, f.DistrictField.Trim(), StringComparison.OrdinalIgnoreCase));
+                if (source is null) Error($"its district comes from '{f.DistrictField}', which is not a field on this form.");
+                else if (FieldTypes.IsLayout(source.Type) || source.Type is FieldTypes.Table or FieldTypes.Attachments or FieldTypes.MultiSelect or FieldTypes.Checkbox)
+                    Error($"its district cannot come from “{(string.IsNullOrWhiteSpace(source.Label) ? source.Key : source.Label)}”: choose a choice, text, location or staff field.");
+            }
         }
 
         // Circular references between calculated fields / visibility rules.
@@ -162,6 +171,7 @@ public static class DefinitionValidator
             if (f.Type == FieldTypes.PerDiem && f.PerDiem is { } perDiem)
                 foreach (var key in new[] { perDiem.Zip, perDiem.From, perDiem.To })
                     if (!string.IsNullOrWhiteSpace(key)) refs.Add(key.Trim());
+            if (!string.IsNullOrWhiteSpace(f.DistrictField)) refs.Add(f.DistrictField.Trim());
             return refs.Where(keys.Contains);
         }, out var cyclic);
         foreach (var key in cyclic)

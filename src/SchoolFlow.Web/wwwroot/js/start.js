@@ -32,7 +32,7 @@
         showDraftBar('Saved as a draft. Changes you make from now on are saved automatically.');
         return saved;
       },
-      onSuccess: (runId) => { window.location.href = '/Requests/Detail/' + encodeURIComponent(runId); },
+      onSuccess: (runId) => { window.SF.toastAfterLoad('Request #' + runId + ' submitted. You will be notified as it moves along.'); window.location.href = '/Requests/Detail/' + encodeURIComponent(runId); },
     });
   }
 

@@ -64,6 +64,8 @@ public class DetailModel : PageModel
     public string? ZipUrl { get; private set; }
 
     public WorkflowRun Run { get; private set; } = null!;
+    /// <summary>The form's letterhead (shown on the printout).</summary>
+    public string? LetterheadUrl { get; private set; }
     public List<RunEventRow> Events { get; private set; } = new();
     public List<ApprovalTask> MyTasks { get; private set; } = new();
     public List<string> PendingAssignees { get; private set; } = new();
@@ -95,6 +97,7 @@ public class DetailModel : PageModel
         CanManage = await _access.CanManageRunAsync(User, run);
 
         Run = run;
+        LetterheadUrl = await Letterhead.UrlAsync(_db, run.WorkflowId);
         var pending = tasks.Where(t => t.Status == ApprovalStatus.Pending).ToList();
         // Someone who has already approved an "all must approve" step has nothing left to do.
         var mine = pending.Where(t => (t.CanBeDecidedBy(email) && !t.IsDoneFor(email)) || (User.IsAdmin() && !t.CanBeDecidedBy(email))).ToList();

@@ -18,6 +18,7 @@
         <button type="button" class="btn primary" data-print>Print or save as PDF</button>
         <a class="btn" href="/Requests/Detail/@Model.Run.Id">Back to the request</a>
     </div>
+    @if (Model.LetterheadUrl is string letterhead) { <img class="letterhead print-letterhead" src="@letterhead" alt="@Model.Run.WorkflowName letterhead" /> }
     <div class="print-head">
         <div><h1>@Model.Run.WorkflowName</h1><div class="muted">Request #@Model.Run.Id</div></div>
         <div><strong>@label</strong></div>

@@ -461,11 +461,47 @@ namespace SchoolFlow.Web.Migrations.Sqlite
                     b.ToTable("FormDrafts");
                 });
 
+            modelBuilder.Entity("SchoolFlow.Web.Data.FormImage", b =>
+                {
+                    b.Property<int>("WorkflowId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<byte[]>("Data")
+                        .IsRequired()
+                        .HasColumnType("BLOB");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("WorkflowId");
+
+                    b.ToTable("FormImages");
+                });
+
             modelBuilder.Entity("SchoolFlow.Web.Data.Location", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("District")
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
 
                     b.Property<long?>("FreshserviceId")
                         .HasColumnType("INTEGER");
@@ -798,6 +834,28 @@ namespace SchoolFlow.Web.Migrations.Sqlite
                     b.HasKey("Id");
 
                     b.ToTable("Workflows");
+                });
+
+            modelBuilder.Entity("SchoolFlow.Web.Data.WorkflowCategory", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("Categories");
                 });
 
             modelBuilder.Entity("SchoolFlow.Web.Data.WorkflowRun", b =>

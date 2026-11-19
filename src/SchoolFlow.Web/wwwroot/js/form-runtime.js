@@ -241,7 +241,7 @@
         const value = (state.values || {})[field.key];
         control.wrap.hidden = !fieldState.visible;
         if (control.required) control.required.hidden = !fieldState.required;
-        if (init && control.set && value !== null && value !== undefined) control.set(value);
+        if ((init || control.readOnly) && control.set && value !== null && value !== undefined) control.set(value);
         if (control.update) control.update(value, fieldState);
         showWas(field, control, value, init);
 
@@ -431,6 +431,9 @@
         case 'location':
           body = buildListed(field, id, control, '/api/locations', 'No locations have been set up yet', 'locations');
           break;
+        case 'staff':
+          body = buildStaffLookup(field, id, control);
+          break;
         case 'approval_chain':
           labelFor = null;
           body = buildChain(field, control);
@@ -481,6 +484,7 @@
         const el = body.matches('input, select, textarea, output') ? body : body.querySelector('input, select, textarea, output');
         if (el) el.setAttribute('aria-label', field.label || field.key);
         control.wrap = h('span', { class: 'ws-input ws-' + field.type }, body);
+        if (isReadOnly(field)) lockField(control);
         return control;
       }
 
@@ -491,7 +495,25 @@
         body,
         field.help ? h('p', { class: 'sf-help' }, field.help) : null,
         error);
+      if (isReadOnly(field)) lockField(control);
       return control;
+    }
+
+    /** Read only: the server fills the answer in (its default, or what the request was submitted with). */
+    function isReadOnly(field) {
+      return field.readOnly === true && !['calculated', 'perdiem', 'section', 'page', 'worksheet', 'break'].includes(field.type);
+    }
+    function lockField(control) {
+      control.readOnly = true;
+      control.wrap.classList.add('sf-readonly');
+      control.wrap.querySelectorAll('input, select, textarea, button').forEach((el) => {
+        // Text stays selectable and readable; choices and buttons cannot be used.
+        if (el.matches('input[type=text], input[type=email], input[type=tel], input[type=date], input[type=time], textarea, input:not([type])')) {
+          el.readOnly = true;
+          el.setAttribute('aria-readonly', 'true');
+          el.tabIndex = -1;
+        } else el.disabled = true;
+      });
     }
 
     function input(el, key, control, immediate) {
@@ -573,12 +595,38 @@
         values[field.key] = { id: v.id, name: v.name };
         if (loaded) choose(v.id); else wanted = v.id;
       };
-      api('GET', url).then((data) => {
-        items = data.items || [];
+      // A location field can be limited to one district: a fixed one, or the one chosen in another field.
+      let all = [];
+      let aliases = {};
+      let shownFor = null;
+      const code = (text) => { const t = String(text || '').trim(); return aliases[t] || aliases[t.toUpperCase()] || t; };
+      const wantedDistrict = () => districtWanted(field, (t) => code(t), all);
+      const fill = () => {
+        const district = wantedDistrict();
+        if (district === shownFor) return;
+        shownFor = district;
+        items = district ? all.filter((i) => code(i.district).toLowerCase() === district.toLowerCase()) : all;
+        const current = values[field.key] && values[field.key].id;
         select.textContent = '';
-        select.appendChild(h('option', { value: '' }, items.length ? 'Choose…' : emptyText));
+        select.appendChild(h('option', { value: '' }, items.length ? 'Choose…' : (district ? 'No locations in ' + district + ' yet' : emptyText)));
         items.forEach((i) => select.appendChild(h('option', { value: String(i.id) }, i.name)));
-        select.disabled = false;
+        if (current !== undefined && current !== null) {
+          if (items.some((i) => String(i.id) === String(current))) select.value = String(current);
+          else if (loaded) { values[field.key] = null; changed(field.key, true); }
+        }
+      };
+      if (field.type === 'location' && (field.district || field.districtField)) control.update = () => { if (loaded) fill(); };
+      api('GET', url).then((data) => {
+        all = data.items || [];
+        aliases = data.districts || {};
+        items = all;
+        select.textContent = '';
+        if (field.type === 'location' && (field.district || field.districtField)) fill();
+        else {
+          select.appendChild(h('option', { value: '' }, items.length ? 'Choose…' : emptyText));
+          items.forEach((i) => select.appendChild(h('option', { value: String(i.id) }, i.name)));
+        }
+        select.disabled = !!control.readOnly;
         loaded = true;
         if (wanted !== null) { choose(wanted); wanted = null; }
       }).catch((e) => {
@@ -800,6 +848,82 @@
     }
 
     /** Search the student roster by name or ID. Only people an admin has given student access get results. */
+    /** The district a location or staff field is limited to right now ('' = any). */
+    function districtWanted(field, code, locations) {
+      if (field.districtField) {
+        const chosen = values[field.districtField];
+        if (chosen && typeof chosen === 'object') {
+          if (chosen.district) return code(chosen.district);
+          const place = (locations || []).find((l) => String(l.id) === String(chosen.id));
+          return place && place.district ? code(place.district) : '';
+        }
+        return chosen ? code(chosen) : '';
+      }
+      return field.district ? code(field.district) : '';
+    }
+
+    /** A member of staff from the district's staff list. Value: { email, name, title, location, department, district }. */
+    function buildStaffLookup(field, id, control) {
+      const box = h('input', { id, type: 'text', autocomplete: 'off', placeholder: field.placeholder || 'Type a name or email…', role: 'combobox', 'aria-expanded': 'false', 'aria-autocomplete': 'list' });
+      const list = h('div', { class: 'sf-suggest', hidden: true, role: 'listbox' });
+      const chosen = h('p', { class: 'sf-help sf-student no-tip', hidden: true });
+      const detail = (p) => [p.email, p.title, p.location].filter(Boolean).join(' · ');
+      const show = (p) => { chosen.textContent = p ? detail(p) : ''; chosen.hidden = !p; };
+      let latest = 0;
+      const search = debounce(async () => {
+        const query = box.value.trim();
+        const mine = ++latest;
+        if (query.length < 2) { list.hidden = true; return; }
+        // The server knows the district names; a district question's answer is passed as it is.
+        const chosenDistrict = field.districtField ? values[field.districtField] : field.district;
+        const district = chosenDistrict && typeof chosenDistrict === 'object' ? chosenDistrict.district || '' : chosenDistrict || '';
+        try {
+          const data = await api('GET', '/api/staff?q=' + encodeURIComponent(query) + (district ? '&district=' + encodeURIComponent(district) : ''));
+          if (mine !== latest) return;
+          list.textContent = '';
+          const items = data.items || [];
+          if (data.connected === false) list.appendChild(h('div', { class: 'sf-suggest-empty' }, 'The staff list is not connected on this site.'));
+          else if (items.length === 0) list.appendChild(h('div', { class: 'sf-suggest-empty' }, district ? 'No matches in ' + district : 'No matches'));
+          for (const item of items) {
+            list.appendChild(h('button', { type: 'button', class: 'sf-suggest-item', role: 'option', onclick: () => choose(item) },
+              h('strong', null, item.name || item.email), h('small', null, detail(item))));
+          }
+          list.hidden = false;
+          box.setAttribute('aria-expanded', 'true');
+        } catch (e) {
+          control.error.textContent = e.message;
+          control.error.hidden = false;
+        }
+      }, 250);
+      function choose(item) {
+        values[field.key] = { email: item.email, name: item.name, title: item.title, location: item.location, department: item.department, district: item.district };
+        box.value = item.name || item.email;
+        show(item);
+        close();
+        changed(field.key, true);
+      }
+      function close() { list.hidden = true; box.setAttribute('aria-expanded', 'false'); }
+      control.set = (v) => {
+        if (!v || typeof v !== 'object' || !v.email) return;
+        values[field.key] = v;
+        box.value = v.name || v.email;
+        show(v);
+      };
+      box.addEventListener('input', () => {
+        if (control.readOnly) return;
+        // Typing after a choice clears it: only a person picked from the staff list counts.
+        if (values[field.key]) { values[field.key] = null; show(null); changed(field.key, false); }
+        search();
+      });
+      box.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+      box.addEventListener('blur', () => setTimeout(() => {
+        close();
+        if (!values[field.key]) box.value = '';
+        if (!touched.has(field.key)) changed(field.key, true);
+      }, 180));
+      return h('div', { class: 'sf-typeahead' }, box, list, chosen);
+    }
+
     function buildStudentLookup(field, id, control) {
       const box = h('input', { id, type: 'text', autocomplete: 'off', placeholder: field.placeholder || 'Type a student\'s name or ID…', role: 'combobox', 'aria-expanded': 'false', 'aria-autocomplete': 'list' });
       const list = h('div', { class: 'sf-suggest', hidden: true, role: 'listbox' });
