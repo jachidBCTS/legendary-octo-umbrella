@@ -158,6 +158,10 @@ public static class DefinitionValidator
             var refs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var src in new[] { f.VisibleWhen, f.Type == FieldTypes.Calculated ? f.Formula : null, f.Default })
                 if (!string.IsNullOrWhiteSpace(src) && Formula.TryParse(src, out var parsed, out _)) refs.UnionWith(parsed!.References);
+            // A per diem field reads its ZIP code and date fields (as the form evaluator orders it).
+            if (f.Type == FieldTypes.PerDiem && f.PerDiem is { } perDiem)
+                foreach (var key in new[] { perDiem.Zip, perDiem.From, perDiem.To })
+                    if (!string.IsNullOrWhiteSpace(key)) refs.Add(key.Trim());
             return refs.Where(keys.Contains);
         }, out var cyclic);
         foreach (var key in cyclic)

@@ -101,7 +101,7 @@ public static class FormEvaluator
                         FieldTypes.Attachments => NormalizeAttachments(field, raw, attachments, state.Errors),
                         FieldTypes.Student => NormalizeStudent(raw, students, state.Errors),
                         // Worked out by the server from the ZIP code and dates; whatever the browser sends is ignored.
-                        FieldTypes.PerDiem => PerDiemValue(field, result.Values, perDiem),
+                        FieldTypes.PerDiem => PerDiemValue(field, result.Values, perDiem, raw),
                         FieldTypes.ApprovalChain => Workflows.ChainValue.Normalize(raw, submitterEmail.Length > 0 ? submitterEmail : null, state.Errors, allowedDomains),
                         _ => NormalizeScalar(field.Type, field.Options, raw, state.Errors),
                     };
@@ -379,9 +379,14 @@ public static class FormEvaluator
     /// Everything but the ID comes from the server's roster, and only for people allowed to use it.
     /// </summary>
     /// <summary>The per diem rates for the ZIP code and dates already answered, or blank until they are.</summary>
-    private static object? PerDiemValue(FieldDef field, IDictionary<string, object?> values, PerDiemDirectory? directory)
+    private static object? PerDiemValue(FieldDef field, IDictionary<string, object?> values, PerDiemDirectory? directory, object? stored)
     {
-        if (directory is null || field.PerDiem is not { } settings) return null;
+        // No rates looked up (re-checking a stored request, e.g. to restore its student details): keep the
+        // rates it already has. The browser can never get here: the web app always supplies a directory
+        // for a form with a per diem field.
+        if (directory is null)
+            return Values.Normalize(stored) is Dictionary<string, object?> existing && existing.ContainsKey("meals") ? existing : null;
+        if (field.PerDiem is not { } settings) return null;
         object? Get(string? key) => !string.IsNullOrWhiteSpace(key) && values.TryGetValue(key.Trim(), out var v) ? v : null;
         var zip = PerDiemDirectory.CleanZip(Get(settings.Zip));
         if (zip is null || !Values.TryToDate(Get(settings.From), out var from)) return null;

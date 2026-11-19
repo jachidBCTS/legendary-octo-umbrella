@@ -18,6 +18,16 @@ public static class ResubmitGuard
     }
 
     /// <summary>
+    /// Whether an answer is unchanged. A student is the same student if the number is the same: the
+    /// details come from the live roster and may differ between two reads (or be missing when the roster
+    /// could not be reached), without the requester having changed anything.
+    /// </summary>
+    public static bool SameAnswer(FieldDef field, object? a, object? b) =>
+        field.Type == FieldTypes.Student
+            ? string.Equals(Forms.FormEvaluator.StudentIdOf(a), Forms.FormEvaluator.StudentIdOf(b), StringComparison.OrdinalIgnoreCase)
+            : Same(a, b);
+
+    /// <summary>
     /// The money fields (currency, and calculated amounts shown as currency) whose value went up. Plain
     /// numbers (students, chaperones, miles) are not costs on their own; what they cost shows in a total.
     /// </summary>
@@ -113,7 +123,7 @@ public static class ResubmitGuard
         var routing = RoutingNames(flow, currentNodeId);
         foreach (var field in list.Where(f => routing.Contains(f.Key)))
         {
-            var changed = !Same(before.TryGetValue(field.Key, out var o) ? o : null, after.TryGetValue(field.Key, out var n) ? n : null);
+            var changed = !SameAnswer(field, before.TryGetValue(field.Key, out var o) ? o : null, after.TryGetValue(field.Key, out var n) ? n : null);
             if (changed && !reasons.Contains($"{Label(field)} went up")) reasons.Add($"{Label(field)} changed");
         }
         return reasons;

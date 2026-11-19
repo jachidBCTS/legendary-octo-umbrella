@@ -305,10 +305,11 @@ public sealed class FormsController : ControllerBase
         var whole = Json.ParseDefinition(workflow.PublishedJson!);
         var form = whole.Form;
         var answers = Json.ToValues(request.Values);
+        // A draft, like a request, keeps only a student's number; the form looks the rest up again when reopened.
+        // Done first, so the draft's summary cannot carry anything worked out from student details either.
+        SchoolFlow.Core.Forms.StudentData.Minimize(whole, answers);
         var summary = FormCopy.Summary(form, answers);
         draft.Summary = summary.Length > 300 ? summary[..300] : summary;
-        // A draft, like a request, keeps only a student's number; the form looks the rest up again when reopened.
-        SchoolFlow.Core.Forms.StudentData.Minimize(whole, answers);
         draft.ValuesJson = Json.Serialize(answers);
         draft.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);

@@ -547,7 +547,7 @@ public sealed class RunService
             if (FieldTypes.IsLayout(field.Type) || string.IsNullOrWhiteSpace(field.Key)) continue;
             var old = before.TryGetValue(field.Key, out var o) ? o : null;
             var now = after.TryGetValue(field.Key, out var n) ? n : null;
-            if (ResubmitGuard.Same(old, now)) continue;
+            if (ResubmitGuard.SameAnswer(field, old, now)) continue;
             labels.Add(string.IsNullOrWhiteSpace(field.Label) ? field.Key : field.Label.Trim());
             if (tainted.Contains(field.Key) || field.Type == FieldTypes.Student) continue;
             var shown = field.Type == FieldTypes.Table && old is List<object?> rows

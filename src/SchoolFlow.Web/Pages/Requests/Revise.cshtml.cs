@@ -43,7 +43,10 @@ public class ReviseModel : PageModel
             if (context.TryGetValue(field.Key, out var value)) values[field.Key] = value;
         ValuesJson = Json.Serialize(values).Replace("<", "\\u003c");
         var shown = new Dictionary<string, string>();
-        foreach (var field in form.Fields.Where(f => !FieldTypes.IsLayout(f.Type)))
+        // Requests keep only a student's number, so student answers (and anything worked out from them)
+        // get no "Was: …", as on the request page.
+        var studentKeys = SchoolFlow.Core.Forms.StudentData.KeysOf(Json.ParseDefinition(run.DefinitionJson));
+        foreach (var field in form.Fields.Where(f => !FieldTypes.IsLayout(f.Type) && !studentKeys.Contains(f.Key)))
         {
             if (!context.TryGetValue(field.Key, out var value)) continue;
             shown[field.Key] = field.Type == FieldTypes.Table && value is List<object?> rows

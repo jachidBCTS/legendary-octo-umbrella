@@ -2248,4 +2248,42 @@ public sealed class RunServiceTests : IDisposable
         Assert.Empty(await roster.FindAsync(new[] { "99999" }, default));
         Assert.Equal(2, inner.Finds);                                        // "not found" is remembered too
     }
+
+    // ---- review fixes (Nov 19) -----------------------------------------------------------------
+
+    [Fact]
+    public void RecheckingAStoredRequest_KeepsItsPerDiemRates()
+    {
+        var form = new FormDefinition { Fields =
+        {
+            new FieldDef { Key = "gsa", Label = "GSA", Type = FieldTypes.PerDiem, PerDiem = new PerDiemSettings { Zip = "zip", From = "from" } },
+            new FieldDef { Key = "zip", Label = "ZIP", Type = "text" },
+            new FieldDef { Key = "from", Label = "From", Type = "date" },
+            new FieldDef { Key = "meals", Label = "Meals", Type = "calculated", Formula = "gsa.meals * 2" },
+        } };
+        var stored = new Dictionary<string, object?>
+        {
+            ["zip"] = "08540", ["from"] = "2027-03-10",
+            ["gsa"] = new Dictionary<string, object?> { ["meals"] = 74m, ["lodging"] = 165m, ["source"] = "gsa" },
+        };
+        // No rates directory: re-checking a request that is already stored (as when its students are restored).
+        var result = FormEvaluator.Evaluate(form, stored);
+        Assert.Equal(74m, ((Dictionary<string, object?>)result.Values["gsa"]!)["meals"]);
+        Assert.Equal(148m, result.Values["meals"]);
+        // A per diem field placed above the fields it reads is still worked out after them.
+        Assert.Empty(DefinitionValidator.Validate(new WorkflowDefinition { Form = form }).Where(i => i.IsError && i.Message.Contains("circular")));
+        form.Fields[1].Default = "gsa.zip";                                   // zip read from the per diem field: a loop
+        Assert.Contains(DefinitionValidator.Validate(new WorkflowDefinition { Form = form }), i => i.IsError && i.Message.Contains("circular"));
+    }
+
+    [Fact]
+    public void AStudentAnswer_IsUnchangedWhenTheStudentNumberIsTheSame()
+    {
+        var field = new FieldDef { Key = "student", Type = FieldTypes.Student };
+        var numberOnly = new Dictionary<string, object?> { ["id"] = "20451" };
+        var full = new Dictionary<string, object?> { ["id"] = "20451", ["name"] = "Okafor, Maya", ["grade"] = "11" };
+        Assert.True(ResubmitGuard.SameAnswer(field, numberOnly, full));       // roster details read again, or not reachable
+        Assert.False(ResubmitGuard.SameAnswer(field, numberOnly, new Dictionary<string, object?> { ["id"] = "20452" }));
+        Assert.False(ResubmitGuard.Same(numberOnly, full));                   // other fields still compare in full
+    }
 }
