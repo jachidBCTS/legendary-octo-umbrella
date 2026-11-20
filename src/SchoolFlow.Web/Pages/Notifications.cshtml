@@ -42,3 +42,16 @@ else
         <label class="b-toggle"><input type="checkbox" name="email" value="true" checked="@Model.WantsEmail" data-autosubmit /> <span>Also send my notifications by email</span></label>
     </form>
 </section>
+
+<section class="panel" data-alert-settings>
+    <h2>Alerts on this device</h2>
+    <p class="muted" data-tip>While Greenlight is open in a browser tab (even in the background or minimised), a new notification can play a short sound and show a pop-up in the corner of the screen, like other Windows apps. These choices are kept for this browser on this computer only. Nothing pops up when the browser is closed.</p>
+    <label class="b-toggle"><input type="checkbox" data-alert-sound /> <span>Play a sound when a new notification arrives</span></label>
+    <label class="b-toggle"><input type="checkbox" data-alert-popups /> <span>Show a pop-up on the screen</span></label>
+    <p class="muted small" data-alert-status aria-live="polite"></p>
+    <button type="button" class="btn" data-alert-test>Try it</button>
+</section>
+
+@section Scripts {
+    <script src="~/js/alert-settings.js" asp-append-version="true"></script>
+}

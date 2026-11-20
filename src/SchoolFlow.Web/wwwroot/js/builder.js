@@ -409,7 +409,7 @@
       items.push(['ticket.id', 'Ticket number'], ['ticket.status', 'Ticket status (2 Open, 3 Pending, 4 Resolved, 5 Closed)'],
         ['ticket.priority', 'Ticket priority (1 Low … 4 Urgent)'], ['ticket.subject', 'Ticket subject'],
         ['approval.by', 'Who made the last approval decision'], ['approval.comment', "The approver's comment"],
-        ['approval.approved', 'True if the last decision was Approve'], ['run.id', 'Request number in Bergen Forms'],
+        ['approval.approved', 'True if the last decision was Approve'], ['run.id', 'Request number in Greenlight'],
         ['JOIN(attachments.name, ", ")', 'Names of all the files uploaded with the request'], ['COUNT(attachments)', 'How many files were uploaded']);
       state.def.flow.nodes.forEach((n) => {
         if (n.type === 'set_variable' && n.config.name) items.push([n.config.name.trim(), 'Value set by “' + (n.label || 'Set value') + '”']);
@@ -1361,7 +1361,7 @@
     };
     render();
     return h('div', null, h('h4', { class: 'b-section' }, 'Custom ticket fields'),
-      h('p', { class: 'b-help' }, 'Name each field as it appears on the Freshservice ticket form — its label (e.g. Room Number) or its API name (cf_room_number). Bergen Forms matches it to the form when the ticket is created, and matches dropdown values to the field\'s choices; anything that does not fit is left out and noted on the request\'s timeline instead of stopping the ticket. A single {{formula}} keeps its type, so numbers stay numbers.'), box);
+      h('p', { class: 'b-help' }, 'Name each field as it appears on the Freshservice ticket form — its label (e.g. Room Number) or its API name (cf_room_number). Greenlight matches it to the form when the ticket is created, and matches dropdown values to the field\'s choices; anything that does not fit is left out and noted on the request\'s timeline instead of stopping the ticket. A single {{formula}} keeps its type, so numbers stay numbers.'), box);
   }
 
   function renderNodeInspector(panel, node) {
@@ -1734,7 +1734,7 @@
       trigger.type === 'ticket' ? null : audienceEditor(),
       h('h3', null, 'How it starts'),
       triggerChoice('form', 'Someone fills in a form', 'Appears on the home page for everyone who signs in.'),
-      state.isAdmin || trigger.type === 'ticket' ? triggerChoice('ticket', 'A Freshservice ticket event', 'Starts when Freshservice sends a ticket to the Bergen Forms webhook. Runs once per ticket.') : null);
+      state.isAdmin || trigger.type === 'ticket' ? triggerChoice('ticket', 'A Freshservice ticket event', 'Starts when Freshservice sends a ticket to the Greenlight webhook. Runs once per ticket.') : null);
     if (trigger.type === 'ticket') {
       panel.append(row('Only start when', formulaInput(trigger.condition, (v) => { trigger.condition = clean(v); }, { context: 'flow', placeholder: 'e.g. ticket.priority >= 3' }),
         'Leave blank to start for every ticket event. Uses the ticket\'s API values: status 2 Open … 5 Closed, priority 1 Low … 4 Urgent.'));
@@ -1798,7 +1798,7 @@
         : 'Every time the workflow is published, that version is kept. Restoring one puts its steps back into the draft (the form is not changed) — staff see no change until you publish it.'),
       list,
       h('h3', null, 'Move or back up'),
-      h('p', { class: 'b-help' }, 'Export downloads this workflow (the current saved draft) as a file. Import it from the Workflows page, here or on another Bergen Forms site.'),
+      h('p', { class: 'b-help' }, 'Export downloads this workflow (the current saved draft) as a file. Import it from the Workflows page, here or on another Greenlight site.'),
       h('a', { class: 'btn small', href: '/Builder?handler=Export&id=' + workflowId, download: '' }, 'Export this workflow'));
     api('GET', '/api/builder/' + workflowId + '/versions').then((data) => {
       list.textContent = '';

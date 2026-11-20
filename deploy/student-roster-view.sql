@@ -1,4 +1,4 @@
--- Lets Bergen Forms read the student roster and the staff list on your SQL Server (run once, in SQL Server
+-- Lets Greenlight read the student roster and the staff list on your SQL Server (run once, in SQL Server
 -- Management Studio). From ActiveStudents it reads student number, first name, last name, school (Location),
 -- grade, academy and district (district only decides who may see a student). From ActiveStaff it reads where
 -- each person works (Location, DistrictShort), their name, title, department and work email. A request
@@ -20,13 +20,13 @@ GO
 SELECT DISTINCT DistrictShort, Location FROM dbo.ActiveStaff ORDER BY DistrictShort, Location;
 SELECT DISTINCT District, Location FROM dbo.ActiveStudents ORDER BY District, Location;
 
--- Check: a few students, with the columns Bergen Forms uses.
+-- Check: a few students, with the columns Greenlight uses.
 SELECT TOP (5) StudentNumber, FirstName, LastName, Location, Grade, [Academy or Major]
 FROM dbo.ActiveStudents ORDER BY LastName, FirstName;
 
 -- Then, in X:\wwwroot\SchoolFlow\appsettings.Production.json, add (and restart the site):
 --   "Students": {
---     "ConnectionString": "Server=YOUR-SQL-SERVER;Database=ThingsOfBergen;Integrated Security=True;Encrypt=True;TrustServerCertificate=True;Application Name=Bergen Forms",
+--     "ConnectionString": "Server=YOUR-SQL-SERVER;Database=ThingsOfBergen;Integrated Security=True;Encrypt=True;TrustServerCertificate=True;Application Name=Greenlight",
 --     "View": "dbo.ActiveStudents",
 --     "Columns": { "StudentId": "StudentNumber", "School": "Location", "Academy": "Academy or Major", "District": "District" },
 --     "Match": { "Districts": { ... }, "Locations": { ... } }      (filled in from the two lists above)

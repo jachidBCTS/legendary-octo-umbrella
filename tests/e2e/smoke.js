@@ -455,13 +455,34 @@ async function login(page, email) {
   check((await page.locator('.timeline').textContent()).includes('Notified teacher@example.org: Your trip to Liberty Science Center is approved'), 'notification step ran');
 
   await login(page, 'teacher@example.org');
+  // New-notification alerts: the page checks for new ones, updates the bell, plays a chime and shows a pop-up.
+  const [, where] = await getJson('/api/notifications/new?after=0');
+  check(where.latest > 0 && where.unread >= 2 && where.items.length === 0, 'the alert check reports where things stand without announcing old notifications');
+  const [, newer] = await getJson('/api/notifications/new?after=' + (where.latest - 1));
+  check(newer.items.length === 1 && newer.items[0].link === '/Notifications?open=' + where.latest, 'the alert check lists notifications newer than the last one seen');
+  await page.addInitScript(() => {
+    window.__pops = [];
+    window.Notification = class { constructor(title, options) { window.__pops.push(title + ' | ' + (options && options.tag)); } static get permission() { return 'granted'; } static requestPermission() { return Promise.resolve('granted'); } };
+  });
+  await page.goto(base + '/');
+  await page.evaluate((last) => { localStorage.setItem('sf.alerts.last', String(last)); localStorage.setItem('sf.alerts.popups', '1'); }, where.latest - 1);
+  await page.reload();
+  await page.waitForFunction(() => /New notification/.test(document.getElementById('toast')?.textContent || ''), null, { timeout: 8000 });
+  const pops = await page.evaluate(() => window.__pops);
+  check(pops.length === 1 && pops[0].includes('greenlight-' + where.latest), 'a new notification shows a pop-up and a message on the page (' + pops.join(', ') + ')');
+  check(await page.evaluate(() => localStorage.getItem('sf.alerts.last')) === String(where.latest), 'it is announced once');
   await page.goto(base + '/Notifications');
+  check(await page.locator('[data-alert-sound]').isChecked() && await page.locator('[data-alert-popups]').isChecked(), 'the Notifications page has the sound and pop-up switches for this device');
+  await page.locator('[data-alert-sound]').uncheck();
+  check(await page.evaluate(() => localStorage.getItem('sf.alerts.sound')) === '0', 'the sound can be switched off');
+  await page.locator('[data-alert-sound]').check();
+  await page.screenshot({ path: S + '/shots/21b-alert-settings.png', fullPage: true });
   const myNotes = await page.locator('.note strong').allTextContents();
   check(myNotes.some((t) => t.includes('Your trip to Liberty Science Center is approved')) && myNotes.some((t) => t.startsWith('Completed: Field Trip Request')), 'requester notified of approval and completion');
   await page.click('button:has-text("Mark all as read")');
   await page.waitForLoadState();
   check(await page.locator('.note.unread').count() === 0, 'mark all as read works');
-  check(await page.locator('.sidebar a[href="/Notifications"] .badge').count() === 0, 'badge clears');
+  check(await page.locator('.sidebar a[href="/Notifications"] .badge').isHidden(), 'badge clears');
   const otherNote = await page.goto(base + '/Notifications?open=1');
   check(!/Requests\/Detail/.test(page.url()) || true, 'opening another person\'s notification id is harmless');
 
@@ -990,7 +1011,7 @@ async function login(page, email) {
   fs.writeFileSync(S + '/not-a-workflow.json', JSON.stringify({ hello: 'world' }));
   await page.setInputFiles('#import-file', S + '/not-a-workflow.json');
   await page.waitForSelector('.flash.bad');
-  check((await page.locator('.flash.bad').textContent()).includes('not a Bergen Forms workflow file'), 'a file that is not a workflow is refused');
+  check((await page.locator('.flash.bad').textContent()).includes('not a Greenlight workflow file'), 'a file that is not a workflow is refused');
   await page.setInputFiles('#import-file', S + '/outing.schoolflow.json');
   await page.waitForURL(/Builder\/Edit\/\d+/);
   const outingId = Number(page.url().split('/').pop());
@@ -1478,7 +1499,7 @@ async function login(page, email) {
 
   note('13w. name and collapsible menus');
   await login(page, 'admin@example.org');
-  check((await page.locator('.brand').textContent()).includes('Bergen Forms') && (await page.title()).endsWith('Bergen Forms'), 'the site is called Bergen Forms');
+  check((await page.locator('.brand').textContent()).includes('Greenlight') && (await page.title()).endsWith('Greenlight'), 'the site is called Greenlight');
   const adminGroup = page.locator('details.nav-group[data-nav-group="admin"]');
   check(await adminGroup.evaluate((d) => !d.open), 'the Admin menu starts closed away from admin pages');
   await adminGroup.locator('summary').click();

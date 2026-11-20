@@ -62,7 +62,7 @@
     }
     else
     {
-        <p><span class="pill warn">Off</span> Notifications appear inside Bergen Forms only.</p>
+        <p><span class="pill warn">Off</span> Notifications appear inside Greenlight only.</p>
         <p class="muted" data-tip>To turn email on, set <code>Email:Mode</code> to <code>Graph</code>, <code>Email:From</code> to the mailbox to send as (for example a shared no-reply mailbox)
             and <code>Email:BaseUrl</code> to this site's address, then give the Entra app registration the Microsoft Graph <em>application</em> permission <code>Mail.Send</code> with admin consent.
             @if (string.Equals(Model.Email.Mode, "Graph", StringComparison.OrdinalIgnoreCase) && Model.Email.MissingSettings.Count > 0)
@@ -104,7 +104,7 @@
   "event": "ticket_updated",
   "ticket": { "id": "{{ticket.id_numeric}}" }
 }</pre>
-    <p class="muted" data-tip>Only the ticket ID is needed: Bergen Forms reads the rest of the ticket (status, priority, group, custom fields…) from the Freshservice API,
+    <p class="muted" data-tip>Only the ticket ID is needed: Greenlight reads the rest of the ticket (status, priority, group, custom fields…) from the Freshservice API,
         so formulas such as <code>ticket.status &gt;= 4</code> use the same numeric values as the API (2 Open, 3 Pending, 4 Resolved, 5 Closed).
         You may add more fields to the JSON; they become available to formulas too.</p>
     @if (Model.WebhookLogs.Count > 0)
@@ -135,7 +135,7 @@
 
 <section class="panel" id="groups">
     <h2>Microsoft Entra groups</h2>
-    <p class="muted" data-tip>Register the Entra security groups Bergen Forms should know about. A group can <strong>grant a role</strong> to its members,
+    <p class="muted" data-tip>Register the Entra security groups Greenlight should know about. A group can <strong>grant a role</strong> to its members,
         and any registered group can be used to <strong>limit who may submit a form</strong> (set per workflow in the builder).
         Membership is managed in Entra and picked up the next time each person signs in.</p>
     @if (Model.Groups.Count > 0)
@@ -173,7 +173,7 @@
             <select id="g-role" name="role"><option value="">No role (audience only)</option><option value="Builder">Builder</option><option value="Admin">Admin</option></select></div>
         <div class="dept-save"><button class="btn primary">Register group</button></div>
     </form>
-    <p class="muted small" data-tip>Find the Object ID in the Entra admin center: Groups → the group → Overview. Groups only reach Bergen Forms if the app registration's
+    <p class="muted small" data-tip>Find the Object ID in the Entra admin center: Groups → the group → Overview. Groups only reach Greenlight if the app registration's
         <em>Token configuration</em> has the <em>groups</em> claim switched on (Security groups, Group ID) — see the deployment guide.</p>
 </section>
 

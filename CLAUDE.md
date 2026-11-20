@@ -370,8 +370,15 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   requester with access sees their own; otherwise access must cover every student on it. Exports apply
   it per request. The staff list also feeds email suggestions (`/api/people`; Freshservice only when there
   is no staff list). **Not verified against the owner's SQL Server yet.**
-- **Name (owner, Nov 18, 2026):** the site is called **Bergen Forms** everywhere people see it. Code,
-  namespaces, the `X-SchoolFlow-Secret` webhook header and the workflow file marker keep "SchoolFlow".
+- **Name (owner, Nov 20, 2026; was "Bergen Forms"):** the site is called **Greenlight** everywhere people see it
+  (brand mark: a tick on a green badge). Code, namespaces, the `X-SchoolFlow-Secret` webhook header and the workflow
+  file marker keep "SchoolFlow"; the host name stays forms.bergen.org.
+- **New-notification alerts (owner, Nov 20, 2026):** `common.js` (`SF.alerts`) asks `GET /api/notifications/new?after=`
+  (`NotificationsController`; `after=0` = baseline only) every 30 s (60 s in a background tab), updates the bell badge
+  (`[data-note-badge]`, always rendered), plays a Web Audio chime and, with browser permission, shows a desktop pop-up
+  (`Notification`, tag `greenlight-{id}` so tabs do not double up; the last announced id is shared in localStorage).
+  Per-device switches on the Notifications page (`alert-settings.js`, localStorage `sf.alerts.sound/popups/last`).
+  Only while a tab is open; real push (service worker + Web Push) not built.
 - **Sidebar:** Build and Admin are `<details class="nav-group">`; the group holding the current page is
   open (`data-here="true"`), otherwise `common.js` restores the person's own last click (localStorage).
 - **Accessibility**: `tests`-independent check with axe-core (WCAG 2.1 A/AA) over the main screens
@@ -405,7 +412,9 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   portal form rebuilt (requester = staff field defaulting to the submitter, CC, subject, location, room, phone,
   the owner's 10 categories, description, files, availability). Its Create ticket step names custom fields by their **labels**. `FreshserviceClient`
   reads the ticket form (cached 30 min) before creating/updating a ticket and `MatchCustomFields` maps each key by
-  exact name, simplified name or label (`Simple`: lower-case alphanumerics, no `cf_`), matches dropdown values and
+  exact name, simplified name, agent label or **portal label** (`label_for_customers` → `TicketField.CustomerLabel`; the
+  owner's "Room #" shows as "Room Number" on the portal, "Extension / Phone #" as "Best number to reach you")
+  (`Simple`: lower-case alphanumerics, no `cf_`), matches dropdown values and
   the category levels to the form's choices (`MatchChoice`), turns a location *lookup* field's text into the
   Freshservice location id, and **drops** anything that does not fit with a note (`TicketCreate/TicketUpdate.Notes`
   → timeline warning) rather than letting Freshservice refuse the ticket. Unreadable form = values sent as given.

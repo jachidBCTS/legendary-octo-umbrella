@@ -429,6 +429,85 @@
     refresh();
   });
 
+  // ---- new-notification alerts -----------------------------------------------------------
+  // Every open page asks every 30 seconds (a minute when the tab is in the background) whether a new
+  // notification arrived. If so: the bell's count updates, a short chime plays and, when the person
+  // has allowed it on this device, a desktop pop-up appears (on Windows, in the corner like other apps).
+  // Works while Greenlight is open in any tab, even minimised; not when the browser is closed.
+  const alerts = (() => {
+    const store = {
+      get(key, fallback) { try { const v = localStorage.getItem('sf.alerts.' + key); return v === null ? fallback : v; } catch (e) { return fallback; } },
+      set(key, value) { try { localStorage.setItem('sf.alerts.' + key, String(value)); } catch (e) { /* private window */ } },
+    };
+    const soundOn = () => store.get('sound', '1') === '1';
+    const popupsOn = () => store.get('popups', '1') === '1' && 'Notification' in window && Notification.permission === 'granted';
+
+    let audio = null;
+    function chime() {
+      try {
+        audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+        if (audio.state === 'suspended') audio.resume();
+        const start = audio.currentTime + 0.02;
+        [[880, 0], [1318.5, 0.14]].forEach(([freq, delay]) => {
+          const osc = audio.createOscillator();
+          const gain = audio.createGain();
+          osc.type = 'sine';
+          osc.frequency.value = freq;
+          gain.gain.setValueAtTime(0.0001, start + delay);
+          gain.gain.exponentialRampToValueAtTime(0.18, start + delay + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, start + delay + 0.45);
+          osc.connect(gain).connect(audio.destination);
+          osc.start(start + delay);
+          osc.stop(start + delay + 0.5);
+        });
+      } catch (e) { /* no sound on this browser */ }
+    }
+    // Browsers only allow sound after the person has clicked or typed on the page once.
+    document.addEventListener('pointerdown', () => { try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); } catch (e) { } }, { once: true });
+
+    function popup(item) {
+      try {
+        const note = new Notification(item.title || 'Greenlight', { body: item.body || '', tag: 'greenlight-' + item.id, silent: soundOn() });
+        note.onclick = () => { window.focus(); location.href = item.link; note.close(); };
+      } catch (e) { /* some browsers only allow pop-ups from an installed app */ }
+    }
+
+    function setBadge(count) {
+      document.querySelectorAll('[data-note-badge]').forEach((badge) => {
+        badge.textContent = count > 99 ? '99+' : String(count);
+        badge.hidden = count === 0;
+      });
+    }
+
+    let timer = null;
+    async function check() {
+      clearTimeout(timer);
+      const seen = Number(store.get('last', '0')) || 0;
+      try {
+        const data = await api('GET', '/api/notifications/new?after=' + seen);
+        setBadge(data.unread);
+        // Another open tab may already have announced these.
+        const already = Number(store.get('last', '0')) || 0;
+        const fresh = (data.items || []).filter((i) => i.id > already).reverse();
+        store.set('last', Math.max(already, data.latest));
+        if (fresh.length && seen > 0) {
+          if (soundOn()) chime();
+          if (popupsOn()) fresh.slice(-3).forEach(popup);
+          if (!document.hidden) toast(fresh.length === 1 ? 'New notification: ' + fresh[0].title : fresh.length + ' new notifications');
+        }
+      } catch (e) { /* signed out or offline: try again later */ }
+      timer = setTimeout(check, document.hidden ? 60000 : 30000);
+    }
+    function start() {
+      if (document.body.dataset.alerts !== 'on') return;
+      timer = setTimeout(check, 1500);
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+    }
+    return { start, chime, popup, soundOn, store };
+  })();
+  window.SF.alerts = alerts;
+  alerts.start();
+
   document.addEventListener('submit', (e) => {
     const message = e.target.getAttribute && e.target.getAttribute('data-confirm');
     if (message && !window.confirm(message)) e.preventDefault();

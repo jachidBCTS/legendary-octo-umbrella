@@ -100,8 +100,8 @@ public class SettingsModel : PageModel
         {
             try
             {
-                await _sender.SendAsync(to, "Bergen Forms test email",
-                    NotificationService.BuildHtml("Bergen Forms test email", "If you are reading this, Bergen Forms can send email through Microsoft 365.", _email.BaseUrl + "/"), ct);
+                await _sender.SendAsync(to, "Greenlight test email",
+                    NotificationService.BuildHtml("Greenlight test email", "If you are reading this, Greenlight can send email through Microsoft 365.", _email.BaseUrl + "/"), ct);
                 EmailTestResult = $"Sent a test email to {to}. Check the inbox (and junk folder).";
                 EmailTestOk = true;
             }

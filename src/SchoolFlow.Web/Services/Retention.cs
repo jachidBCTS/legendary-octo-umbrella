@@ -92,7 +92,7 @@ public sealed class RetentionService
         {
             _db.AuditEntries.Add(new AuditEntry
             {
-                At = nowUtc, ActorEmail = "", ActorName = "Bergen Forms (automatic)", Action = "retention.purged",
+                At = nowUtc, ActorEmail = "", ActorName = "Greenlight (automatic)", Action = "retention.purged",
                 Target = $"Retention policy ({Years} year{(Years == 1 ? "" : "s")})",
                 Detail = $"Deleted {requests} request(s) and {files} file(s)"
                     + (oldest is not null ? $" last active between {oldest:yyyy-MM-dd} and {newest:yyyy-MM-dd}" : "")
