@@ -6,19 +6,17 @@
 <div class="page-head">
     <div><h1>Locations</h1><p class="sub" data-tip>Buildings and rooms people can choose on forms with a Location field.</p></div>
     <div class="row wrap">
-        @if (Model.SettingsLocations.Count > 0)
-        {
-            <form method="post" asp-page-handler="FromSettings"><button class="btn">Add the district's locations</button></form>
-        }
         <form method="post" asp-page-handler="Sync"><button class="btn primary">Sync from Freshservice</button></form>
     </div>
 </div>
-<p class="muted" data-tip="page">Sync adds locations that are new in Freshservice, renames ones that changed, and switches off ones that were removed there.
-    It never touches locations you added by hand and never switches one back on.
+<p class="muted" data-tip="page">Sync makes this list the choices of the Location field on the Freshservice ticket form, which the help desk's routing uses:
+    it adds new choices and switches off every location that is not one of them (including ones added by hand). Nothing is deleted, so requests that used an old location keep it.
+    To add or rename a location, change the ticket form's Location field in Freshservice, then sync.
     @if (!Model.IsLive) { <strong>Freshservice is in simulation mode, so a sync brings in sample locations.</strong> }</p>
 
 <section class="panel">
     <h2>Add a location by hand</h2>
+    <p class="muted" data-tip>Only for a site without Freshservice: the next Sync switches off any location that is not on the ticket form's list.</p>
     <form method="post" asp-page-handler="Add" class="row wrap">
         <input name="name" required maxlength="200" placeholder="e.g. Annex › Room 12" aria-label="Location name" />
         <button class="btn">Add location</button>
@@ -45,13 +43,13 @@ else
                            a bare input in a table cell can become a cell of its own and push the row out of line. *@
                         <div class="cell-box">
                             <input type="hidden" name="Rows[@i].Id" value="@l.Id" />
-                            @if (l.FreshserviceId == null)
+                            @if (l.FreshserviceId == null && !l.TicketChoice)
                             {
                                 <input name="Rows[@i].Name" value="@l.Name" required maxlength="200" aria-label="Name" autocomplete="off" data-lpignore="true" data-1p-ignore data-bwignore />
                             }
                             else
                             {
-                                <input value="@l.Name" aria-label="Name (renamed in Freshservice)" readonly autocomplete="off" data-lpignore="true" data-1p-ignore data-bwignore />
+                                <input value="@l.Name" aria-label="Name (changed in Freshservice)" readonly autocomplete="off" data-lpignore="true" data-1p-ignore data-bwignore />
                             }
                         </div>
                     </td>
@@ -68,7 +66,7 @@ else
                             <input name="Rows[@i].District" value="@l.District" maxlength="40" aria-label="District of @l.Name" placeholder="e.g. BCTS" class="district-input" autocomplete="off" data-lpignore="true" data-1p-ignore data-bwignore />
                         }
                     </td>
-                    <td class="muted" data-label="Source">@(l.FreshserviceId is long fs ? $"Freshservice #{fs}" : "Added by hand")</td>
+                    <td class="muted" data-label="Source">@(l.TicketChoice ? "Ticket form list" : l.FreshserviceId is long fs ? $"Old Freshservice table #{fs}" : "Added by hand")</td>
                     <td data-label="On forms">
                         <label class="check-inline"><input type="checkbox" name="Rows[@i].Active" value="true" checked="@l.IsActive" data-row-on /> <span>@(l.IsActive ? "Offered" : "Off")</span></label>
                         <input type="hidden" name="Rows[@i].Active" value="false" />
@@ -85,4 +83,4 @@ else
     </div>
     </form>
 }
-<p class="muted small" data-tip="page">Locations from Freshservice are renamed there, not here. Change as many rows as you like, then press Save changes once. A location that is not ticked under "On forms" is no longer offered on forms; requests that already used it keep it. The district decides which locations a Location field limited to one district offers; "Add the district's locations" fills it in from the staff list for locations that have none.</p>
+<p class="muted small" data-tip="page">Change as many rows as you like, then press Save changes once. Names from the ticket form list are changed in Freshservice, not here. A location that is not ticked under "On forms" is no longer offered on forms; requests that already used it keep it. The district decides which locations a Location field limited to one district offers.</p>

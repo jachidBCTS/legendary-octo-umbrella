@@ -247,12 +247,13 @@ see notifications in the app. Addresses outside the sender's domain get the emai
 
 ### Locations
 
-**Admin → Locations → Sync from Freshservice** copies Freshservice's locations into SchoolFlow's own
-table, naming nested ones by their full path (`North Campus › Science Wing › Room 101`). Run it
-again whenever locations change: it adds new ones, renames changed ones and switches off ones that
-were removed in Freshservice. It never touches locations added by hand and never switches one back
-on. Forms offer active locations through the **Location** field type; requests that already used a
-location keep it.
+**Admin → Locations → Sync from Freshservice** makes the list the choices of the **Location field on the
+Freshservice ticket form** (the list the help desk's routing uses; set `Freshservice:LocationField` if the
+field has another label). Freshservice's own Locations table is not read. Sync adds new choices and
+switches off every location that is not one of them, including ones added by hand; nothing is deleted,
+so requests that used an old location keep it. A choice an admin switched off stays off. Names from
+the list are changed in Freshservice, then synced. Districts are set per row; change as many rows as
+you like and press **Save changes** once. Forms offer active locations through the **Location** field type.
 
 ### Database and upgrades
 

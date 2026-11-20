@@ -163,6 +163,8 @@ public sealed class LocationTests : IDisposable
     private sealed class FakeFreshservice : IFreshserviceClient
     {
         public List<LookupItem> Locations { get; set; } = new();
+        public List<TicketField> Fields { get; set; } = new();
+        public Task<IReadOnlyList<TicketField>> TicketFieldsAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<TicketField>>(Fields);
         public bool IsLive => true;
         public Task<IReadOnlyList<LookupItem>> LookupAsync(string source, string? query, string? userEmail, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<LookupItem>>(source == LookupSources.Locations ? Locations : throw new NotSupportedException());
@@ -176,54 +178,61 @@ public sealed class LocationTests : IDisposable
         public Task<string> TestConnectionAsync(CancellationToken ct = default) => throw new NotSupportedException();
     }
 
+    private static TicketField LocationList(params string[] names) => new("cf_location", "Location", "custom_dropdown", false, names);
+
     [Fact]
-    public async Task Sync_Adds_Renames_SwitchesOff_AndLeavesManualOnesAlone()
+    public async Task Sync_MakesTheListTheTicketFormsLocationChoices()
     {
-        var fs = new FakeFreshservice { Locations = { new("1", "Main Building"), new("2", "Gym"), new("x", "Bad id"), new("3", "  ") } };
+        // The old Freshservice Locations table must not be read at all.
+        var fs = new FakeFreshservice
+        {
+            Locations = { new("1", "Antiquated Building") },
+            Fields = { new TicketField("location", "Location", "default_location", true, Array.Empty<string>()), LocationList("Academy", "Delta @ Ramapo/Indian Hills", "  ", "Teterboro") },
+        };
         await using (var db = new AppDbContext(_options))
         {
-            db.Locations.Add(new Location { Name = "Portable 4 (manual)" });
+            db.Locations.Add(new Location { Name = "Delta Program-RIH", District = "BCSS" });           // the staff-side name
+            db.Locations.Add(new Location { Name = "academy", District = "BCTS" });                      // same place, other capitals
+            db.Locations.Add(new Location { Name = "Old Gym", FreshserviceId = 7 });                     // from the old table
+            db.Locations.Add(new Location { Name = "Teterboro", IsActive = false });                     // switched off earlier
             await db.SaveChangesAsync();
             var first = await LocationSync.RunAsync(db, fs, default);
-            Assert.Equal(new LocationSyncResult(2, 0, 0, 2), first);
+            Assert.Equal(new LocationSyncResult(1, 1, 2, 3, Field: "Location"), first);
+            Assert.Contains("1 added, 1 switched on, 2 switched off", first.Describe());
         }
-
         await using (var db = new AppDbContext(_options))
         {
-            // An admin switches the gym off; Freshservice renames building 1, drops nothing, adds a library.
-            (await db.Locations.SingleAsync(l => l.Name == "Gym")).IsActive = false;
-            await db.SaveChangesAsync();
-            fs.Locations = new() { new("1", "Main Building (North)"), new("2", "Gym"), new("4", "Library") };
-            var second = await LocationSync.RunAsync(db, fs, default);
-            Assert.Equal(new LocationSyncResult(1, 1, 0, 3), second);
-            Assert.False((await db.Locations.SingleAsync(l => l.Name == "Gym")).IsActive); // stays off
-        }
-
-        await using (var db = new AppDbContext(_options))
-        {
-            fs.Locations = new() { new("1", "Main Building (North)"), new("2", "Gym") }; // library removed in Freshservice
-            var third = await LocationSync.RunAsync(db, fs, default);
-            Assert.Equal(1, third.SwitchedOff);
-            Assert.Contains("1 switched off", third.Describe());
             var all = await db.Locations.AsNoTracking().OrderBy(l => l.Name).ToListAsync();
-            Assert.Equal(new[] { "Gym", "Library", "Main Building (North)", "Portable 4 (manual)" }, all.Select(l => l.Name).ToArray());
-            Assert.Equal(new[] { false, false, true, true }, all.Select(l => l.IsActive).ToArray());
-            Assert.Null(all[3].FreshserviceId);
+            Assert.Equal(new[] { "Academy", "Delta @ Ramapo/Indian Hills", "Delta Program-RIH", "Old Gym", "Teterboro" }, all.Select(l => l.Name).ToArray());
+            Assert.Equal(new[] { true, true, false, false, true }, all.Select(l => l.IsActive).ToArray());
+            Assert.Equal(new[] { true, true, false, false, true }, all.Select(l => l.TicketChoice).ToArray());
+            Assert.Equal("BCTS", all[0].District);  // the district set before is kept
+            Assert.DoesNotContain(all, l => l.Name == "Antiquated Building");
 
-            Assert.Equal("Already up to date (2 locations in Freshservice).", (await LocationSync.RunAsync(db, fs, default)).Describe());
+            // An admin switches a listed location off: it stays off. A choice removed in Freshservice is switched off.
+            (await db.Locations.SingleAsync(l => l.Name == "Teterboro")).IsActive = false;
+            await db.SaveChangesAsync();
+            fs.Fields = new() { LocationList("Academy", "Teterboro") };
+            var second = await LocationSync.RunAsync(db, fs, default);
+            Assert.Equal(new LocationSyncResult(0, 0, 1, 2, Field: "Location"), second);
+            Assert.False((await db.Locations.SingleAsync(l => l.Name == "Teterboro")).IsActive);
+            Assert.Equal("Already up to date (2 locations in the ticket form's Location list).", (await LocationSync.RunAsync(db, fs, default)).Describe());
         }
     }
 
     [Fact]
-    public async Task Sync_WithAnEmptyAnswer_ChangesNothing()
+    public async Task Sync_WithoutALocationList_ChangesNothing()
     {
         await using var db = new AppDbContext(_options);
-        var fs = new FakeFreshservice { Locations = { new("1", "Main Building") } };
-        await LocationSync.RunAsync(db, fs, default);
-        fs.Locations = new();
+        db.Locations.Add(new Location { Name = "Main Building" });
+        await db.SaveChangesAsync();
+        var fs = new FakeFreshservice { Fields = { new TicketField("cf_room", "Room Number", "custom_text", false, Array.Empty<string>()) } };
         var result = await LocationSync.RunAsync(db, fs, default);
-        Assert.NotNull(result.Skipped);
+        Assert.Contains("no “Location” field", result.Skipped);
         Assert.True((await db.Locations.SingleAsync()).IsActive);
+        // A differently named field can be chosen in the settings file.
+        fs.Fields.Add(new TicketField("cf_building", "Building", "custom_dropdown", false, new[] { "Main Building" }));
+        Assert.Null((await LocationSync.RunAsync(db, fs, default, "Building")).Skipped);
     }
 
     [Fact]

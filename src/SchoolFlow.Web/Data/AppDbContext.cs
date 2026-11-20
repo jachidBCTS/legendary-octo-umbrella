@@ -329,8 +329,10 @@ public class Location
 {
     public int Id { get; set; }
     public string Name { get; set; } = "";
-    /// <summary>The location's ID in Freshservice; null for one added by hand.</summary>
+    /// <summary>The location's ID in Freshservice's Locations table (the old source of Sync, no longer used); null otherwise.</summary>
     public long? FreshserviceId { get; set; }
+    /// <summary>One of the choices of the ticket form's Location field in Freshservice (Sync keeps these; name changed there).</summary>
+    public bool TicketChoice { get; set; }
     /// <summary>The district the location belongs to (its short code, e.g. BCTS); blank when not set.</summary>
     [System.ComponentModel.DataAnnotations.MaxLength(40)]
     public string? District { get; set; }

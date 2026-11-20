@@ -142,9 +142,18 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   are `details[data-fold]` (folds remembered per device), recent requests in the right column (`.home-grid`).
   Departments are folded cards like Teams.
 - **Starting lists**: Admin → Departments "Add departments from the staff list" (`IStaffDirectory.DepartmentsAsync`,
-  DISTINCT Department; added **switched off** until an admin sets the final approver — owner's choice);
-  Admin → Locations "Add the district's locations" (`StartingLocations.From`: the student-side names in
-  `Students:Match:Locations`, number codes replaced by the staff name, e.g. 20 → "Academy").
+  DISTINCT Department; added **switched off** until an admin sets the final approver — owner's choice).
+- **Locations come from the ticket form (owner, Nov 20, 2026):** the owner's Freshservice *Locations table* is
+  out of date and must not be used; the list that routing uses is the choices of the ticket form's **Location**
+  custom dropdown (~85 names). `LocationSync.RunAsync` reads `TicketFieldsAsync`, picks the field by label/name
+  (`Freshservice:LocationField`, default "Location"; a custom field with choices before a default one), adds new
+  choices (`Location.TicketChoice`, migration `LocationTicketChoice`; name not editable here), switches off
+  **everything** not in the list (hand-added, old-table rows, duplicates such as staff-side "Delta Program-RIH"),
+  never deletes, and leaves a listed location an admin switched off alone. The "Add the district's locations"
+  button was removed (it re-added staff-side names); `StartingLocations` is kept but unused by pages. Districts
+  are set by hand per row (no reliable name match to the staff list).
+- **Testing mode (owner, Nov 20, 2026):** the site is not live yet; only the owner tests it, and test data may be
+  cleared. At go-live the owner will say so, and existing requests etc. are to be scrapped (help them then).
 - **Read-only fields, districts, staff field (Nov 19, 2026):** `FieldDef.ReadOnly` (any answer-holding type
   except calculated/perdiem; `IsReadOnly`, `[JsonIgnore]`): `FormEvaluator` **never uses the browser's value** —
   it takes `locked` (answers already on the request: resubmit, revise evaluate, task re-do, student restore) or
@@ -152,8 +161,7 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   `lockField` (readOnly/disabled, "Filled in for you"), and the server's value is applied on every evaluation.
   `Location.District` (migration `AddLocationDistrict`; Admin → Locations column — the list is edited in one go and saved
   with one button, owner Nov 20, 2026: `form[data-batch]` in `common.js` marks changed rows, counts them in a sticky
-  `.save-bar`, warns before leaving; `OnPostSaveAsync` is all-or-nothing and only checks *new* names for clashes; "Add the district's locations"
-  fills blanks from `IStaffDirectory.PlacesAsync` = DISTINCT DistrictShort/Location). Location and staff fields
+  `.save-bar`, warns before leaving; `OnPostSaveAsync` is all-or-nothing and only checks *new* names for clashes). Location and staff fields
   may set `District` (fixed code) or `DistrictField` (another field: a district question — full names map to codes
   via `Students:Match:Districts`, `SchoolCalendar.DistrictAliases` — or a location/staff answer). Checked on the
   server (`PlaceDistricts`, `FormEvaluator.WantedDistrict`); `/api/locations` returns `district` + `districts`

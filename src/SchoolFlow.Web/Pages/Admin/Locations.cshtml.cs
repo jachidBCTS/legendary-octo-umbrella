@@ -16,14 +16,12 @@ public class LocationsModel : PageModel
     private readonly AppDbContext _db;
     private readonly IFreshserviceClient _freshservice;
     private readonly IConfiguration _config;
-    private readonly IStaffDirectory _staff;
 
-    public LocationsModel(AppDbContext db, IFreshserviceClient freshservice, IConfiguration config, IStaffDirectory staff)
+    public LocationsModel(AppDbContext db, IFreshserviceClient freshservice, IConfiguration config)
     {
         _db = db;
         _freshservice = freshservice;
         _config = config;
-        _staff = staff;
     }
 
     /// <summary>The district codes an admin can pick: those in the settings file, and any already in use.</summary>
@@ -56,7 +54,7 @@ public class LocationsModel : PageModel
             if (!byId.TryGetValue(edit.Id, out var location)) continue;
             var touched = false;
             var name = (edit.Name ?? "").Trim();
-            if (location.FreshserviceId is null && edit.Name is not null && name != location.Name)
+            if (location.FreshserviceId is null && !location.TicketChoice && edit.Name is not null && name != location.Name)
             {
                 if (name.Length == 0 || name.Length > 200) return Flash($"“{location.Name}” needs a name (up to 200 characters). Nothing was saved.", false);
                 location.Name = name;
@@ -78,60 +76,6 @@ public class LocationsModel : PageModel
         return Flash($"Saved {changed} location{(changed == 1 ? "" : "s")}.", true);
     }
 
-    /// <summary>The district's locations named in the settings file's location matches.</summary>
-    public IReadOnlyList<string> SettingsLocations => StartingLocations.From(_config);
-
-    /// <summary>Adds the district's locations from the settings file (Students:Match:Locations) that are not here yet.</summary>
-    /// <summary>
-    /// Adds the district's locations from the settings file (Students:Match:Locations) that are not here yet,
-    /// and sets the district of every location from it that has none, from the staff list (which district
-    /// the staff working there are in).
-    /// </summary>
-    public async Task<IActionResult> OnPostFromSettingsAsync(CancellationToken ct)
-    {
-        var places = StartingLocations.WithStaffNames(_config);
-        if (places.Count == 0) return Flash("The settings file has no location list (Students:Match:Locations).", false);
-        var districtOf = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var staffNote = "";
-        if (_staff.IsConfigured)
-        {
-            try
-            {
-                foreach (var (district, location) in await _staff.PlacesAsync(ct))
-                    if (district.Length > 0 && location.Length > 0) districtOf.TryAdd(location, district);
-            }
-            catch (Exception ex) when (ex is Microsoft.Data.SqlClient.SqlException or InvalidOperationException)
-            {
-                staffNote = " The staff list could not be read, so districts were not filled in: " + ex.Message;
-            }
-        }
-        var rows = await _db.Locations.ToListAsync(ct);
-        var byName = rows.GroupBy(l => l.Name, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
-        int added = 0, districted = 0;
-        foreach (var (name, staffNames) in places)
-        {
-            var district = staffNames.Select(k => districtOf.GetValueOrDefault(k)).FirstOrDefault(d => !string.IsNullOrEmpty(d));
-            if (!byName.TryGetValue(name, out var location))
-            {
-                location = new Location { Name = name, UpdatedAt = DateTime.UtcNow };
-                _db.Locations.Add(location);
-                byName[name] = location;
-                added++;
-            }
-            if (string.IsNullOrEmpty(location.District) && district is not null)
-            {
-                location.District = district.Length > 40 ? district[..40] : district;
-                location.UpdatedAt = DateTime.UtcNow;
-                districted++;
-            }
-        }
-        if (added + districted > 0) await _db.SaveChangesAsync(ct);
-        var message = added == 0 && districted == 0
-            ? "Every location in the settings file is already here."
-            : $"Added {added} location{(added == 1 ? "" : "s")}; set the district of {districted}.";
-        return Flash(message + staffNote, staffNote.Length == 0);
-    }
-
     public List<Location> Locations { get; private set; } = new();
     public bool IsLive => _freshservice.IsLive;
 
@@ -147,7 +91,7 @@ public class LocationsModel : PageModel
     {
         try
         {
-            var result = await LocationSync.RunAsync(_db, _freshservice, ct);
+            var result = await LocationSync.RunAsync(_db, _freshservice, ct, _config["Freshservice:LocationField"]);
             return Flash(result.Describe(), result.Skipped is null);
         }
         catch (Exception ex) when (ex is FreshserviceException or HttpRequestException or TaskCanceledException)

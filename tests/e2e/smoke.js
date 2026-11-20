@@ -490,7 +490,10 @@ async function login(page, email) {
   check(await page.locator('.table tbody tr').count() === 3, 'sample locations present');
   await page.click('button:has-text("Sync from Freshservice")');
   await page.waitForSelector('.flash.ok');
-  check((await page.locator('.flash.ok').textContent()).includes('3 added'), 'sync from Freshservice adds locations: ' + (await page.locator('.flash.ok').textContent()).trim());
+  const synced = (await page.locator('.flash.ok').textContent()).trim();
+  check(synced.includes('ticket form') && synced.includes('4 added') && synced.includes('1 switched off'), 'sync takes the ticket form\'s Location list and switches off the rest: ' + synced);
+  check(await page.locator('tr:has(input[value="Main Building › Library"]) input[data-row-on]').isChecked() === false, 'a location not on the ticket list is switched off');
+  check(await page.locator('tr:has(input[value="Academy"]) input[name$=".Name"]').count() === 0, 'names from the ticket list cannot be changed here');
   await page.click('button:has-text("Sync from Freshservice")');
   await page.waitForSelector('.flash.ok');
   check((await page.locator('.flash.ok').textContent()).includes('Already up to date'), 'second sync changes nothing');
@@ -498,18 +501,17 @@ async function login(page, email) {
   await page.click('button:has-text("Add location")');
   await page.waitForSelector('.flash.ok');
   // Several changes, one save: nothing is sent until "Save changes".
-  const gyms = page.locator('tr:has(input[value="Gymnasium"]) input[type=checkbox][data-row-on]');
-  check(await gyms.count() === 2, 'both Gymnasium rows listed');
+  const onBox = (name) => page.locator(`tr:has(input[value="${name}"]) input[type=checkbox][data-row-on]`);
   check(await page.locator('[data-batch-save]').isDisabled(), 'Save changes is off until something changes');
-  await gyms.nth(0).uncheck();
-  await gyms.nth(1).uncheck();
+  await onBox('Gymnasium').uncheck();
+  await onBox('Teterboro').uncheck();
   await page.locator('tr:has(input[value="Annex › Room 12"]) input[name$=".Name"]').fill('Annex › Room 14');
   check(await page.locator('tr.row-changed').count() === 3 && /3 rows changed/.test(await page.locator('.save-bar-text').textContent()), 'changed rows are marked and counted before saving');
   await page.click('[data-batch-undo]');
   await page.waitForFunction(() => !document.querySelector('tr.row-changed'));
-  check(await page.locator('tr.row-changed').count() === 0 && await gyms.nth(0).isChecked(), 'Undo changes puts every row back');
-  await gyms.nth(0).uncheck();
-  await gyms.nth(1).uncheck();
+  check(await page.locator('tr.row-changed').count() === 0 && await onBox('Gymnasium').isChecked(), 'Undo changes puts every row back');
+  await onBox('Gymnasium').uncheck();
+  await onBox('Teterboro').uncheck();
   await page.locator('tr:has(input[value="Annex › Room 12"]) input[name$=".Name"]').fill('Annex › Room 14');
   await page.click('[data-batch-save]');
   await page.waitForSelector('.flash.ok');
@@ -519,6 +521,7 @@ async function login(page, email) {
   await page.waitForSelector('.flash.bad');
   check((await page.locator('.flash.bad').textContent()).includes('already a location called'), 'a new name that is already taken is refused, and nothing is saved');
   await page.locator('tr:has(input[value="Annex › Room 14"]) input[name$=".Name"]').fill('Annex › Room 12');
+  await onBox('Teterboro').check();
   await page.click('[data-batch-save]');
   await page.waitForSelector('.flash.ok');
   await page.screenshot({ path: S + '/shots/23-locations.png', fullPage: true });
@@ -1491,11 +1494,14 @@ async function login(page, email) {
   note('13v. districts on locations, staff field, read-only fields, categories, letterhead, confirmations');
   await login(page, 'admin@example.org');
   await page.goto(base + '/Admin/Locations');
-  await page.click('button:has-text("Add the district\'s locations")');
+  // Districts are set by hand in the list, all saved at once.
+  for (const [name, code] of [['Academy', 'BCTS'], ['N. A. Bleshman Regional Day School', 'BCSS'], ['Venture Program', 'BCSS']])
+    await page.locator(`tr:has(input[value="${name}"]) select[name$=".District"]`).selectOption(code);
+  await page.click('[data-batch-save]');
   await page.waitForSelector('.flash.ok');
   const districtOf = async (name) => page.locator(`tr:has(input[value="${name}"]) select[name$=".District"]`).inputValue();
   check(await districtOf('Academy') === 'BCTS' && await districtOf('N. A. Bleshman Regional Day School') === 'BCSS' && await districtOf('Venture Program') === 'BCSS',
-    'the district\'s locations are added with their district from the staff list');
+    'districts set in the list are saved');
   await page.goto(base + '/Admin/Categories');
   check(await page.locator('.cat-row').count() >= 4, 'categories already used by workflows start the list (' + await page.locator('.cat-row').count() + ')');
   await page.fill('input[aria-label="Category name"]', 'Business Office');
