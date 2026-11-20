@@ -202,3 +202,31 @@ jobs:
             Where-Object { $_.ProviderName -match 'IIS|ASP|\.NET' } | Select-Object -First 15 |
             ForEach-Object { Write-Host "[$($_.ProviderName)] $($_.Message)"; Write-Host '---' }
           Get-ChildItem C:\inetpub\SchoolFlow -ErrorAction SilentlyContinue | Select-Object -First 40 Name
+
+  # The ready-to-install update package, made only from a build that passed every check above.
+  # Download it from the run's page (Summary > Artifacts) and follow READ-ME-FIRST.txt inside.
+  update-package:
+    name: Update package for the server
+    needs: iis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: SchoolFlow-windows
+          path: kit/site
+      - name: Put the package together
+        run: |
+          set -e
+          rm -f kit/site/appsettings.Production.json kit/site/appsettings.Development.json
+          cp deploy/Update-SchoolFlow.ps1 deploy/READ-ME-FIRST.txt deploy/student-roster-view.sql deploy/student-location-match.json kit/
+          cp -r deploy/templates kit/templates
+          cp docs/DEPLOY-IIS.md kit/
+          echo "Built from commit ${GITHUB_SHA::7} on $(date -u +'%Y-%m-%d %H:%M') UTC (run ${GITHUB_RUN_NUMBER})" > kit/VERSION.txt
+          test -f kit/site/SchoolFlow.Web.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BergenForms-update-run-${{ github.run_number }}
+          path: kit
+          if-no-files-found: error
+          retention-days: 30
