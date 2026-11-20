@@ -179,6 +179,8 @@ html.a11y .flash.ok, html.a11y .flash.bad { animation: none; }
 .table tr.row-off td { opacity: .6; }
 .table tr.row-changed td { background: #fff6dc; }
 .table tr.row-changed td:first-child { box-shadow: inset 3px 0 0 #c98a00; }
+.cell-box { position: relative; min-width: 0; }
+.cell-box > input:not([type=hidden]) { width: 100%; }
 .check-inline { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
 .save-bar { position: sticky; bottom: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px;
   margin-top: 8px; padding: 10px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px;

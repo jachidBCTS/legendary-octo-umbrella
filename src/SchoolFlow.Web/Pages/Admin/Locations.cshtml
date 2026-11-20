@@ -41,15 +41,19 @@ else
                 var l = Model.Locations[i];
                 <tr class="@(l.IsActive ? "" : "row-off")" data-batch-row>
                     <td>
-                        <input type="hidden" name="Rows[@i].Id" value="@l.Id" />
-                        @if (l.FreshserviceId == null)
-                        {
-                            <input name="Rows[@i].Name" value="@l.Name" required maxlength="200" aria-label="Name" />
-                        }
-                        else
-                        {
-                            <input value="@l.Name" aria-label="Name (renamed in Freshservice)" readonly />
-                        }
+                        @* Wrapped in a div, and marked for password managers to ignore: an extension's icon placed beside
+                           a bare input in a table cell can become a cell of its own and push the row out of line. *@
+                        <div class="cell-box">
+                            <input type="hidden" name="Rows[@i].Id" value="@l.Id" />
+                            @if (l.FreshserviceId == null)
+                            {
+                                <input name="Rows[@i].Name" value="@l.Name" required maxlength="200" aria-label="Name" autocomplete="off" data-lpignore="true" data-1p-ignore data-bwignore />
+                            }
+                            else
+                            {
+                                <input value="@l.Name" aria-label="Name (renamed in Freshservice)" readonly autocomplete="off" data-lpignore="true" data-1p-ignore data-bwignore />
+                            }
+                        </div>
                     </td>
                     <td data-label="District">
                         @if (Model.DistrictChoices.Count > 0)
@@ -61,7 +65,7 @@ else
                         }
                         else
                         {
-                            <input name="Rows[@i].District" value="@l.District" maxlength="40" aria-label="District of @l.Name" placeholder="e.g. BCTS" class="district-input" />
+                            <input name="Rows[@i].District" value="@l.District" maxlength="40" aria-label="District of @l.Name" placeholder="e.g. BCTS" class="district-input" autocomplete="off" data-lpignore="true" data-1p-ignore data-bwignore />
                         }
                     </td>
                     <td class="muted" data-label="Source">@(l.FreshserviceId is long fs ? $"Freshservice #{fs}" : "Added by hand")</td>
