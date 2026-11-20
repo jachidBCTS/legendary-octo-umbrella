@@ -120,8 +120,7 @@ public sealed class RunService
         // The files now belong to this request: claim them before any step runs, so they can never be
         // deleted or attached to a second request while this one is in progress.
         var fileIds = files.OfType<Dictionary<string, object?>>().Select(f => Values.ToText(f.GetValueOrDefault("id"))).ToList();
-        var warning = PerDiemService.UsedFallback(def.Form, form.Values)
-            ? "GSA per diem rates could not be looked up, so the standard rate was used. Please check the meal and hotel amounts." : null;
+        var warning = PerDiemService.WarningFor(def.Form, form.Values);
         var id = await StartAsync(run, def, context, ct, warning: warning, beforeFirstStep: async runId =>
         {
             if (fileIds.Count == 0) return;
@@ -638,9 +637,8 @@ public sealed class RunService
 
         state.NewEvents.Add(new RunEvent(DateTime.Now, state.CurrentNodeId, "info",
             $"Resubmitted with changes by {name}{Adjusted(adjusted)}."));
-        if (PerDiemService.UsedFallback(def.Form, form.Values))
-            state.NewEvents.Add(new RunEvent(DateTime.Now, state.CurrentNodeId, "warning",
-                "GSA per diem rates could not be looked up, so the standard rate was used. Please check the meal and hotel amounts."));
+        if (PerDiemService.WarningFor(def.Form, form.Values) is string perDiemWarning)
+            state.NewEvents.Add(new RunEvent(DateTime.Now, state.CurrentNodeId, "warning", perDiemWarning));
         await (await EngineAsync(ct)).ReenterApprovalAsync(def.Flow, state, ct, restart);
         if (!await TrySaveAsync(run, state, ct))
             return (form, ActionResult.Fail("The request changed while you were editing. Refresh and try again."));

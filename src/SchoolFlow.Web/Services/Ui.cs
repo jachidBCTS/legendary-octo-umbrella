@@ -69,7 +69,8 @@ public static class Ui
         {
             "fallback" => $"Standard rate used — {T("note")} · ZIP {T("zip")} · {rates}",
             "simulated" => $"{place} · {rates} · Example rates (GSA not connected)",
-            _ => $"{(place.Length > 0 ? place : "ZIP " + T("zip"))}{(r.GetValueOrDefault("standard") is true ? " (standard rate area)" : "")} · {rates} · GSA FY{T("fiscal_year")}",
+            _ => $"{(place.Length > 0 ? place : "ZIP " + T("zip"))}{(r.GetValueOrDefault("standard") is true ? " (standard rate area)" : "")} · {rates} · "
+                + (T("rates_year").Length > 0 ? $"GSA FY{T("rates_year")} rates (FY{T("fiscal_year")} not published yet)" : $"GSA FY{T("fiscal_year")}"),
         };
     }
 

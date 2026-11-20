@@ -30,6 +30,8 @@ public sealed class GsaPerDiemClient : IPerDiemSource
         using var response = await _http.GetAsync($"v2/rates/zip/{Uri.EscapeDataString(zip)}/year/{fiscalYear}", ct);
         if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
             throw new HttpRequestException("GSA refused the API key (check Gsa:ApiKey in the settings file).");
+        // A year GSA has not published yet (or a ZIP it does not know) is "no rates", not an outage.
+        if (response.StatusCode is System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.BadRequest) return null;
         response.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(ct));
         return Parse(doc.RootElement);
@@ -83,6 +85,10 @@ public sealed class SimulatedPerDiemSource : IPerDiemSource
     {
         if (zip == "00000") return Task.FromResult<PerDiemArea?>(null);                      // "no rate"
         if (zip == "99999") throw new HttpRequestException("Simulated outage.");             // GSA unreachable
+        // Like GSA: next fiscal year's rates appear in August; later years are not published.
+        var today = DateTime.Today;
+        var published = PerDiemDirectory.FiscalYear(today) + (today.Month is >= 8 and <= 9 ? 1 : 0);
+        if (fiscalYear > published) return Task.FromResult<PerDiemArea?>(null);
         // A few places, so tests and demos show different amounts; anything else is the standard rate.
         var (city, county, state, meals, lodging, standard) = zip switch
         {
@@ -145,30 +151,50 @@ public sealed class PerDiemService
             foreach (var key in PerDiemDirectory.Needed(zip, from, to).Take(3))
             {
                 if (directory.Areas.ContainsKey(key)) continue;
-                directory.Areas[key] = await LookupAsync(key.Zip, key.FiscalYear, ct);
+                var (area, failed) = await LookupAsync(key.Zip, key.FiscalYear, ct);
+                // Travel in a fiscal year GSA has not published yet (its rates come out each August): use the
+                // latest year it has, back to the current one, and say so on the answer. Not after an outage.
+                for (var year = key.FiscalYear - 1; area is null && !failed && year >= PerDiemDirectory.FiscalYear(DateTime.Today); year--)
+                {
+                    (var earlier, failed) = await LookupAsync(key.Zip, year, ct);
+                    if (earlier is not null) area = earlier with { RatesYear = year };
+                }
+                directory.Areas[key] = area;
             }
         }
         return directory;
     }
 
-    private async Task<PerDiemArea?> LookupAsync(string zip, int fiscalYear, CancellationToken ct)
+    private async Task<(PerDiemArea? Area, bool Failed)> LookupAsync(string zip, int fiscalYear, CancellationToken ct)
     {
         var cacheKey = $"gsa:{zip}:{fiscalYear}";
-        if (_cache.TryGetValue(cacheKey, out Cached? hit) && hit is not null) return hit.Area;
+        if (_cache.TryGetValue(cacheKey, out Cached? hit) && hit is not null) return (hit.Area, hit.Failed);
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeout.CancelAfter(TimeSpan.FromSeconds(8));
             var area = await _source!.GetAsync(zip, fiscalYear, timeout.Token);
-            _cache.Set(cacheKey, new Cached(area, false), TimeSpan.FromHours(24));
-            return area;
+            // "Not published yet" is asked again after a few hours, so a new year's rates show up soon after GSA adds them.
+            _cache.Set(cacheKey, new Cached(area, false), area is null ? TimeSpan.FromHours(4) : TimeSpan.FromHours(24));
+            return (area, false);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException && !ct.IsCancellationRequested)
         {
             _log.LogWarning(ex, "GSA per diem lookup failed for ZIP {Zip}, fiscal year {Year}", zip, fiscalYear);
             _cache.Set(cacheKey, new Cached(null, true), TimeSpan.FromMinutes(2));
-            return null;
+            return (null, true);
         }
+    }
+
+    /// <summary>The timeline warning for a request whose per diem rates need checking, or null.</summary>
+    public static string? WarningFor(FormDefinition form, IDictionary<string, object?> values)
+    {
+        if (UsedFallback(form, values))
+            return "GSA per diem rates could not be looked up, so the standard rate was used. Please check the meal and hotel amounts.";
+        var early = form.Fields.Where(f => f.Type == FieldTypes.PerDiem).Select(f => values.TryGetValue(f.Key, out var v) ? v as Dictionary<string, object?> : null)
+            .FirstOrDefault(r => r is not null && !Values.IsBlank(r.GetValueOrDefault("rates_year")));
+        return early is null ? null
+            : $"GSA has not published per diem rates for fiscal year {Values.ToText(early.GetValueOrDefault("fiscal_year"))} yet, so fiscal year {Values.ToText(early.GetValueOrDefault("rates_year"))} rates were used. Please check the meal and hotel amounts.";
     }
 
     /// <summary>True when an answer used the standard rate because GSA could not give one.</summary>

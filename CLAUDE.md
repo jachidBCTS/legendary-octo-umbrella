@@ -209,7 +209,12 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   the nights, fiscal_year (Oct–Sep), standard, source gsa/simulated/fallback, note}. Source:
   `GsaPerDiemClient` (`Gsa:ApiKey`, `GET v2/rates/zip/{zip}/year/{fy}`) when a key is set, else
   `SimulatedPerDiemSource` in Development, else none (fallback with "not set up"). Fallback amounts are
-  rates `gsa_standard_meals`/`gsa_standard_lodging` (seeded 68/110, cannot be removed). Only mileage is
+  rates `gsa_standard_meals`/`gsa_standard_lodging` (seeded 68/110, cannot be removed). The fiscal year always comes
+  from the travel dates. **A year GSA has not published yet** (rates come out each August; owner noticed Nov 20, 2026):
+  `DirectoryForAsync` tries earlier years down to the current one (not after an outage — `LookupAsync` returns
+  `Failed`), stores `PerDiemArea.RatesYear` → answer `rates_year` + note, timeline warning via
+  `PerDiemService.WarningFor`; 404/400 from GSA = "none"; "none" is cached 4 h. `SimulatedPerDiemSource` follows the
+  same publishing schedule. Only mileage is
   district-kept now; the old `meal_*` rates are no longer seeded. **Not verified against the real GSA
   API** (the reply shape in `GsaPerDiemClient.Parse` follows GSA's documentation; this workspace cannot
   reach api.gsa.gov). An existing site keeps its old Travel workflow until the new one is imported.

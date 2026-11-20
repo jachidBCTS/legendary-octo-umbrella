@@ -466,7 +466,7 @@
               h('span', null, 'Meals & incidentals: ' + money(value.meals) + ' a day, ' + money(value.first_last_day) + ' on the first and last day'),
               h('span', null, 'Hotel: up to ' + money(value.lodging) + ' a night'),
               h('span', { class: 'muted small' }, value.source === 'fallback' ? value.note
-                : value.source === 'simulated' ? value.note : 'GSA per diem rates, fiscal year ' + value.fiscal_year));
+                : value.source === 'simulated' || value.rates_year ? value.note : 'GSA per diem rates, fiscal year ' + value.fiscal_year));
           };
           body = box;
           break;

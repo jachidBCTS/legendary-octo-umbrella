@@ -2,8 +2,12 @@ using SchoolFlow.Core.Expressions;
 
 namespace SchoolFlow.Core.Forms;
 
-/// <summary>GSA's rates for one place in one federal fiscal year (October to September).</summary>
-public sealed record PerDiemArea(string City, string County, string State, decimal Meals, IReadOnlyDictionary<int, decimal> LodgingByMonth, bool StandardRate);
+/// <summary>
+/// GSA's rates for one place in one federal fiscal year (October to September). <paramref name="RatesYear"/> is set when
+/// the travel's year is not published yet and an earlier year's rates stand in for it.
+/// </summary>
+public sealed record PerDiemArea(string City, string County, string State, decimal Meals, IReadOnlyDictionary<int, decimal> LodgingByMonth, bool StandardRate,
+    int? RatesYear = null);
 
 /// <summary>
 /// What the server looked up for the per diem fields of a form: GSA's rates by (ZIP code, fiscal year),
@@ -82,6 +86,14 @@ public sealed class PerDiemDirectory
         record["standard"] = area.StandardRate;
         record["source"] = Source;
         record["note"] = Source == "simulated" ? "Example rates: GSA is not connected on this test site." : "";
+        if (area.RatesYear is int ratesYear && ratesYear != FiscalYear(from))
+        {
+            // GSA publishes a fiscal year's rates in August, shortly before it starts on October 1.
+            record["rates_year"] = (decimal)ratesYear;
+            record["note"] = $"GSA has not published its rates for fiscal year {FiscalYear(from)} (October {FiscalYear(from) - 1} to September {FiscalYear(from)}) yet, "
+                + $"so the fiscal year {ratesYear} rates were used. The business office will check them."
+                + (Source == "simulated" ? " (Example rates: GSA is not connected on this test site.)" : "");
+        }
         return record;
     }
 }
