@@ -509,4 +509,6 @@ Known gaps (not requested yet, worth raising):
   and say clearly what was and was not verified.
 - Develop on a branch and open a pull request into `main`.
 - **Do not build the server package (the update zip) until the owner asks for it** (owner, Nov 18,
-  2026). Commit and push as usual; build the zip only on request.
+  2026). Build the zip only on request.
+- **Push as usual** (owner, Nov 20, 2026): every push makes a new CI package (`BergenForms-update-run-NN`), and
+  each package holds *all* changes so far — the owner installs the newest green one. Tell them its run number.
