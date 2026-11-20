@@ -1,0 +1,102 @@
+@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Home";
+}
+<div class="page-head">
+    <div>
+        <h1>@Model.Greeting, @User.DisplayName().Split(' ')[0]</h1>
+        <p class="sub" data-tip>Start a request, or pick up where you left off.</p>
+    </div>
+</div>
+
+<div class="home-grid">
+<div class="home-main">
+@if (Model.Pending.Count > 0)
+{
+    <section class="callout">
+        <div class="callout-icon"><partial name="_Icons" model='"clock"' /></div>
+        <div class="grow">
+            <strong>@Model.Pending.Count request@(Model.Pending.Count == 1 ? " is" : "s are") waiting for your approval</strong>
+            <div class="muted">@string.Join(" · ", Model.Pending.Take(3).Select(p => p.Title))</div>
+        </div>
+        <a class="btn primary" href="/Approvals">Review</a>
+    </section>
+}
+
+@if (Model.Drafts.Count > 0)
+{
+    <h2 class="section-title">Your drafts</h2>
+    <div class="panel draft-list">
+        @foreach (var (draft, workflow) in Model.Drafts)
+        {
+            <div class="draft tone-@workflow.Color">
+                <span class="wf-dot"><partial name="_Icons" model="Ui.WorkflowIcon(workflow.Name, workflow.Category)" /></span>
+                <a class="grow draft-main" href="/Start/@workflow.Id?draft=@draft.Id">
+                    <strong>@workflow.Name</strong>
+                    <span class="muted small">@(draft.Summary.Length > 0 ? draft.Summary : "Nothing filled in yet") · saved @Ui.When(draft.UpdatedAt)</span>
+                </a>
+                <a class="btn small primary" href="/Start/@workflow.Id?draft=@draft.Id">Continue</a>
+                <form method="post" asp-page-handler="DeleteDraft" data-confirm="Delete this draft? What you filled in will be lost.">
+                    <input type="hidden" name="id" value="@draft.Id" /><button class="btn small ghost-danger">Delete</button>
+                </form>
+            </div>
+        }
+    </div>
+}
+
+<h2 class="section-title">Start a request</h2>
+@if (Model.Groups.Count == 0)
+{
+    <div class="empty">
+        <p>No forms have been published yet.</p>
+        @if (User.IsBuilder()) { <a class="btn primary" href="/Builder">Open the workflow builder</a> }
+    </div>
+}
+@foreach (var group in Model.Groups)
+{
+    var groupName = group.Key.Length == 0 ? "Other" : group.Key;
+    <details class="form-group" open data-fold="home:@groupName">
+        <summary><span class="form-group-name">@groupName</span> <span class="pal-count">@group.Count()</span></summary>
+        <div class="card-grid">
+            @foreach (var w in group)
+            {
+                <a class="wf-card tone-@w.Color" href="/Start/@w.Id">
+                    <span class="wf-dot"><partial name="_Icons" model="Ui.WorkflowIcon(w.Name, w.Category)" /></span>
+                    <span class="wf-body">
+                        <strong>@w.Name</strong>
+                        <span>@w.Description</span>
+                        @if (SchoolFlow.Core.Json.ParseDefinition(w.PublishedJson!).Form.ClosedMessage(DateTime.Today) is string closed) { <span class="pill muted tiny">@closed.Replace("This form ", "").TrimEnd('.')</span> }
+                    </span>
+                    <span class="wf-go"><partial name="_Icons" model='"arrow"' /></span>
+                </a>
+            }
+        </div>
+    </details>
+}
+</div>
+
+<aside class="home-side" aria-labelledby="recent-title">
+    <div class="row-between"><h2 class="section-title" id="recent-title">Your recent requests</h2>
+        @if (Model.Recent.Count > 0) { <a class="small" href="/Requests">See all</a> }</div>
+    @if (Model.Recent.Count == 0)
+    {
+        <div class="empty small"><p>Requests you submit will appear here.</p></div>
+    }
+    else
+    {
+        <ul class="panel recent-list">
+            @foreach (var r in Model.Recent)
+            {
+                var (label, css) = Ui.Status(r.Status);
+                <li>
+                    <a class="recent-name" href="/Requests/Detail/@r.Id"><strong>@r.WorkflowName</strong> <span class="muted">#@r.Id</span></a>
+                    <div class="recent-meta"><span class="pill @css">@label</span>
+                        <span class="muted small">@Ui.When(r.UpdatedAt)@(r.TicketId is long t ? " · ticket #" + t : "")</span></div>
+                    @if (Model.Stops.TryGetValue(r.Id, out var stop)) { <partial name="_CurrentStop" model="stop" /> }
+                </li>
+            }
+        </ul>
+    }
+</aside>
+</div>

@@ -1,0 +1,33 @@
+Greenlight update for forms.bergen.org
+========================================
+
+This replaces the site's program files. Your settings file (appsettings.Production.json), sign-in
+keys and uploaded files (App_Data) are NOT touched. Any database changes are made by the site
+itself on its first start after the update.
+
+What changed in this update: see the message Claude sent with it.
+
+STEP 1 - Back up the SchoolFlow database
+  SSMS: right-click the database > Tasks > Back Up.
+
+STEP 2 - Update the files  (ADMINISTRATOR PowerShell on the web server)
+
+    cd <the folder you unzipped this into>
+    Set-ExecutionPolicy -Scope Process Bypass
+    .\Update-SchoolFlow.ps1 -SitePath 'X:\wwwroot\SchoolFlow'
+
+  A green "Files updated" line = done.
+  "File in use": recycle the SchoolFlow app pool in IIS Manager, then run the same command again.
+  Delete X:\wwwroot\SchoolFlow\appsettings.json.new afterwards (it is only a copy for reference).
+
+STEP 3 - Check
+  https://forms.bergen.org/healthz says ok. Sign in and press Ctrl+F5 once.
+
+If something goes wrong: Event Viewer > Windows Logs > Application (source ".NET Runtime").
+To go back: restore the database backup and copy your previous site folder back.
+
+Also in this folder
+  templates\                       workflows to import (Workflows > Import)
+  student-roster-view.sql          the student view the site reads
+  student-location-match.json      staff-to-student place names for the settings file
+  DEPLOY-IIS.md                    the full server guide

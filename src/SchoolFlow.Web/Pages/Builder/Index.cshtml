@@ -1,0 +1,94 @@
+@page
+@model SchoolFlow.Web.Pages.Builder.IndexModel
+@{
+    ViewData["Title"] = "Workflows";
+}
+<div class="page-head">
+    <div><h1>Workflows</h1><p class="sub" data-tip>@(User.IsAdmin() ? "Design forms, field logic and the steps that follow. As an admin you see every workflow." : "The workflows an administrator has made you an owner of. You can change their steps; the forms themselves are changed by administrators.")</p></div>
+    @if (User.IsAdmin())
+    {
+    <div class="actions">
+        <form method="post" asp-page-handler="Import" enctype="multipart/form-data" class="import-form">
+            <label class="btn" for="import-file">Import</label>
+            <input id="import-file" class="visually-hidden" type="file" name="file" accept=".json,application/json" data-autosubmit aria-label="Import a workflow file" />
+        </form>
+        <button type="button" class="btn primary" data-open-dialog="new-dialog"><partial name="_Icons" model='"plus"' /> New workflow</button>
+    </div>
+    }
+</div>
+
+<div class="card-grid builder-grid">
+@foreach (var w in Model.Workflows)
+{
+    <article class="panel wf-tile tone-@w.Color">
+        <div class="wf-tile-head">
+            <span class="wf-dot"><partial name="_Icons" model="Ui.WorkflowIcon(w.Name, w.Category)" /></span>
+            <div class="grow">
+                <a href="/Builder/Edit/@w.Id"><strong>@w.Name</strong></a>
+                <div class="muted small">@(w.Category.Length > 0 ? w.Category + " · " : "")@(w.TriggerType == TriggerTypes.Ticket ? "Starts from a ticket event" : "Starts from a form")</div>
+            </div>
+        </div>
+        <p class="muted clamp">@w.Description</p>
+        <div class="wf-tile-meta">
+            @if (w.PublishedJson is null) { <span class="pill muted">Draft</span> }
+            else if (!w.IsEnabled) { <span class="pill muted">Switched off</span> }
+            else { <span class="pill ok">Live · v@(w.PublishedVersion)</span> }
+            @if (w.HasUnpublishedChanges) { <span class="pill warn">Unpublished changes</span> }
+            <span class="muted small">@Model.RunCounts.GetValueOrDefault(w.Id) request@(Model.RunCounts.GetValueOrDefault(w.Id) == 1 ? "" : "s")</span>
+        </div>
+        <div class="wf-tile-actions">
+            <a class="btn small primary" href="/Builder/Edit/@w.Id">@(User.IsAdmin() ? "Edit" : "Edit steps")</a>
+            @if (User.IsAdmin())
+            {
+                <form method="post" asp-page-handler="Duplicate"><input type="hidden" name="id" value="@w.Id" /><button class="btn small">Duplicate</button></form>
+            }
+            <a class="btn small" href="/Builder?handler=Export&id=@w.Id" download>Export</a>
+            @if (w.PublishedJson is not null && User.IsAdmin())
+            {
+                <form method="post" asp-page-handler="Toggle"><input type="hidden" name="id" value="@w.Id" /><button class="btn small">@(w.IsEnabled ? "Switch off" : "Switch on")</button></form>
+            }
+            @if (User.IsAdmin())
+            {
+                <form method="post" asp-page-handler="Delete" data-confirm="Delete “@w.Name”? Requests already submitted are kept, but the workflow itself cannot be recovered.">
+                    <input type="hidden" name="id" value="@w.Id" /><button class="btn small ghost-danger">Delete</button>
+                </form>
+            }
+        </div>
+    </article>
+}
+</div>
+@if (Model.Workflows.Count == 0)
+{
+    <div class="empty"><p>@(User.IsAdmin() ? "No workflows yet. Create your first one." : "You do not look after any workflows. An administrator can make you an owner of one.")</p></div>
+}
+
+@if (User.IsAdmin())
+{
+<dialog id="new-dialog" class="dialog">
+    <form method="post" asp-page-handler="Create">
+        <h2>New workflow</h2>
+        <label class="lbl" for="new-name">Name</label>
+        <input id="new-name" name="name" required maxlength="200" placeholder="e.g. Field Trip Request" />
+        <label class="lbl">How does it start?</label>
+        <label class="choice"><input type="radio" name="trigger" value="form" checked /> <span><strong>Someone fills in a form</strong><small>Staff or students submit a request.</small></span></label>
+        @if (User.IsAdmin())
+        {
+            <label class="choice"><input type="radio" name="trigger" value="ticket" /> <span><strong>A Freshservice ticket event</strong><small>Freshservice notifies Greenlight when a ticket is created or updated.</small></span></label>
+        }
+        <div data-show-when-trigger="form">
+            <label class="lbl" for="new-copy">Can people start from a previous request?</label>
+            <select id="new-copy" name="allowCopy">
+                <option value="">No — every request starts blank</option>
+                <option value="own">Yes — from their own previous requests</option>
+                <option value="everyone">Yes — from anyone's previous requests</option>
+            </select>
+            <p class="muted small" data-tip>Useful for forms that are filled in again each year, such as a field trip request.
+                “Anyone's” lets every person who can open this form see what others submitted on it. You can change this later, and exclude individual fields.</p>
+        </div>
+        <div class="actions end">
+            <button type="button" class="btn" data-close-dialog>Cancel</button>
+            <button class="btn primary">Create and open builder</button>
+        </div>
+    </form>
+</dialog>
+}

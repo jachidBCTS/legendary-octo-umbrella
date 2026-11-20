@@ -1,0 +1,111 @@
+using System.Text;
+using SchoolFlow.Core;
+using SchoolFlow.Core.Expressions;
+using SchoolFlow.Web.Data;
+
+namespace SchoolFlow.Web.Services;
+
+/// <summary>Turns requests into a CSV file a spreadsheet can open: fixed columns, then one column per form answer.</summary>
+public static class RequestExport
+{
+    private static readonly string[] Fixed = { "Request #", "Form", "Status", "Submitted by", "Email", "Department", "Ticket", "Submitted", "Last updated" };
+
+    /// <param name="includeStudents">False for someone without student access: student answers are left out of the file.</param>
+    /// <param name="contexts">Answers to use instead of the stored ones (requests whose students were looked up again).</param>
+    /// <param name="hiddenStudents">Requests whose students this person may not see (shown as restricted even when <paramref name="includeStudents"/> is true).</param>
+    public static string ToCsv(IReadOnlyList<WorkflowRun> runs, bool includeStudents = true, IReadOnlyDictionary<int, Dictionary<string, object?>>? contexts = null,
+        IReadOnlySet<int>? hiddenStudents = null)
+    {
+        // Requests on different forms (or versions of a form) have different questions; a column is a question's label.
+        // Keyed by the shared definition's ID: requests on the same version are read once.
+        var forms = new Dictionary<int, FormDefinition>();
+        FormDefinition FormOf(WorkflowRun run)
+        {
+            if (!forms.TryGetValue(run.DefinitionId ?? -run.Id, out var form))
+            {
+                // The form's questions, then what Task steps collect along the way.
+                var def = Json.ParseDefinition(run.DefinitionJson);
+                form = new FormDefinition { Fields = def.Form.Fields.Concat(def.Flow.Nodes.Where(n => n.Type == NodeTypes.Task).SelectMany(n => n.Fields ?? new List<FieldDef>())).ToList() };
+                forms[run.DefinitionId ?? -run.Id] = form;
+            }
+            return form;
+        }
+        static bool HasAnswer(FieldDef f) => !FieldTypes.IsLayout(f.Type) && !string.IsNullOrWhiteSpace(f.Key);
+        static string Header(FieldDef f) => string.IsNullOrWhiteSpace(f.Label) ? f.Key : f.Label.Trim();
+
+        var columns = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var run in runs)
+            foreach (var field in FormOf(run).Fields.Where(HasAnswer))
+                if (seen.Add(Header(field))) columns.Add(Header(field));
+
+        var csv = new StringBuilder();
+        csv.AppendLine(string.Join(",", Fixed.Concat(columns).Select(Cell)));
+        foreach (var run in runs)
+        {
+            var (status, _) = Ui.Status(run.Status);
+            var cells = new List<string>
+            {
+                run.Id.ToString(), run.WorkflowName, status, run.SubmitterName, run.SubmitterEmail, run.DepartmentName,
+                run.TicketId?.ToString() ?? "", Ui.Local(run.CreatedAt).ToString("yyyy-MM-dd HH:mm"), Ui.Local(run.UpdatedAt).ToString("yyyy-MM-dd HH:mm"),
+            };
+            var context = contexts is not null && contexts.TryGetValue(run.Id, out var restored) ? restored : Json.ToValues(run.ContextJson);
+            var answers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var field in FormOf(run).Fields.Where(HasAnswer))
+                answers.TryAdd(Header(field), (!includeStudents || hiddenStudents?.Contains(run.Id) == true) && StudentKeysOf(run).Contains(field.Key)
+                    ? (Values.IsBlank(context.GetValueOrDefault(field.Key)) ? "" : "(restricted)")
+                    : Answer(field, context.GetValueOrDefault(field.Key)));
+            cells.AddRange(columns.Select(c => answers.GetValueOrDefault(c, "")));
+            csv.AppendLine(string.Join(",", cells.Select(Cell)));
+        }
+        return csv.ToString();
+    }
+
+    [ThreadStatic] private static Dictionary<int, HashSet<string>>? _studentKeys;
+
+    /// <summary>The answers on this request's version of the workflow that carry student information.</summary>
+    private static HashSet<string> StudentKeysOf(WorkflowRun run)
+    {
+        _studentKeys ??= new Dictionary<int, HashSet<string>>();
+        if (_studentKeys.Count > 50) _studentKeys.Clear();
+        // Definitions never change once stored, so their ID is a safe key.
+        if (run.DefinitionId is not int id) return SchoolFlow.Core.Forms.StudentData.KeysOf(Json.ParseDefinition(run.DefinitionJson));
+        if (!_studentKeys.TryGetValue(id, out var keys))
+            _studentKeys[id] = keys = SchoolFlow.Core.Forms.StudentData.KeysOf(Json.ParseDefinition(run.DefinitionJson));
+        return keys;
+    }
+
+    private static string Answer(FieldDef field, object? value)
+    {
+        if (Values.IsBlank(value)) return "";
+        if (field.Type == FieldTypes.Table && value is List<object?> rows)
+        {
+            var columns = field.Columns ?? new List<ColumnDef>();
+            return string.Join("; ", rows.OfType<Dictionary<string, object?>>().Select(r =>
+                string.Join(" | ", columns.Select(c => Plain(r.GetValueOrDefault(c.Key), c.Type)))));
+        }
+        return Plain(value, field.Type);
+    }
+
+    /// <summary>Numbers and dates as plain values a spreadsheet can calculate with, not display text like "$1,200.00".</summary>
+    private static string Plain(object? value, string type) => value switch
+    {
+        null => "",
+        bool b => b ? "Yes" : "No",
+        decimal d => Values.FormatNumber(d),
+        _ when type == FieldTypes.Date && Values.TryToDate(value, out var date) => date.ToString("yyyy-MM-dd"),
+        _ => Ui.Display(value, type, null, null),
+    };
+
+    /// <summary>
+    /// Quotes a cell for CSV. Text beginning with =, +, - or @ would be run as a formula by Excel, so it
+    /// is given a leading apostrophe (plain numbers such as -5 are left alone).
+    /// </summary>
+    public static string Cell(string? text)
+    {
+        text ??= "";
+        if (text.Length > 0 && "=+-@\t\r".Contains(text[0]) && !decimal.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _))
+            text = "'" + text;
+        return "\"" + text.Replace("\"", "\"\"") + "\"";
+    }
+}

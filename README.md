@@ -1,0 +1,338 @@
+# SchoolFlow
+
+A build-your-own workflow system for schools, integrated with the Freshservice help desk.
+
+Staff design a **form**, the **field logic** behind it (calculations, show/hide rules, conditional
+requirements, validation) and the **flow** that runs after it is submitted (decisions, approvals,
+Freshservice tickets). Everything is rule-based and deterministic — there is no AI in the loop and
+no data leaves your server except the calls to your own Freshservice account.
+
+Built with ASP.NET Core 8 (Razor Pages), Entity Framework Core and plain JavaScript/CSS with no
+front-end dependencies.
+
+## What it does
+
+| Area | Details |
+| --- | --- |
+| Form builder | 18 field types including time, phone number, typed signature, repeating tables, Freshservice lookups and calculated fields; drag to reorder; half-width layout; live preview |
+| Field logic | A spreadsheet-style formula language (about 60 functions) used for calculated fields, *show when*, *required when*, default values and validation rules. Formulas are checked as you type |
+| Flow builder | Drag-and-connect canvas: Decision, Approval, Create/Update ticket, Add note, Service request, Look up, Wait for ticket, Set value, End |
+| Freshservice | Creates and updates tickets, adds notes, places service catalog requests, looks up requesters/agents/departments/groups/locations/assets, and reacts to ticket events through a webhook |
+| Start from a previous request | Per form, a builder can let people prefill a new request from an earlier one — their own, or anyone's (for yearly forms such as field trips). Individual fields can be excluded |
+| Approval chains | An *Approval chain* step runs several approvers in order. The builder either locks a workflow to a shared chain template or lets the requester pick a template / build their own chain on the form (and save it for reuse). Each step is "any one" or "all must approve" |
+| Departments | Admins keep a list of departments, each with its final approver(s). A request is filed under the department chosen on the form, and that department's final approver is always added to the end of the chain — requesters cannot change or skip it |
+| Notifications | In the app (bell with unread count) and by email through Microsoft 365. Sent automatically when an approval is needed and when a request is completed, not approved, cancelled or stuck; a *Send notification* step covers anything else, including outside addresses |
+| Locations | A locations table filled from Freshservice with one click (Admin → Locations → Sync), plus any you add by hand. Forms use it through a *Location* field |
+| Save and finish later | Every form has a *Save for later* button. The draft appears under *Your drafts* on the home page; once saved, further changes are saved automatically. Drafts are private to their owner and are removed when submitted |
+| Attachments | An *Attachments* field lets people upload files (PDF, images, Word, Excel, PowerPoint, text). Files are kept in a folder on the web server, shown on the request to the people allowed to see it, and can be attached to the Freshservice ticket a workflow creates |
+| Permissions | Roles from Microsoft Entra groups; each workflow has owners (who can edit it and see its requests) and an optional audience (which groups may submit it); department final approvers see their department's requests; an audit log records changes and admin overrides |
+| Running requests | Timeline of every step, approvals inbox, retry of failed steps, cancel. The requester can withdraw a request while it is still waiting |
+| Send back for changes | An approver can approve, reject, or *send back for changes* with a note. The requester edits and resubmits, and it returns to the same approver — earlier approvals in a chain are kept (unless the cost went up or something that chose the approvers changed — then every approval is asked for again; the approver can also ask for that). Changed answers are marked *Edited · was: …* on the request, and the edit page shows *Was: …* beside each change |
+| Task send-back | Someone doing a task can send it back with a note: to the earlier task (e.g. reconciliation back to the traveller's "after the trip" step, prefilled) or, if there is none, to the requester |
+| Pass to someone else | Whoever is asked (or a workflow owner or admin) can hand a waiting approval or task to another district address; recorded on the request and in the audit log |
+| Email suggestions | Email boxes (forms, approval chains, stand-ins, teams, departments, builder) suggest staff as you type (`/api/people`: people who have signed in, team members, department approvers, and Freshservice requesters when connected) |
+| Download all files | A request with two or more files offers them as one .zip |
+| Builder undo | *Duplicate step* copies a step (task fields get new keys); *Undo* / Ctrl+Z reverses the last change to steps or fields (30 kept) |
+| Where is my request? | Each request shows its whole route as a line of stops: what is done (who, when), where it is now and whose desk it is on, and what comes next. The current stop is blue, then amber after 2 school days and red after 4 (or when overdue/escalated). Request lists, Home and Approvals show the same "stop · waiting on · how long" line |
+| Discussion | Each request has a message thread for questions and answers; everyone involved is notified |
+| Reminders and escalation | Approvers are reminded when a request sits unanswered (default: every 2 school days, at most 5 times). A step can also escalate to someone else after a set number of school days. Both are set per approval step in the builder |
+| Away / stand-in | Anyone can name a colleague to approve in their place for a date range. The request history records who decided and for whom |
+| School calendar | Admins list the days the school is closed. "School day" formulas (`DATEADD(…, 'weekdays')`, `WEEKDAYS`, `ISSCHOOLDAY`), reminders and escalation all skip them |
+| Reports and export | A Reports page (counts, time to finish, approvals waiting longest) for admins, workflow owners and department approvers; any request list can be downloaded as a spreadsheet (CSV) with one column per question |
+| Print | A clean printable / save-as-PDF record of a request with its answers, approvals, history and a signature line |
+| Missed ticket events | If Freshservice is connected, requests waiting on a ticket are also checked directly every 15 minutes, so a missed webhook does not leave a request stuck |
+| Paper-style forms and worksheets | A form can use a *paper form* look (labels beside underlined answers, notices at the top) and a *Worksheet*: a table whose rows hold other fields, like the cost sheet on a printed form, with totals worked out as you type |
+| Student information | A *Student* field searches a roster limited to six facts (student ID, first name, last name, school, grade, academy). Only staff an admin has added on Admin → Student access can look students up or see them on requests and exports; everyone else — administrators included — sees "Restricted". The roster is read live from the district's SQL Server through a view (`deploy/student-roster-view.sql`, `Students:*` settings); a request stores only the student number, and the details are looked up when someone with access views it |
+| Accessibility | Every main screen passes an automated WCAG 2.1 A/AA check (axe). Each person can also switch on an *Accessibility mode* (larger text, stronger contrast, underlined links, thick focus outline, larger targets, no animation) from the menu |
+| GSA per diem | The travel form looks up GSA meal rates and the hotel limit for the destination ZIP code and dates (`Gsa:ApiKey`, server must reach `api.gsa.gov`). First and last day meals are 75%; a hotel rate above the limit is refused unless it is the conference hotel (with documentation). If GSA cannot be reached, the "GSA fallback" amounts on Admin → Rates are used and the request is flagged. A per diem field can be added to any form in the builder |
+| Rates | Admins keep fixed amounts (mileage rate, GSA fallback rates…) on Admin → Rates. Forms use them in calculations as `rates.name`; staff see them but cannot change them. A change applies to new requests only and is recorded in the audit log |
+| Tasks | A *Task* step gives someone something to fill in part-way through a request — record a PO number, a Board decision, upload receipts — and the request waits until it is done. What they enter joins the request and later steps can use it |
+| Due dates | Approval and task steps can have a due date worked out by a formula (for example 3 weeks after a trip's return date). The person gets a heads-up 3 days before; on the day, if it is still not done, they get an overdue notice and anyone else the step names (such as the business office) is told |
+| Field Trip template | Approval chain and department head, then — if a bus is needed — a task for the *Transportation* team to book it (company, pick-up time, confirmation, final cost). The organiser is told the bus details. No help desk ticket |
+| Teams | Admins keep named teams (for example *Business Office (Technical Schools)*) on Admin → Teams. Approval, task and notification steps can name a team instead of people, so a change of staff is made in one place |
+| Help desk steps | Freshservice steps, lookups and ticket-started workflows can only be built by administrators. Everything else runs entirely inside SchoolFlow |
+| Work Related Travel template | A ready-made copy of the district's travel request (page 1 and the estimated cost worksheet), run entirely in the app: department head, the district's central office administrator, business administrator and superintendent approve; the district's business office records the budget account, PO number and (for $150 or more) the Board's decision and date; after the trip the employee adds actual costs, receipts and the PD report (due 3 weeks after the return date; the business office is told if it is late), and the business office reconciles. It arrives as a draft until an admin fills in the six teams and the four rates |
+| Multi-page forms | A *Page break* splits a long form into steps with Next / Back. Each page is checked before moving on |
+| Read-only fields | Any field can be read only: it shows its default (e.g. today's date) and cannot be changed; a request sent back keeps its original value |
+| Staff and district | A *Staff member* field picks from the district staff list; Location and Staff fields can be limited to one district, or to the district chosen on the form |
+| Categories and letterhead | Admin → Categories sets the home page groups and their order; each form can carry a letterhead image on the form and its printout |
+| Line breaks | A *Line break* makes the next field start on a new line (optionally under a thin dividing line), for lining up half-width fields. The builder groups field types into fold-out menus |
+| Opening and closing dates | A form can be set to open on one date and close after another (for example, field trip requests for a term). Outside those dates it says when it opens or that it has closed |
+| Version history | Every published version is kept (the latest 50). Any of them can be restored as the draft and published again |
+| Export / import | A workflow can be downloaded as a file and imported as a new draft — as a backup, or to share between schools |
+| Retention | Finished requests and their files are deleted automatically 7 years after their last activity; requests still in progress never are. The audit log is kept forever and records each clean-up |
+| Safety | Draft vs. published versions; a request always finishes on the version it started with; publishing is blocked while the checker finds problems |
+
+Formulas are evaluated **on the server only**. The browser sends the current answers and gets back
+what to show, the calculated values and any errors, and the same code runs again on submit — so
+what a person sees can never disagree with what is stored.
+
+### Starting from a previous request
+
+When creating a workflow (or later under **Form → Form settings**) choose whether people can copy
+a previous request: *No*, *their own previous requests*, or *anyone's previous requests*. On the
+form, people then get a "Start from a previous request" button with a searchable list.
+
+- Only answers to fields that still exist on the current form are copied. Calculated fields are
+  always worked out fresh, and the copied answers go through the same validation as typed ones.
+- Tick **Don't copy from previous requests** on a field to leave it out (dates, sign-off tick
+  boxes, anything private). Excluded answers are never sent to the other person's browser.
+- With *anyone's*, everybody who can open the form can read what others submitted on it, apart
+  from excluded fields. Don't use it on forms that collect private details.
+- Cancelled requests are not offered.
+
+## Run it locally
+
+Requires the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
+
+```
+dotnet run --project src/SchoolFlow.Web
+```
+
+Open http://localhost:5080. In Development mode you get a sign-in screen with sample people
+(an admin, a teacher, a principal), a local SQLite database (`App_Data/schoolflow.db`), four example
+workflows, and a **simulated** Freshservice — tickets get pretend numbers and nothing is sent.
+
+```
+dotnet test                      # unit and database tests
+node tests/e2e/smoke.js          # browser smoke test (needs Playwright and a fresh database; see the file header)
+```
+
+## Configuration
+
+Settings come from `appsettings.json`, `appsettings.Production.json` or environment variables
+(`Section__Key`). **Keep secrets out of source control** — use environment variables on the server.
+
+| Setting | Purpose |
+| --- | --- |
+| `Auth:Mode` | `EntraId` (default) or `Dev`. `Dev` is refused unless `ASPNETCORE_ENVIRONMENT=Development` |
+| `Auth:AllowedDomains` | Email domains (e.g. `["bergen.org"]`) that approvers a requester types into their own approval chain, and stand-ins, must use. Empty accepts any address. Builders' notification steps are not limited |
+| `Auth:Admins` | Emails that are always Admin, so the first admin can sign in and assign roles |
+| `AzureAd:TenantId`, `AzureAd:ClientId`, `AzureAd:ClientSecret` | Microsoft Entra ID app registration |
+| `Database:Provider` | `Sqlite` (default) or `SqlServer` |
+| `Database:ConnectionString` | Connection string for the chosen provider |
+| `Email:Mode` | `Off` (default) or `Graph` to send email through Microsoft 365 |
+| `Email:From` | Mailbox to send as, e.g. a shared `no-reply@yourschool.org` mailbox |
+| `Email:BaseUrl` | Public address of this site, used for links in emails, e.g. `https://flow.yourschool.org` |
+| `Attachments:Path` | Folder for uploaded files. Default: `App_Data/uploads` inside the site folder |
+| `Attachments:MaxFileMb` | Largest single file, in MB (default 10, at most 25) |
+| `Retention:Years` | Years a finished request and its files are kept after its last activity (default 7; `0` keeps everything). The audit log is always kept |
+| `Freshservice:Domain` | e.g. `yourschool` or `yourschool.freshservice.com` |
+| `Freshservice:ApiKey` | API key of the Freshservice agent account SchoolFlow acts as |
+| `Freshservice:WebhookSecret` | 16+ random characters; enables the ticket-event webhook |
+
+Leaving the Freshservice domain or key empty keeps the site in simulation mode (a banner says so).
+
+### Microsoft Entra ID sign-in
+
+1. Entra admin center → App registrations → New registration. Single tenant.
+2. Redirect URI (Web): `https://<your-site>/signin-oidc`. Front-channel logout URL: `https://<your-site>/signout-callback-oidc`.
+3. Certificates & secrets → new client secret.
+4. Set `AzureAd:TenantId`, `AzureAd:ClientId`, `AzureAd:ClientSecret`, and add your own email to `Auth:Admins`.
+
+Everyone in the tenant can sign in, submit forms and approve requests sent to them. To limit who
+can sign in at all (for example staff only), turn on *Assignment required* for the enterprise
+application in Entra and assign the right groups.
+
+Roles and permissions are described under [Permissions](#permissions) below.
+
+### Permissions
+
+**Roles**
+
+| Role | Can do |
+| --- | --- |
+| Staff (everyone who signs in) | Submit the forms open to them; see their own requests and drafts; approve what is sent to them; keep their own approval chains |
+| Builder | Use shared approval chain templates and the Reports and Formula guide pages. The role on its own gives no access to any workflow |
+| Admin | Everything, everywhere. **Only admins create, copy, import, delete or switch forms on and off, change a form's questions, name or audience, and choose its owners.** Admins also manage departments, teams, locations, groups, roles, rates, student access, settings and the audit log, and can approve on behalf of the assigned approvers |
+| Workflow owner (any staff member an admin names on a workflow) | Change that workflow's steps — approvals, tasks, notifications, due dates — on the Flow tab, and publish them; see, retry and cancel its requests. Owners cannot change the form, and cannot add help desk steps |
+
+A person's role is the **highest** of: the role set by hand under Admin → Settings; any registered
+Entra group they belong to; an Entra app role named `Admin` or `Builder`; and the `Auth:Admins`
+list in the server settings (a safety net so the first admin can always get in).
+
+**Entra groups.** Under **Admin → Settings → Microsoft Entra groups**, register each security group
+SchoolFlow should know about (a name, and the group's Object ID from Entra). A registered group can
+grant Builder or Admin to its members, and can be used to limit who may submit a form. For groups
+to reach SchoolFlow, switch on the groups claim once in the app registration: **Token configuration →
+Add groups claim → Security groups**, with *Group ID* for the ID token. Membership changes take
+effect the next time the person signs in. Someone in more than about 200 groups gets no group list
+from Entra at all; give those people an Entra app role instead.
+
+**Per workflow** (builder → Settings tab):
+
+- **Owners** — the people who can edit the workflow and see, retry and cancel all of its requests.
+  Whoever creates a workflow owns it. Existing workflows with no owners are managed by admins only.
+- **Who can submit it** — everyone, or only members of chosen registered groups. People outside
+  the audience do not see the form and cannot reach it by address. This applies as soon as it is
+  saved; it does not wait for Publish.
+
+**Who can see a request:** the person who submitted it; anyone asked to approve it; the owners of
+its workflow; the final approvers of the department it is filed under (they get a *My department*
+view on the Requests page); and admins. Attachments follow the same rule.
+
+**Audit log** (Admin → Audit log) records role changes, group registrations, workflow creation,
+publishing, deletion, owner and audience changes, final-approver changes, cancelled and retried
+requests, and every time an admin approves or rejects on someone's behalf (which is also written on
+the request's own timeline). Entries are never edited or removed by the app.
+
+**Staff only.** SchoolFlow lets in anyone your Entra app registration lets in. To keep students and
+others out, set *Assignment required* on the enterprise application and assign your staff group —
+see the deployment guide.
+
+### Email through Microsoft 365
+
+Email uses Microsoft Graph with the **same app registration as sign-in** (set `Email:TenantId`,
+`Email:ClientId`, `Email:ClientSecret` only if you want a separate one).
+
+1. In the app registration: API permissions → Add → Microsoft Graph → **Application** permissions →
+   `Mail.Send` → Grant admin consent.
+2. Recommended: limit the app to the one sender mailbox with an
+   [application access policy](https://learn.microsoft.com/graph/auth-limit-mailbox-access) (or RBAC
+   for Applications in Exchange Online). Without it, `Mail.Send` lets the app send as any mailbox.
+3. Set `Email:Mode=Graph`, `Email:From` and `Email:BaseUrl`, restart, then use
+   **Admin → Settings → Send me a test email**.
+
+Emails are queued in the database and sent by a background worker, so a Microsoft 365 hiccup never
+blocks a request; temporary failures are retried (2, 4, 8, 16 minutes) and permanent ones are listed
+under Admin → Settings. Everyone can turn their own emails off on the Notifications page and still
+see notifications in the app. Addresses outside the sender's domain get the email without a link
+(they cannot sign in).
+
+### Departments and approval chains
+
+- **Admin → Departments**: add each department and its final approver(s), and choose whether any
+  one of them or all of them must approve. Untick *Active* to stop offering a department on forms.
+- **Approval chains** (in everyone's menu): builders and admins create shared templates; anyone can
+  save chains of their own.
+- In a workflow: add a **Department** field and (optionally) an **Approval chain** field to the
+  form, then an **Approval chain** step to the flow. The step runs the chain first — from the form
+  field or a fixed template — and then the department's final approver. See the *Field Trip
+  Request* starter workflow for a complete example.
+- Nobody approves their own request: requesters cannot list themselves, and a requester who is one
+  of several final approvers is left out of that step.
+- A request keeps the approvers it started with; later edits to a template or department apply to
+  new requests only.
+
+### Freshservice
+
+- **API key**: use a dedicated agent account whose permissions cover what your workflows do
+  (create/update tickets, add notes, read requesters, departments, groups, locations and assets).
+- **Webhook** (needed for *Wait for ticket* steps and ticket-triggered workflows): in Freshservice,
+  Admin → Workflow Automator → add a *Trigger Webhook* action. **Admin → Settings** in SchoolFlow
+  shows the exact URL, header and JSON body to use, and a log of recent events.
+- A ticket-triggered workflow runs **once per ticket**, so a workflow that updates the ticket it was
+  started by cannot re-trigger itself in a loop.
+
+### Attachments
+
+- Add an **Attachments** field to a form and set how many files it takes. To send the files on to
+  Freshservice, tick **Attach the request's files to the ticket** on a *Create ticket* step.
+- **Where files live:** in `App_Data/uploads` on the web server (or `Attachments:Path`), under random
+  names. **Back this folder up** along with the database, and keep it across upgrades — the database
+  only holds each file's name, size and owner. Windows Defender (or your antivirus) scans the folder
+  like any other; a quarantined file simply shows as "no longer available" on its request.
+- **What is accepted:** pdf, png, jpg, gif, webp, heic, doc/docx, xls/xlsx, ppt/pptx, txt, csv, rtf,
+  up to 10 MB each by default. The first bytes must match the type, so a program renamed to `.pdf`
+  is refused. Files are always served as downloads, never displayed inside the site.
+- **Who can open a file:** the person who uploaded it; and once submitted, anyone who can open that
+  request — the requester, anyone asked to approve it, builders and admins. Everyone else gets
+  "not found".
+- **Freshservice:** the ticket is created first, then the files are added in a second call. If
+  Freshservice refuses them, the ticket and the request still go ahead and the request's timeline
+  says which files were left out. Freshservice allows 40 MB of attachments per ticket.
+- Files uploaded to a form that is never submitted or saved as a draft are deleted after 30 days.
+  Files on submitted requests are kept indefinitely.
+- Files are not copied by "start from a previous request".
+
+### Locations
+
+**Admin → Locations → Sync from Freshservice** makes the list the choices of the **Location field on the
+Freshservice ticket form** (the list the help desk's routing uses; set `Freshservice:LocationField` if the
+field has another label). Freshservice's own Locations table is not read. Sync adds new choices and
+switches off every location that is not one of them, including ones added by hand; nothing is deleted,
+so requests that used an old location keep it. A choice an admin switched off stays off. Names from
+the list are changed in Freshservice, then synced. Districts are set per row; change as many rows as
+you like and press **Save changes** once. Forms offer active locations through the **Location** field type.
+
+### Database and upgrades
+
+The database schema is managed with Entity Framework migrations, one set per engine
+(`Migrations/Sqlite`, `Migrations/SqlServer`).
+
+- **First start and every upgrade are automatic.** On start-up the site applies any migrations the
+  database has not had yet, creating it if it is new. An up-to-date database is left alone.
+  **Back up the database before deploying a new version.**
+- The account in the connection string therefore needs permission to create and alter tables. If
+  your DBA prefers to apply changes by hand, generate a script that is safe to run at any version:
+
+  ```
+  dotnet tool restore
+  dotnet ef migrations script --idempotent --context SqlServerAppDbContext --project src/SchoolFlow.Web -o upgrade.sql
+  ```
+
+- **When the data model changes** (a developer adds a column or table), add a migration for *both*
+  engines and commit the generated files:
+
+  ```
+  dotnet ef migrations add <Name> --context SqliteAppDbContext    --output-dir Migrations/Sqlite    --project src/SchoolFlow.Web
+  dotnet ef migrations add <Name> --context SqlServerAppDbContext --output-dir Migrations/SqlServer --project src/SchoolFlow.Web
+  ```
+
+  The test suite fails if the model and the migrations ever disagree, so a forgotten migration is
+  caught before it ships.
+- A database created by a development build from before migrations existed is refused at start-up
+  with instructions (delete it or point at a new one); nothing is changed in it.
+- With no connection string, SQLite uses `App_Data/schoolflow.db` inside the site folder. The same
+  `App_Data` folder holds the sign-in keys (`App_Data/keys`); keep it across upgrades and never
+  publish it.
+
+### Deploying to IIS
+
+**Follow [docs/DEPLOY-IIS.md](docs/DEPLOY-IIS.md)** — the full step-by-step for the first deployment
+(IIS site, SQL Server with Windows sign-in, Entra app registration, settings file, first-start
+checks), upgrades and troubleshooting. In short:
+
+1. Install the [.NET 8 Hosting Bundle](https://dotnet.microsoft.com/download/dotnet/8.0) on the server.
+2. `dotnet publish src/SchoolFlow.Web -c Release -o publish` and copy `publish` to the server.
+3. Create an IIS site (HTTPS binding) pointing at that folder; app pool "No Managed Code".
+4. Set the configuration values above as environment variables on the app pool or in `web.config`.
+5. For SQLite, give the app pool identity write access to the database folder and set an absolute
+   path in `Database:ConnectionString` (e.g. `Data Source=D:\Data\schoolflow.db`). For more than a
+   handful of simultaneous users, use SQL Server.
+
+### Automated checks
+
+`.github/workflows/build.yml` runs on every pull request and on `main`: it runs the tests on Windows,
+builds the IIS package, installs IIS on the build machine, starts the package there as a real site
+and checks it answers, then attaches the package (**SchoolFlow-windows**) to the run for download.
+
+## Project layout
+
+```
+src/SchoolFlow.Core    Formula engine, form logic, workflow engine, definition checker, Freshservice client
+src/SchoolFlow.Web     Razor Pages site, JSON APIs, database, builder UI (wwwroot/js, wwwroot/css)
+tests/SchoolFlow.Tests Unit tests (formulas, form logic, engine, checker, Freshservice client) and database tests
+tests/e2e              Browser smoke test
+```
+
+The in-app **Formula guide** (Build → Formula guide) documents the formula language and every function.
+
+## Known limits
+
+- **Verified against a simulator, not a live Freshservice account.** The API client follows the
+  Freshservice v2 API and is unit-tested against recorded-style responses, but the first connection
+  to your tenant should be tested with a throwaway workflow. The least certain calls are the
+  requester name search and "my devices" asset filter used by lookup fields, and the call that adds
+  files to a ticket.
+- **Entra sign-in could not be exercised end to end** in the build environment (it needs a real
+  tenant). Startup, the redirect to Microsoft and the role handling are covered.
+- **Email could not be tested against a real Microsoft 365 tenant.** The Graph calls are unit-tested
+  against recorded-style responses; use the test-email button after configuring it.
+- **The SQL Server migrations have not been run against a real SQL Server** (none was available in
+  the build environment). They are generated by the same tooling as the SQLite ones, which are
+  exercised by the tests, and the generated script was inspected — but run the first deployment
+  against a test database before production.
+- Any signed-in person can use lookup fields, including the people search. If students will sign in,
+  consider limiting sign-in to staff (see above).
+- Dates and "today" use the server's time zone.

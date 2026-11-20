@@ -1,0 +1,219 @@
+@page
+@model SchoolFlow.Web.Pages.Admin.SettingsModel
+@{
+    ViewData["Title"] = "Settings";
+}
+<div class="page-head"><div><h1>Settings</h1><p class="sub" data-tip>Freshservice connection, webhooks and who can build workflows.</p></div></div>
+
+<section class="panel">
+    <h2>Freshservice connection</h2>
+    @if (Model.IsLive)
+    {
+        <p><span class="pill ok">Connected</span> Using <strong>@Model.Domain</strong> with the API key from server configuration.</p>
+    }
+    else
+    {
+        <p><span class="pill warn">Simulation mode</span> No domain and API key are configured, so ticket steps only pretend to run.</p>
+        <p class="muted" data-tip>To connect, set <code>Freshservice:Domain</code> and <code>Freshservice:ApiKey</code> in the server's configuration (environment variables
+            <code>Freshservice__Domain</code> and <code>Freshservice__ApiKey</code>, or <code>appsettings.Production.json</code>) and restart the site.
+            The key is never stored in the database or shown in this app.</p>
+    }
+    <form method="post" asp-page-handler="Test"><button class="btn">Test connection</button></form>
+    @if (Model.TestResult is not null) { <div class="flash @(Model.TestOk ? "ok" : "bad")">@Model.TestResult</div> }
+
+    <h3 class="fs-fields-head">Freshservice ticket fields</h3>
+    <p class="muted small" data-tip>The fields on your Freshservice ticket form, with the exact name a Create ticket step needs. Category, sub-category and item go in the step's own boxes; any field whose name starts with <code>cf_</code> goes under "Custom fields" with that name, its label, or the label people see on the portal. For a dropdown, the value sent must match one of its choices exactly.</p>
+    <form method="post" asp-page-handler="TicketFields"><button class="btn">Show ticket fields</button></form>
+    @if (Model.TicketFieldsError is not null) { <div class="flash bad">@Model.TicketFieldsError</div> }
+    @if (Model.TicketFields is { Count: > 0 } ticketFields)
+    {
+        <div class="table-wrap fs-fields">
+            <table class="table stack">
+                <thead><tr><th>Field</th><th>Name to use</th><th>Kind</th><th>Choices</th></tr></thead>
+                <tbody>
+                @foreach (var f in ticketFields)
+                {
+                    <tr>
+                        <td><strong>@f.Label</strong>@if (f.CustomerLabel is not null) { <br /><span class="muted small">On the portal: @f.CustomerLabel</span> }</td>
+                        <td data-label="Name to use"><code>@f.Name</code>@(f.IsDefault ? "" : " (custom)")</td>
+                        <td class="muted" data-label="Kind">@f.Type.Replace("default_", "").Replace("custom_", "").Replace('_', ' ')</td>
+                        <td data-label="Choices">
+                            @if (f.Choices.Count == 0) { <span class="muted">—</span> }
+                            else if (f.Choices.Count <= 6) { @string.Join(" · ", f.Choices) }
+                            else
+                            {
+                                <details><summary>@f.Choices.Count choices</summary><ul class="fs-choices">@foreach (var c in f.Choices) { <li>@c</li> }</ul></details>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+<section class="panel">
+    <h2>Email notifications (Microsoft 365)</h2>
+    @if (Model.Email.IsEnabled)
+    {
+        <p><span class="pill ok">On</span> Sending as <strong>@Model.Email.From</strong> through Microsoft Graph. Links in emails point to <code>@Model.Email.BaseUrl</code>.</p>
+        @if (Model.PendingEmails > 0) { <p class="muted">@Model.PendingEmails email@(Model.PendingEmails == 1 ? " is" : "s are") waiting to be sent or retried.</p> }
+    }
+    else
+    {
+        <p><span class="pill warn">Off</span> Notifications appear inside Greenlight only.</p>
+        <p class="muted" data-tip>To turn email on, set <code>Email:Mode</code> to <code>Graph</code>, <code>Email:From</code> to the mailbox to send as (for example a shared no-reply mailbox)
+            and <code>Email:BaseUrl</code> to this site's address, then give the Entra app registration the Microsoft Graph <em>application</em> permission <code>Mail.Send</code> with admin consent.
+            @if (string.Equals(Model.Email.Mode, "Graph", StringComparison.OrdinalIgnoreCase) && Model.Email.MissingSettings.Count > 0)
+            {
+                <strong>Still missing: @string.Join(", ", Model.Email.MissingSettings).</strong>
+            }
+        </p>
+    }
+    <form method="post" asp-page-handler="TestEmail"><button class="btn">Send me a test email</button></form>
+    @if (Model.EmailTestResult is not null) { <div class="flash @(Model.EmailTestOk ? "ok" : "bad")">@Model.EmailTestResult</div> }
+    @if (Model.FailedEmails.Count > 0)
+    {
+        <h3>Emails that could not be sent</h3>
+        <div class="table-wrap"><table class="table compact">
+            <thead><tr><th>When</th><th>To</th><th>Subject</th><th>Problem</th></tr></thead>
+            <tbody>@foreach (var n in Model.FailedEmails) { <tr><td class="muted">@Ui.When(n.CreatedAt)</td><td>@n.UserEmail</td><td>@n.Title</td><td>@n.EmailError</td></tr> }</tbody>
+        </table></div>
+        <p class="muted small" data-tip>The person still has the notification inside SchoolFlow.</p>
+    }
+</section>
+
+<section class="panel">
+    <h2>Ticket events from Freshservice (webhook)</h2>
+    @if (!Model.WebhookEnabled)
+    {
+        <p><span class="pill warn">Off</span> Set <code>Freshservice:WebhookSecret</code> (16 or more random characters) in server configuration to turn this on.</p>
+    }
+    else
+    {
+        <p><span class="pill ok">On</span> In Freshservice, open <em>Admin → Workflow Automator</em>, create an automator for the ticket events you care about, and add a <em>Trigger Webhook</em> action with:</p>
+    }
+    <dl class="kv">
+        <dt>Request type</dt><dd>POST</dd>
+        <dt>URL</dt><dd><code>@Model.WebhookUrl</code></dd>
+        <dt>Custom header</dt><dd><code>X-SchoolFlow-Secret: <em>your webhook secret</em></code></dd>
+        <dt>Encoding</dt><dd>JSON → Advanced, with this content:</dd>
+    </dl>
+<pre class="code">{
+  "event": "ticket_updated",
+  "ticket": { "id": "{{ticket.id_numeric}}" }
+}</pre>
+    <p class="muted" data-tip>Only the ticket ID is needed: Greenlight reads the rest of the ticket (status, priority, group, custom fields…) from the Freshservice API,
+        so formulas such as <code>ticket.status &gt;= 4</code> use the same numeric values as the API (2 Open, 3 Pending, 4 Resolved, 5 Closed).
+        You may add more fields to the JSON; they become available to formulas too.</p>
+    @if (Model.WebhookLogs.Count > 0)
+    {
+        <h3>Recent events</h3>
+        <div class="table-wrap"><table class="table compact">
+            <thead><tr><th>When</th><th>Received</th><th>Result</th></tr></thead>
+            <tbody>@foreach (var l in Model.WebhookLogs) { <tr><td class="muted">@Ui.When(l.At)</td><td>@l.Summary</td><td>@l.Outcome</td></tr> }</tbody>
+        </table></div>
+    }
+</section>
+
+<section class="panel" id="retention">
+    <h2>How long things are kept</h2>
+    @{ var keepYears = HttpContext.RequestServices.GetRequiredService<RetentionService>().Years; }
+    @if (keepYears > 0)
+    {
+        <p>Requests and their uploaded files are deleted automatically <strong>@keepYears year@(keepYears == 1 ? "" : "s")</strong> after their last activity, along with their history, approvals and discussion. Notifications and unfinished drafts of that age go too.</p>
+        <p class="muted small" data-tip>A request that is still in progress is never deleted. Deletion is permanent, runs once a day, and each run is recorded in the audit log. Copies in database or server backups are not affected.</p>
+    }
+    else
+    {
+        <p>Automatic deletion is switched off: requests and files are kept until someone removes them.</p>
+    }
+    <p>The <a href="/Admin/Audit">audit log</a> is kept forever.</p>
+    <p class="muted small" data-tip>The period is the <code>Retention:Years</code> setting on the server.</p>
+</section>
+
+<section class="panel" id="groups">
+    <h2>Microsoft Entra groups</h2>
+    <p class="muted" data-tip>Register the Entra security groups Greenlight should know about. A group can <strong>grant a role</strong> to its members,
+        and any registered group can be used to <strong>limit who may submit a form</strong> (set per workflow in the builder).
+        Membership is managed in Entra and picked up the next time each person signs in.</p>
+    @if (Model.Groups.Count > 0)
+    {
+        <div class="table-wrap"><table class="table stack">
+            <thead><tr><th>Group</th><th>Object ID</th><th>Grants role</th><th></th></tr></thead>
+            <tbody>
+            @foreach (var g in Model.Groups)
+            {
+                <tr>
+                    <td><strong>@g.Name</strong></td>
+                    <td data-label="Object ID"><code>@g.ObjectId</code></td>
+                    <td data-label="Grants role">
+                        <form method="post" asp-page-handler="Group" class="inline-form">
+                            <input type="hidden" name="id" value="@g.Id" /><input type="hidden" name="name" value="@g.Name" /><input type="hidden" name="objectId" value="@g.ObjectId" />
+                            <select name="role" data-autosubmit aria-label="Role granted by @g.Name">
+                                <option value="" selected="@(g.Role == "")">No role (audience only)</option>
+                                <option value="Builder" selected="@(g.Role == "Builder")">Builder</option>
+                                <option value="Admin" selected="@(g.Role == "Admin")">Admin</option>
+                            </select>
+                        </form>
+                    </td>
+                    <td><form method="post" asp-page-handler="RemoveGroup" data-confirm="Remove “@g.Name”? Its members lose any role it grants the next time they open a page.">
+                        <input type="hidden" name="id" value="@g.Id" /><button class="btn small ghost-danger">Remove</button></form></td>
+                </tr>
+            }
+            </tbody>
+        </table></div>
+    }
+    <h3>Register a group</h3>
+    <form method="post" asp-page-handler="Group" class="dept-form">
+        <div><label class="lbl" for="g-name">Name</label><input id="g-name" name="name" required maxlength="200" placeholder="e.g. All Staff" /></div>
+        <div><label class="lbl" for="g-id">Object ID (from Entra)</label><input id="g-id" name="objectId" required placeholder="1a2b3c4d-1111-2222-3333-1a2b3c4d5e6f" spellcheck="false" /></div>
+        <div><label class="lbl" for="g-role">Grants role</label>
+            <select id="g-role" name="role"><option value="">No role (audience only)</option><option value="Builder">Builder</option><option value="Admin">Admin</option></select></div>
+        <div class="dept-save"><button class="btn primary">Register group</button></div>
+    </form>
+    <p class="muted small" data-tip>Find the Object ID in the Entra admin center: Groups → the group → Overview. Groups only reach Greenlight if the app registration's
+        <em>Token configuration</em> has the <em>groups</em> claim switched on (Security groups, Group ID) — see the deployment guide.</p>
+</section>
+
+<section class="panel">
+    <h2>People and roles</h2>
+    <p class="muted" data-tip>Everyone who signs in can submit the forms open to them and approve requests sent to them. <strong>Builders</strong> can also create workflows,
+        and see the requests on workflows they own. <strong>Admins</strong> see and manage everything. A person's role is the highest of: the one set here by hand,
+        any registered group they belong to, an Entra app role, and the server's admin list. People appear here after their first sign-in.
+        <a href="/Admin/Audit">See the audit log</a> for who changed what.</p>
+    <div class="table-wrap"><table class="table stack">
+        <thead><tr><th>Person</th><th>Last seen</th><th>Role now</th><th>Set by hand</th></tr></thead>
+        <tbody>
+        @foreach (var person in Model.People)
+        {
+            var u = person.User;
+            var locked = Model.ConfigAdmins.Contains(u.Email);
+            <tr>
+                <td><strong>@u.Name</strong><div class="muted small">@u.Email</div></td>
+                <td class="muted" data-label="Last seen">@Ui.When(u.LastSeenAt)</td>
+                <td data-label="Role now">
+                    <span class="pill @(person.EffectiveRole == "Admin" ? "info" : person.EffectiveRole == "Builder" ? "ok" : "muted")">@person.EffectiveRole</span>
+                    @if (person.Locked) { <div class="muted small">from @person.Source</div> }
+                </td>
+                <td data-label="Set by hand">
+                    @if (locked)
+                    {
+                        <span class="pill info">Admin</span> <span class="muted small">set in server configuration</span>
+                    }
+                    else
+                    {
+                        <form method="post" asp-page-handler="Role" class="inline-form">
+                            <input type="hidden" name="email" value="@u.Email" />
+                            <select name="role" data-autosubmit aria-label="Role for @u.Name">
+                                @foreach (var r in Roles.All) { <option value="@r" selected="@(u.Role == r)">@r</option> }
+                            </select>
+                        </form>
+                    }
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table></div>
+</section>

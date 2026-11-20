@@ -1,0 +1,62 @@
+@page
+@model SchoolFlow.Web.Pages.Admin.TeamsModel
+@{
+    ViewData["Title"] = "Teams";
+}
+<div class="page-head">
+    <div><h1>Teams</h1><p class="sub" data-tip>Groups of staff that workflow steps can name, such as the business office. When someone changes role, change the team here — not every workflow.</p></div>
+</div>
+
+@if (Model.Teams.Any(t => t.Members.Length == 0 && Model.UsedBy.ContainsKey(t.Name)))
+{
+    <div class="flash warn">A team with nobody in it is used by a workflow. Requests that reach that step will stop with an error until you add people.</div>
+}
+
+@if (Model.Teams.Count == 0) { <div class="empty small"><p>No teams yet.</p></div> }
+<div class="team-list">
+@{ var openTeam = TempData["OpenTeam"] as int?; }
+@foreach (var t in Model.Teams)
+{
+    <details class="panel team-card" open="@(openTeam == t.Id ? "open" : null)">
+        <summary><span class="team-head">
+            <span class="team-name">@t.Name</span>
+            @if (t.Members.Length == 0) { <span class="pill bad">Nobody yet</span> }
+            else { <span class="pill muted">@t.MemberList.Count() @(t.MemberList.Count() == 1 ? "person" : "people")</span> }
+            <span class="team-use muted small">@(Model.UsedBy.TryGetValue(t.Name, out var usedBy) ? $"Used by {usedBy.Count} workflow{(usedBy.Count == 1 ? "" : "s")}" : "Not used yet")</span>
+        </span></summary>
+        <div class="team-body">
+        <form method="post" asp-page-handler="Save">
+            <input type="hidden" name="id" value="@t.Id" />
+            <label class="lbl" for="team-@t.Id">People in this team <span class="muted">(one email per line)</span></label>
+            <textarea id="team-@t.Id" name="members" rows="@Math.Max(2, t.MemberList.Count() + 1)">@string.Join("\n", t.MemberList)</textarea>
+            <div class="people-add">
+                <label class="lbl" for="add-@t.Id">Add a person <span class="muted">(start typing a name or email)</span></label>
+                <div class="row"><input id="add-@t.Id" type="email" autocomplete="off" data-people data-people-add="team-@t.Id" />
+                    <button type="button" class="btn small" data-people-add-button="add-@t.Id">Add</button></div>
+            </div>
+            <div class="actions"><button class="btn primary small">Save</button>
+                <span class="muted small">In a workflow step: <code>[@t.Name]</code>
+                    @if (Model.UsedBy.TryGetValue(t.Name, out var users)) { <span>· used by @string.Join(", ", users)</span> } else { <span>· not used by any workflow yet</span> }</span></div>
+        </form>
+        <form method="post" asp-page-handler="Remove" class="team-remove" data-confirm="Remove the team “@t.Name”?"><input type="hidden" name="id" value="@t.Id" /><button class="btn small ghost-danger">Remove this team</button></form>
+        </div>
+    </details>
+}
+</div>
+
+<section class="panel">
+    <h2>Add a team</h2>
+    <form method="post" asp-page-handler="Add">
+        <label class="lbl" for="t-name">Name</label>
+        <input id="t-name" name="name" required maxlength="200" placeholder="e.g. Business Office (Technical Schools)" />
+        <label class="lbl" for="t-members">People <span class="muted">(one email per line; you can add them later)</span></label>
+        <textarea id="t-members" name="members" rows="3"></textarea>
+        <div class="people-add">
+            <label class="lbl" for="t-add">Add a person <span class="muted">(start typing a name or email)</span></label>
+            <div class="row"><input id="t-add" type="email" autocomplete="off" data-people data-people-add="t-members" />
+                <button type="button" class="btn small" data-people-add-button="t-add">Add</button></div>
+        </div>
+        <div class="actions"><button class="btn primary">Add team</button></div>
+    </form>
+    <p class="muted small" data-tip>Any one person in a team can approve or complete a step sent to the team, and everyone in it is notified. A change here applies to approvals and tasks created from then on. Every change is recorded in the audit log.</p>
+</section>

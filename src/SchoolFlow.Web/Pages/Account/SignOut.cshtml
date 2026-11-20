@@ -1,0 +1,9 @@
+@page "/Account/SignOut"
+@model SchoolFlow.Web.Pages.Account.SignOutModel
+@{
+    ViewData["Title"] = "Sign out";
+}
+<div class="page-head"><div><h1>Sign out</h1><p class="sub">You are signed in as @User.Email().</p></div></div>
+<section class="panel">
+    <form method="post"><button class="btn primary">Sign out</button></form>
+</section>

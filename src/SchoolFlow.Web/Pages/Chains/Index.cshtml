@@ -1,0 +1,14 @@
+@page
+@{
+    ViewData["Title"] = "Approval chains";
+}
+<div class="page-head">
+    <div><h1>Approval chains</h1><p class="sub" data-tip>Reusable lists of who approves, in order. Pick one when you submit a request, or build your own.</p></div>
+    <div class="actions" id="chain-actions"></div>
+</div>
+<p class="flash warn" id="chain-note">The department's final approver is always added automatically at the end of a chain. Admins set those under Admin → Departments.</p>
+<div id="chains-root"><p class="muted">Loading…</p></div>
+@section Scripts {
+    <script src="~/js/chain-editor.js" asp-append-version="true"></script>
+    <script src="~/js/chains.js" asp-append-version="true"></script>
+}

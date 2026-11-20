@@ -1,0 +1,57 @@
+@page
+@model NotificationsModel
+@{
+    ViewData["Title"] = "Notifications";
+}
+<div class="page-head">
+    <div><h1>Notifications</h1><p class="sub" data-tip>Approvals waiting for you and updates on your requests.</p></div>
+    @if (Model.Items.Any(n => n.ReadAt == null))
+    {
+        <form method="post" asp-page-handler="ReadAll"><button class="btn">Mark all as read</button></form>
+    }
+</div>
+
+@if (Model.Items.Count == 0)
+{
+    <div class="empty"><div class="empty-art"><partial name="_Icons" model='"bell"' /></div><p>Nothing yet. You'll see approvals and request updates here.</p></div>
+}
+else
+{
+    <div class="panel note-list">
+        @foreach (var n in Model.Items)
+        {
+            <a class="note @(n.ReadAt == null ? "unread" : "")" href="/Notifications?open=@n.Id">
+                <span class="note-dot"></span>
+                <span class="grow">
+                    <strong>@n.Title</strong>
+                    @if (n.Body.Length > 0) { <span class="note-body">@n.Body</span> }
+                </span>
+                <span class="muted small">@Ui.When(n.CreatedAt)</span>
+            </a>
+        }
+    </div>
+}
+
+<section class="panel">
+    <h2>Email</h2>
+    @if (!Model.EmailEnabled)
+    {
+        <p class="muted">Email notifications are not switched on for this site yet, so notifications only appear here.</p>
+    }
+    <form method="post" asp-page-handler="Preference" class="row">
+        <label class="b-toggle"><input type="checkbox" name="email" value="true" checked="@Model.WantsEmail" data-autosubmit /> <span>Also send my notifications by email</span></label>
+    </form>
+</section>
+
+<section class="panel" data-alert-settings>
+    <h2>Alerts on this device</h2>
+    <p class="muted" data-tip>While Greenlight is open in a browser tab (even in the background or minimised), a new notification can play a short sound and show a pop-up in the corner of the screen, like other Windows apps. These choices are kept for this browser on this computer only. Nothing pops up when the browser is closed.</p>
+    <label class="b-toggle"><input type="checkbox" data-alert-sound /> <span>Play a sound when a new notification arrives</span></label>
+    <label class="b-toggle"><input type="checkbox" data-alert-popups /> <span>Show a pop-up on the screen</span></label>
+    <p class="muted small" data-alert-status aria-live="polite"></p>
+    <button type="button" class="btn" data-alert-test>Try it</button>
+</section>
+
+@section Scripts {
+    <script src="~/js/alert-settings.js" asp-append-version="true"></script>
+}

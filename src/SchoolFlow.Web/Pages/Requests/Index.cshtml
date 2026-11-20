@@ -1,0 +1,84 @@
+@page
+@model SchoolFlow.Web.Pages.Requests.IndexModel
+@{
+    var heading = Model.Scope switch { "managed" => User.IsAdmin() ? "All requests" : "Requests on my workflows", "department" => "My department's requests", _ => "My requests" };
+    var blurb = Model.Scope switch
+    {
+        "managed" => User.IsAdmin() ? "Every request across the school." : "Requests submitted on the workflows you own.",
+        "department" => "Requests filed under the departments you give final approval for.",
+        _ => "Requests you have submitted.",
+    };
+    ViewData["Title"] = heading;
+}
+<div class="page-head">
+    <div>
+        <h1>@heading</h1>
+        <p class="sub">@blurb</p>
+    </div>
+    @if (Model.CanSeeManaged || Model.CanSeeDepartment)
+    {
+        <div class="seg">
+            <a class="@(Model.Scope == "mine" ? "on" : "")" href="/Requests">Mine</a>
+            @if (Model.CanSeeDepartment) { <a class="@(Model.Scope == "department" ? "on" : "")" href="/Requests?scope=department">My department</a> }
+            @if (Model.CanSeeManaged) { <a class="@(Model.Scope == "managed" ? "on" : "")" href="/Requests?scope=managed">@(User.IsAdmin() ? "Everyone's" : "My workflows")</a> }
+        </div>
+    }
+</div>
+<form method="get" class="filters">
+    <input type="hidden" name="scope" value="@Model.Scope" />
+    <select name="status" data-autosubmit aria-label="Filter by status">
+        <option value="">Any status</option>
+        @foreach (var s in new[] { RunStatus.WaitingApproval, RunStatus.WaitingTask, RunStatus.ChangesRequested, RunStatus.WaitingTicket, RunStatus.Completed, RunStatus.Rejected, RunStatus.Failed, RunStatus.Cancelled })
+        {
+            <option value="@s" selected="@(Model.Status == s)">@Ui.Status(s).Label</option>
+        }
+    </select>
+    @if (Model.Workflows.Count > 1)
+    {
+        <select name="workflow" data-autosubmit aria-label="Filter by form">
+            <option value="">Any form</option>
+            @foreach (var w in Model.Workflows) { <option value="@w.Id" selected="@(Model.Workflow == w.Id)">@w.Name</option> }
+        </select>
+    }
+    @if (Model.Departments.Count > 0)
+    {
+        <select name="department" data-autosubmit aria-label="Filter by department">
+            <option value="">Any department</option>
+            @foreach (var d in Model.Departments) { <option value="@d.Id" selected="@(Model.Department == d.Id)">@d.Name</option> }
+        </select>
+    }
+</form>
+@if (Model.Runs.Count == 0)
+{
+    <div class="empty"><p>Nothing here yet.</p><a class="btn primary" href="/">Start a request</a></div>
+}
+else
+{
+    <div class="panel table-wrap">
+        <table class="table stack">
+            <thead><tr><th>Request</th>@if (Model.ShowsOthers) { <th>Submitted by</th> }<th>Department</th><th>Status</th><th>Ticket</th><th>Submitted</th><th>Updated</th></tr></thead>
+            <tbody>
+            @foreach (var r in Model.Runs)
+            {
+                var (label, css) = Ui.Status(r.Status);
+                <tr>
+                    <td><a href="/Requests/Detail/@r.Id"><strong>@r.WorkflowName</strong></a> <span class="muted">#@r.Id</span></td>
+                    @if (Model.ShowsOthers) { <td data-label="Submitted by">@r.SubmitterName</td> }
+                    <td data-label="Department">@(r.DepartmentName.Length > 0 ? r.DepartmentName : "—")</td>
+                    <td data-label="Status"><span class="pill @css">@label</span>
+                        @if (Model.Stops.TryGetValue(r.Id, out var stop)) { <partial name="_CurrentStop" model="stop" /> }</td>
+                    <td data-label="Ticket">@(r.TicketId is long t ? "#" + t : "—")</td>
+                    <td class="muted" data-label="Submitted">@Ui.When(r.CreatedAt)</td>
+                    <td class="muted" data-label="Updated">@Ui.When(r.UpdatedAt)</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+    <div class="pager">
+        <a class="btn" href="@Model.ExportUrl" download>Export to spreadsheet (CSV)</a>
+        @if (Model.ShowsOthers) { <a class="btn" href="/Reports?scope=@Model.Scope">Reports</a> }
+        @if (Model.PageNumber > 1) { <a class="btn" href="@Model.PageUrl(Model.PageNumber - 1)">Newer</a> }
+        @if (Model.HasMore) { <a class="btn" href="@Model.PageUrl(Model.PageNumber + 1)">Older</a> }
+    </div>
+}

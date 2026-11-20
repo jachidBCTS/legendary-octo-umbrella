@@ -1,0 +1,314 @@
+@page "/Requests/Detail/{id:int}"
+@model SchoolFlow.Web.Pages.Requests.DetailModel
+@{
+    ViewData["Title"] = $"{Model.Run.WorkflowName} #{Model.Run.Id}";
+    var (label, css) = Ui.Status(Model.Run.Status);
+}
+<a class="back-link" href="/Requests"><partial name="_Icons" model='"back"' /> Requests</a>
+<div class="page-head">
+    <div>
+        <h1>@Model.Run.WorkflowName <span class="muted">#@Model.Run.Id</span></h1>
+        <p class="sub">
+            <span class="pill @css">@label</span>
+            Submitted by @Model.Run.SubmitterName · @Ui.When(Model.Run.CreatedAt)
+            @if (Model.Run.DepartmentName.Length > 0) { <span>· @Model.Run.DepartmentName</span> }
+            @if (Model.Run.TicketId is long ticketId)
+            {
+                <span>·</span>
+                @if (Model.TicketUrl is not null) { <a href="@Model.TicketUrl" target="_blank" rel="noopener">Freshservice ticket #@ticketId</a> }
+                else { <span>Ticket #@ticketId (simulated)</span> }
+            }
+        </p>
+    </div>
+    <div class="actions">
+        @if (Model.CanRevise) { <a class="btn primary" href="/Requests/Revise/@Model.Run.Id">Edit and resubmit</a> }
+        @if (Model.CopyUrl is not null) { <a class="btn" href="@Model.CopyUrl">Start a new request from this one</a> }
+        <a class="btn" href="/Requests/Print/@Model.Run.Id" target="_blank" rel="noopener">Print</a>
+        @if (Model.CanWithdraw)
+        {
+            <form method="post" asp-page-handler="Withdraw" data-confirm="Withdraw this request? It will be cancelled and the approvers will be told."><button class="btn ghost-danger">Withdraw</button></form>
+        }
+    </div>
+    @if (Model.CanManage)
+    {
+        <div class="actions">
+            @if (Model.Run.Status == RunStatus.Failed)
+            {
+                <form method="post" asp-page-handler="Retry"><button class="btn primary">Retry failed step</button></form>
+            }
+            @if (!RunStatus.IsFinished(Model.Run.Status))
+            {
+                <form method="post" asp-page-handler="Cancel" data-confirm="Cancel this request? This cannot be undone."><button class="btn danger">Cancel request</button></form>
+            }
+        </div>
+    }
+</div>
+
+@if (Model.Run.Status == RunStatus.Failed)
+{
+    <div class="flash bad"><strong>This request hit a problem.</strong> @Model.Run.Error
+        @if (!Model.CanManage) { <span>The admins have been notified and can retry it.</span> }
+    </div>
+}
+
+@if (Model.ReturnedBy is not null)
+{
+    <div class="flash warn"><strong>Sent back for changes@(Model.ReturnedBy.DecidedBy is null ? "" : " by " + Model.ReturnedBy.DecidedBy).</strong>
+        <span class="pre">@Model.ReturnedBy.Comment</span>
+        @if (Model.CanRevise) { <div class="actions"><a class="btn primary" href="/Requests/Revise/@Model.Run.Id">Edit and resubmit</a></div> }
+    </div>
+}
+
+@if (Model.Stops.Count > 0)
+{
+    var total = Model.Stops.Count;
+    var reached = Model.Stops.Count(st => st.State == "done");
+    <section class="panel journey" aria-labelledby="journey-title">
+        <div class="row-between">
+            <h2 id="journey-title"><partial name="_Icons" model='"route"' /> Where this request is</h2>
+            <span class="muted small">@reached of @total stops done</span>
+        </div>
+        <div class="train-scroll" tabindex="0" role="region" aria-label="The stops this request goes through">
+            <ol class="train-track">
+                @for (var i = 0; i < total; i++)
+                {
+                    var st = Model.Stops[i];
+                    var here = st.State is "current" or "returned";
+                    var stateText = st.State switch { "done" => "Done", "current" => "Here now", "returned" => "Sent back", "rejected" => "Not approved", "failed" => "Stopped by a problem", "cancelled" => "Not reached", _ => "Coming up" };
+                    <li class="train-stop is-@st.State @(st.Age is { } a ? "age-" + a.Tone : "")" aria-current="@(here ? "step" : null)">
+                        <span class="train-stop-dot" aria-hidden="true">
+                            @switch (st.State)
+                            {
+                                case "done": <svg viewBox="0 0 24 24"><path class="check-mark" d="m6.5 12.5 3.6 3.6 7.4-8.2" /></svg> break;
+                                case "rejected": <svg viewBox="0 0 24 24"><path d="M8 8l8 8M16 8l-8 8" /></svg> break;
+                                case "failed": <svg viewBox="0 0 24 24"><path d="M12 6.5v7M12 17v.4" /></svg> break;
+                                case "returned": <svg viewBox="0 0 24 24"><path d="M15.5 8.5H9a3.5 3.5 0 0 0 0 7h6.5M12.5 5.5l3 3-3 3" /></svg> break;
+                                case "current": <span class="train-core"></span> break;
+                            }
+                        </span>
+                        <div class="train-stop-body">
+                            @if (here) { <span class="train-here">Stop @(i + 1) of @total</span> }
+                            <strong class="train-title">@st.Title</strong>
+                            <span class="visually-hidden">— @stateText.</span>
+                            @if (st.Position is not null && st.Kind == "approval") { <span class="muted tiny-text">@st.Position</span> }
+                            @if (st.Who is not null)
+                            {
+                                <span class="train-who">@(st.State == "current" ? "Waiting on " : st.State is "upcoming" ? "Goes to " : "")@st.Who</span>
+                            }
+                            @if (st.When is not null && st.State != "upcoming") { <span class="muted tiny-text">@(st.State == "current" ? "Arrived " : "")@st.When</span> }
+                            @if (st.Age is { } age) { <span class="pill age-pill age-@age.Tone">@age.Label</span> }
+                            @if (st.Note is { Length: > 0 } note) { <span class="train-note">“@(note.Length > 140 ? note[..140] + "…" : note)”</span> }
+                        </div>
+                    </li>
+                }
+            </ol>
+        </div>
+    </section>
+}
+
+@foreach (var task in Model.MyWork.Take(1))
+{
+    <section class="panel approve-box task-box">
+        <h2><partial name="_Icons" model='"check"' /> Your task: @task.Title</h2>
+        @if (task.DueOn is DateTime due)
+        {
+            var late = due < DateTime.Now.Date;
+            <p><span class="pill @(late ? "bad" : "warn")">@(late ? "Overdue — was due" : "Due") @due.ToString("dddd, MMM d, yyyy")</span></p>
+        }
+        @if (task.Instructions.Length > 0) { <p class="pre">@task.Instructions</p> }
+        @if (task.StandsInFor(User.Email()) is { } coveringFor) { <p class="muted">You are doing this in place of @coveringFor, who is away.</p> }
+        else if (task.IsEscalatedTo(User.Email())) { <p class="muted">This was escalated to you because it had not been done by @string.Join(", ", task.AssigneeList).</p> }
+        else if (!task.IsAssignedTo(User.Email())) { <p class="muted">This task belongs to @string.Join(", ", task.AssigneeList). As an admin you can complete it on their behalf; that is recorded on the request and in the audit log.</p> }
+        <div id="task-root" data-task-id="@task.Id" data-workflow-id="@Model.Run.WorkflowId"></div>
+        <script type="application/json" id="task-definition">@Html.Raw(Model.TaskFormJson)</script>
+        <script type="application/json" id="task-values">@Html.Raw(Model.TaskValuesJson)</script>
+        <script type="application/json" id="task-previous">@Html.Raw(Model.TaskPreviousJson)</script>
+        <details class="forward">
+            <summary>Send back for changes</summary>
+            <form method="post" asp-page-handler="ReturnTask">
+                <input type="hidden" name="taskId" value="@task.Id" />
+                <label class="lbl" for="return-@task.Id">What needs changing? <span class="muted">(required)</span></label>
+                <textarea id="return-@task.Id" name="comment" rows="2" maxlength="2000" required></textarea>
+                <p class="muted small" data-tip>@(Model.TaskReturnsTo is { } back ? $"It goes back to the “{back}” step, with your note; this task comes back to you afterwards." : "It goes back to the requester to edit and resubmit.")</p>
+                <div class="actions"><button class="btn">Send back</button></div>
+            </form>
+        </details>
+        @if (Model.CanForward.Contains(task.Id))
+        {
+            <details class="forward">
+                <summary>Pass to someone else</summary>
+                <form method="post" asp-page-handler="Forward" class="forward-form">
+                    <input type="hidden" name="taskId" value="@task.Id" />
+                    <label class="lbl" for="to-@task.Id">Their email address</label>
+                    <input id="to-@task.Id" name="to" type="email" required maxlength="254" autocomplete="off" data-people />
+                    <label class="lbl" for="note-@task.Id">Note <span class="muted">(optional, sent to them)</span></label>
+                    <input id="note-@task.Id" name="note" type="text" maxlength="1000" />
+                    <p class="muted small" data-tip>@(task.IsAssignedTo(User.Email()) ? "They take your place on this step." : task.StandsInFor(User.Email()) is { } covered ? $"They take the place of {covered}, whom you stand in for." : "They replace everyone this step is waiting for.") It is recorded on the request and in the audit log.</p>
+                    <div class="actions"><button class="btn">Pass it on</button></div>
+                </form>
+            </details>
+        }
+    </section>
+}
+
+@foreach (var task in Model.MyTasks)
+{
+    <section class="panel approve-box">
+        <h2><partial name="_Icons" model='"check"' /> @task.Title @if (task.Position.Length > 0) { <span class="pill info">@task.Position</span> }</h2>
+        @if (task.Rule == "all" && task.AssigneeList.Count() > 1)
+        {
+            <p class="muted">Everyone listed must approve: @string.Join(", ", task.AssigneeList).
+                @if (task.ApprovedByList.Any()) { <span>Approved so far: @string.Join(", ", task.ApprovedByList).</span> }</p>
+        }
+        @if (task.Instructions.Length > 0) { <p class="pre">@task.Instructions</p> }
+        <form method="post" asp-page-handler="Decide">
+            <input type="hidden" name="taskId" value="@task.Id" />
+            @if (task.StandsInFor(User.Email()) is { } standingInFor) { <p class="muted">You are deciding this in place of @standingInFor, who is away.</p> }
+            else if (task.IsEscalatedTo(User.Email())) { <p class="muted">This was escalated to you because it had no decision from @string.Join(", ", task.AssigneeList).</p> }
+            else if (!task.IsAssignedTo(User.Email())) { <p class="muted">You are not one of this step's approvers. As an admin you can decide on behalf of @string.Join(", ", task.AssigneeList); that is recorded on the request and in the audit log.</p> }
+            <label class="lbl" for="comment-@task.Id">Comment <span class="muted">(shown to the requester; required to send back)</span></label>
+            <textarea id="comment-@task.Id" name="comment" rows="2" maxlength="2000"></textarea>
+            <div class="actions">
+                <button class="btn success" name="decision" value="approve">Approve</button>
+                <button class="btn" name="decision" value="return" title="Ask the requester to change something and resubmit">Send back for changes</button>
+                <button class="btn danger" name="decision" value="reject">Reject</button>
+            </div>
+            @if (Model.HasEarlierApprovals)
+            {
+                <label class="b-toggle restart-toggle"><input type="checkbox" name="restart" value="true" /> <span>If I send it back, ask every approver again from the start once it is resubmitted</span></label>
+            }
+        </form>
+        @if (Model.CanForward.Contains(task.Id))
+        {
+            <details class="forward">
+                <summary>Pass to someone else</summary>
+                <form method="post" asp-page-handler="Forward" class="forward-form">
+                    <input type="hidden" name="taskId" value="@task.Id" />
+                    <label class="lbl" for="to-@task.Id">Their email address</label>
+                    <input id="to-@task.Id" name="to" type="email" required maxlength="254" autocomplete="off" data-people />
+                    <label class="lbl" for="note-@task.Id">Note <span class="muted">(optional, sent to them)</span></label>
+                    <input id="note-@task.Id" name="note" type="text" maxlength="1000" />
+                    <p class="muted small" data-tip>@(task.IsAssignedTo(User.Email()) ? "They take your place on this step." : task.StandsInFor(User.Email()) is { } covered ? $"They take the place of {covered}, whom you stand in for." : "They replace everyone this step is waiting for.") It is recorded on the request and in the audit log.</p>
+                    <div class="actions"><button class="btn">Pass it on</button></div>
+                </form>
+            </details>
+        }
+    </section>
+}
+
+@foreach (var task in Model.OthersWaiting)
+{
+    <section class="panel">
+        <h2>Waiting: @task.Title</h2>
+        <p class="muted">Waiting for @string.Join(", ", task.AssigneeList). As @(User.IsAdmin() ? "an admin" : "an owner of this workflow") you can pass it to someone else.</p>
+        @if (Model.CanForward.Contains(task.Id))
+        {
+            <details class="forward">
+                <summary>Pass to someone else</summary>
+                <form method="post" asp-page-handler="Forward" class="forward-form">
+                    <input type="hidden" name="taskId" value="@task.Id" />
+                    <label class="lbl" for="to-@task.Id">Their email address</label>
+                    <input id="to-@task.Id" name="to" type="email" required maxlength="254" autocomplete="off" data-people />
+                    <label class="lbl" for="note-@task.Id">Note <span class="muted">(optional, sent to them)</span></label>
+                    <input id="note-@task.Id" name="note" type="text" maxlength="1000" />
+                    <p class="muted small" data-tip>@(task.IsAssignedTo(User.Email()) ? "They take your place on this step." : task.StandsInFor(User.Email()) is { } covered ? $"They take the place of {covered}, whom you stand in for." : "They replace everyone this step is waiting for.") It is recorded on the request and in the audit log.</p>
+                    <div class="actions"><button class="btn">Pass it on</button></div>
+                </form>
+            </details>
+        }
+    </section>
+}
+
+<div class="detail-grid">
+    <section class="panel">
+        <h2>Progress</h2>
+        <ol class="timeline">
+            @foreach (var e in Model.Events)
+            {
+                <li class="tl-@e.Kind">
+                    <span class="tl-dot"></span>
+                    <div><div class="tl-msg">@e.Message</div><div class="muted small">@Ui.When(e.At)</div></div>
+                </li>
+            }
+            @if (RunStatus.IsWaitingOnPeople(Model.Run.Status) && Model.PendingAssignees.Count > 0)
+            {
+                <li class="tl-pending"><span class="tl-dot"></span><div><div class="tl-msg">Waiting on @string.Join(", ", Model.PendingAssignees)</div></div></li>
+            }
+        </ol>
+    </section>
+    <section class="panel">
+        <h2>What was submitted</h2>
+        @if (Model.RosterProblem) { <p class="flash warn">The student roster could not be reached just now, so students are shown by number only.</p> }
+        @if (Model.ZipUrl is not null) { <p><a class="btn small" href="@Model.ZipUrl" download><partial name="_Icons" model='"clip"' /> Download all files (.zip)</a></p> }
+        @if (Model.Fields.Count == 0)
+        {
+            <p class="muted">This request was started by a Freshservice ticket event, not a form.</p>
+        }
+        <dl class="answers">
+            @foreach (var f in Model.Fields)
+            {
+                @if (f.Heading)
+                {
+                    <dt class="answers-head">@f.Label</dt><dd class="answers-head muted small">@f.Value</dd>
+                    continue;
+                }
+                <dt>@f.Label
+                    @if (f.PreviousValue is { } was)
+                    {
+                        <span class="edit-badge" title="Previously: @was" tabindex="0">Edited · was: @(was.Length > 45 ? was[..45] + "…" : was)</span>
+                    }
+                </dt>
+                @if (f.Files is not null)
+                {
+                    <dd>
+                        <ul class="file-list">
+                            @foreach (var file in f.Files)
+                            {
+                                <li><a href="@file.Url" download><partial name="_Icons" model='"clip"' /> @file.Name</a> <span class="muted small">@file.Size</span></li>
+                            }
+                        </ul>
+                    </dd>
+                }
+                else if (f.Rows is not null)
+                {
+                    <dd class="full">
+                        <div class="table-wrap"><table class="table compact">
+                            <thead><tr>@foreach (var c in f.Columns!) { <th>@c</th> }</tr></thead>
+                            <tbody>@foreach (var row in f.Rows) { <tr>@foreach (var cell in row) { <td>@cell</td> }</tr> }</tbody>
+                        </table></div>
+                    </dd>
+                }
+                else
+                {
+                    <dd class="pre">@f.Value</dd>
+                }
+            }
+        </dl>
+    </section>
+</div>
+
+<section class="panel" id="discussion">
+    <h2>Discussion</h2>
+    @if (Model.Comments.Count == 0) { <p class="muted">Questions and answers about this request appear here. Everyone involved is notified of new messages.</p> }
+    <ul class="comments">
+        @foreach (var c in Model.Comments)
+        {
+            <li>
+                <span class="avatar">@Ui.Initials(c.AuthorName)</span>
+                <div><strong>@c.AuthorName</strong> <span class="muted small">@Ui.When(c.CreatedAt)</span><div class="pre">@c.Body</div></div>
+            </li>
+        }
+    </ul>
+    <form method="post" asp-page-handler="Comment">
+        <label class="lbl" for="comment-body">Add a message</label>
+        <textarea id="comment-body" name="body" rows="2" maxlength="4000" required></textarea>
+        <div class="actions"><button class="btn">Post message</button></div>
+    </form>
+</section>
+@section Scripts {
+    @if (Model.MyWork.Count > 0)
+    {
+        <script src="~/js/form-runtime.js" asp-append-version="true"></script>
+        <script src="~/js/task.js" asp-append-version="true"></script>
+    }
+}

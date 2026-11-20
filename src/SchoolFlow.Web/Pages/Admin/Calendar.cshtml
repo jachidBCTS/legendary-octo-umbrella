@@ -1,0 +1,42 @@
+@page
+@model SchoolFlow.Web.Pages.Admin.CalendarModel
+@{
+    ViewData["Title"] = "School calendar";
+}
+<div class="page-head">
+    <div><h1>School calendar</h1><p class="sub" data-tip>Days the school is closed. “School day” rules on forms, approval reminders and escalation all skip them.</p></div>
+</div>
+
+<section class="panel">
+    <h2>Add closed days</h2>
+    <form method="post" asp-page-handler="Add" class="dept-form">
+        <div><label class="lbl" for="c-name">What is it?</label><input id="c-name" name="name" required maxlength="200" placeholder="e.g. Winter break" /></div>
+        <div><label class="lbl" for="c-from">First day</label><input id="c-from" name="from" type="date" required /></div>
+        <div><label class="lbl" for="c-to">Last day <span class="muted">(leave blank for one day)</span></label><input id="c-to" name="to" type="date" /></div>
+        <div class="dept-save"><button class="btn primary">Add</button></div>
+    </form>
+    <p class="muted small" data-tip>Weekends are never school days, so only the weekdays in the range are added. Example of what this changes: a rule such as
+        <code>trip_date &gt;= DATEADD(TODAY(), 10, 'weekdays')</code> counts ten days the school is actually open.</p>
+</section>
+
+@if (Model.Closures.Count == 0) { <div class="empty small"><p>No closed days have been added. Until they are, every Monday to Friday counts as a school day.</p></div> }
+else
+{
+    <div class="panel table-wrap"><table class="table stack">
+        <thead><tr><th>Closure</th><th>From</th><th>Until</th><th>School days</th><th></th></tr></thead>
+        <tbody>
+        @foreach (var c in Model.Closures)
+        {
+            <tr class="@(c.Last < DateTime.Now.Date ? "row-off" : "")">
+                <td><strong>@c.Name</strong></td>
+                <td data-label="From">@c.First.ToString("ddd, MMM d, yyyy")</td>
+                <td data-label="Until">@c.Last.ToString("ddd, MMM d, yyyy")</td>
+                <td data-label="School days">@c.Days</td>
+                <td><form method="post" asp-page-handler="Remove" data-confirm="Remove “@c.Name”? Those days will count as school days again.">
+                    <input type="hidden" name="name" value="@c.Name" /><input type="hidden" name="from" value="@c.First.ToString("yyyy-MM-dd")" /><input type="hidden" name="to" value="@c.Last.ToString("yyyy-MM-dd")" />
+                    <button class="btn small ghost-danger">Remove</button></form></td>
+            </tr>
+        }
+        </tbody>
+    </table></div>
+}

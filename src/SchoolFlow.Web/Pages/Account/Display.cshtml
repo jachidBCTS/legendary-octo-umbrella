@@ -1,0 +1,36 @@
+@page "/Account/Display"
+@model SchoolFlow.Web.Pages.Account.DisplayModel
+@{
+    ViewData["Title"] = "Accessibility";
+}
+<div class="page-head">
+    <div><h1>Accessibility</h1><p class="sub" data-tip>Make Greenlight easier to read and use on this device.</p></div>
+</div>
+
+<section class="panel">
+    <h2>Accessibility mode is @(Model.On ? "on" : "off")</h2>
+    <p>When it is on:</p>
+    <ul>
+        <li>Text and controls are larger.</li>
+        <li>Colours have stronger contrast, and borders are darker.</li>
+        <li>Links are always underlined, and the item you are on has a thick outline.</li>
+        <li>Buttons and menu items are bigger targets.</li>
+        <li>Nothing animates.</li>
+    </ul>
+    <form method="post">
+        <input type="hidden" name="on" value="@(Model.On ? "false" : "true")" />
+        <button class="btn primary lg">Turn accessibility mode @(Model.On ? "off" : "on")</button>
+    </form>
+    <p class="muted small" data-tip>The choice is remembered on this device and browser only. You can change it at any time from <em>Accessibility</em> in the menu.</p>
+</section>
+
+<section class="panel">
+    <h2>Using Greenlight with a keyboard or screen reader</h2>
+    <ul>
+        <li>Press <kbd>Tab</kbd> once on any page to reach <em>Skip to main content</em>.</li>
+        <li>Every form field has a label; a problem with an answer is announced with that field.</li>
+        <li>On forms with several pages, <em>Next</em> checks the current page and takes you to the first problem.</li>
+        <li>Your browser's own zoom (<kbd>Ctrl</kbd> + <kbd>+</kbd>) also works on every page.</li>
+    </ul>
+    <p class="muted small" data-tip>The drag-and-connect flow designer (for workflow builders) is the one screen that still needs a mouse or touch.</p>
+</section>

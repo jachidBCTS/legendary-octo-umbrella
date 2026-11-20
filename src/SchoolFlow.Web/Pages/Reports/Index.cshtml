@@ -1,0 +1,86 @@
+@page "/Reports"
+@model SchoolFlow.Web.Pages.Reports.IndexModel
+@{
+    ViewData["Title"] = "Reports";
+    string Days(double? d) => d is null ? "—" : d.Value.ToString("0.#");
+}
+<div class="page-head">
+    <div><h1>Reports</h1><p class="sub">@Model.ScopeLabel · requests submitted in the last @Model.Period days.</p></div>
+    <div class="seg">
+        @foreach (var days in new[] { 30, 90, 365 })
+        {
+            <a class="@(Model.Period == days ? "on" : "")" href="/Reports?scope=@Model.Scope&period=@days">@(days == 365 ? "Year" : days + " days")</a>
+        }
+    </div>
+</div>
+@if (Model.CanSeeManaged && Model.CanSeeDepartment)
+{
+    <div class="filters"><div class="seg">
+        <a class="@(Model.Scope == "managed" ? "on" : "")" href="/Reports?scope=managed&period=@Model.Period">@(User.IsAdmin() ? "Whole school" : "My workflows")</a>
+        <a class="@(Model.Scope == "department" ? "on" : "")" href="/Reports?scope=department&period=@Model.Period">My department</a>
+    </div></div>
+}
+
+@if (Model.Total == 0) { <div class="empty"><p>No requests in this period.</p></div> }
+else
+{
+    <div class="stat-grid">
+        <div class="stat"><strong>@Model.Total</strong><span>requests</span></div>
+        <div class="stat"><strong>@Model.Open</strong><span>still in progress</span></div>
+        <div class="stat"><strong>@Model.Completed</strong><span>completed</span></div>
+        <div class="stat"><strong>@Model.NotApproved</strong><span>not approved</span></div>
+        <div class="stat"><strong>@Days(Model.AverageDays)</strong><span>school days to finish, on average</span></div>
+        <div class="stat"><strong>@Model.Failed</strong><span>need attention</span></div>
+    </div>
+
+    <section class="panel">
+        <h2>By form</h2>
+        <div class="table-wrap"><table class="table compact">
+            <thead><tr><th>Form</th><th>Requests</th><th></th><th>In progress</th><th>Completed</th><th>Not approved</th><th>Avg. school days</th></tr></thead>
+            <tbody>
+            @foreach (var r in Model.ByWorkflow)
+            {
+                <tr><td><a href="/Requests?scope=@Model.Scope&workflow=@r.Id">@r.Name</a></td><td>@r.Count</td>
+                    <td class="bar-cell"><span class="bar" style="width:@(100 * r.Count / Model.MaxWorkflow)%"></span></td>
+                    <td>@r.Open</td><td>@r.Completed</td><td>@r.NotApproved</td><td>@Days(r.AverageDays)</td></tr>
+            }
+            </tbody>
+        </table></div>
+    </section>
+
+    @if (Model.ByDepartment.Count > 0)
+    {
+        <section class="panel">
+            <h2>By department</h2>
+            <div class="table-wrap"><table class="table compact">
+                <thead><tr><th>Department</th><th>Requests</th><th></th><th>In progress</th><th>Completed</th><th>Not approved</th></tr></thead>
+                <tbody>
+                @foreach (var r in Model.ByDepartment)
+                {
+                    <tr><td>@r.Name</td><td>@r.Count</td>
+                        <td class="bar-cell"><span class="bar" style="width:@(100 * r.Count / Model.MaxDepartment)%"></span></td>
+                        <td>@r.Open</td><td>@r.Completed</td><td>@r.NotApproved</td></tr>
+                }
+                </tbody>
+            </table></div>
+        </section>
+    }
+
+    <section class="panel">
+        <h2>Approvals waiting longest</h2>
+        @if (Model.Waiting.Count == 0) { <p class="muted">Nothing is waiting for approval.</p> }
+        else
+        {
+            <div class="table-wrap"><table class="table compact stack">
+                <thead><tr><th>Request</th><th>Step</th><th>Waiting on</th><th>School days</th></tr></thead>
+                <tbody>
+                @foreach (var w in Model.Waiting)
+                {
+                    <tr><td><a href="/Requests/Detail/@w.RunId">@w.Workflow #@w.RunId</a></td><td data-label="Step">@w.Step</td>
+                        <td data-label="Waiting on">@w.WaitingOn</td><td data-label="School days"><span class="pill @(w.Days >= 5 ? "bad" : w.Days >= 2 ? "warn" : "muted")">@w.Days</span></td></tr>
+                }
+                </tbody>
+            </table></div>
+        }
+    </section>
+}
