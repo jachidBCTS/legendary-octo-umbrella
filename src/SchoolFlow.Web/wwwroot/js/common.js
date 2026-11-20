@@ -389,6 +389,46 @@
     window.addEventListener('resize', edges);
   });
 
+  // Lists edited in one go (form[data-batch]): changes are only marked until "Save changes" is pressed;
+  // the bar counts changed rows, and leaving with unsaved changes asks first.
+  document.querySelectorAll('form[data-batch]').forEach((form) => {
+    const bar = form.querySelector('[data-batch-bar]');
+    const text = bar && bar.querySelector('.save-bar-text');
+    const save = form.querySelector('[data-batch-save]');
+    const undo = form.querySelector('[data-batch-undo]');
+    let submitting = false;
+    const changed = (el) => el.type === 'checkbox' || el.type === 'radio' ? el.checked !== el.defaultChecked
+      : el.tagName === 'SELECT' ? [...el.options].some((o) => o.selected !== o.defaultSelected)
+      : el.type !== 'hidden' && el.value !== el.defaultValue;
+    const refresh = () => {
+      let rows = 0;
+      form.querySelectorAll('[data-batch-row]').forEach((row) => {
+        const dirty = [...row.querySelectorAll('input, select, textarea')].some(changed);
+        row.classList.toggle('row-changed', dirty);
+        const on = row.querySelector('[data-row-on]');
+        if (on) {
+          row.classList.toggle('row-off', !on.checked);
+          const label = on.parentElement.querySelector('span');
+          if (label) label.textContent = on.checked ? 'Offered' : 'Off';
+        }
+        if (dirty) rows++;
+      });
+      if (text) text.textContent = rows === 0 ? 'No unsaved changes' : rows + (rows === 1 ? ' row changed, not saved yet' : ' rows changed, not saved yet');
+      if (bar) bar.classList.toggle('dirty', rows > 0);
+      if (save) save.disabled = rows === 0;
+      if (undo) undo.disabled = rows === 0;
+      form.dataset.dirty = rows > 0 ? 'true' : '';
+    };
+    form.addEventListener('input', refresh);
+    form.addEventListener('change', refresh);
+    form.addEventListener('reset', () => setTimeout(refresh, 0));
+    form.addEventListener('submit', () => { submitting = true; });
+    window.addEventListener('beforeunload', (e) => {
+      if (!submitting && form.dataset.dirty) { e.preventDefault(); e.returnValue = ''; }
+    });
+    refresh();
+  });
+
   document.addEventListener('submit', (e) => {
     const message = e.target.getAttribute && e.target.getAttribute('data-confirm');
     if (message && !window.confirm(message)) e.preventDefault();

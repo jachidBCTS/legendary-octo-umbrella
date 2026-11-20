@@ -177,6 +177,15 @@ html.a11y .flash.ok, html.a11y .flash.bad { animation: none; }
 .row.wrap input { flex: 1 1 220px; width: auto; }
 .table td .row input { min-width: 160px; }
 .table tr.row-off td { opacity: .6; }
+.table tr.row-changed td { background: #fff6dc; }
+.table tr.row-changed td:first-child { box-shadow: inset 3px 0 0 #c98a00; }
+.check-inline { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
+.save-bar { position: sticky; bottom: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px;
+  margin-top: 8px; padding: 10px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 -4px 14px rgba(0,0,0,.08); }
+.save-bar .save-bar-text { margin-right: auto; color: var(--muted); }
+.save-bar.dirty { border-color: #c98a00; }
+.save-bar.dirty .save-bar-text { color: #7a5200; font-weight: 600; }
 input[readonly] { background: #f6f7fb; color: var(--ink-2); }
 
 /* reports */

@@ -150,7 +150,9 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   it takes `locked` (answers already on the request: resubmit, revise evaluate, task re-do, student restore) or
   else the field's `Default`; the checker warns if there is no default; never copied (`FormCopy`). Browser:
   `lockField` (readOnly/disabled, "Filled in for you"), and the server's value is applied on every evaluation.
-  `Location.District` (migration `AddLocationDistrict`; Admin → Locations column; "Add the district's locations"
+  `Location.District` (migration `AddLocationDistrict`; Admin → Locations column — the list is edited in one go and saved
+  with one button, owner Nov 20, 2026: `form[data-batch]` in `common.js` marks changed rows, counts them in a sticky
+  `.save-bar`, warns before leaving; `OnPostSaveAsync` is all-or-nothing and only checks *new* names for clashes; "Add the district's locations"
   fills blanks from `IStaffDirectory.PlacesAsync` = DISTINCT DistrictShort/Location). Location and staff fields
   may set `District` (fixed code) or `DistrictField` (another field: a district question — full names map to codes
   via `Students:Match:Districts`, `SchoolCalendar.DistrictAliases` — or a location/staff answer). Checked on the

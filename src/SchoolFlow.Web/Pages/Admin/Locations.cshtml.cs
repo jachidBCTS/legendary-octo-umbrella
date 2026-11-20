@@ -29,16 +29,53 @@ public class LocationsModel : PageModel
     /// <summary>The district codes an admin can pick: those in the settings file, and any already in use.</summary>
     public List<string> DistrictChoices { get; private set; } = new();
 
-    public async Task<IActionResult> OnPostDistrictAsync(int id, string? district)
+    /// <summary>One row of the list as the admin left it (names of Freshservice locations are ignored).</summary>
+    public sealed class LocationEdit
     {
-        var location = await _db.Locations.FirstOrDefaultAsync(l => l.Id == id);
-        if (location is null) return NotFound();
-        district = (district ?? "").Trim();
-        if (district.Length > 40) return Flash("A district code is at most 40 characters.", false);
-        location.District = district.Length == 0 ? null : district;
-        location.UpdatedAt = DateTime.UtcNow;
-        await _db.SaveChangesAsync();
-        return Flash(district.Length == 0 ? $"{location.Name} is no longer in a district." : $"{location.Name} is in {district}.", true);
+        public int Id { get; set; }
+        public string? Name { get; set; }
+        public string? District { get; set; }
+        public bool Active { get; set; }
+    }
+
+    [BindProperty] public List<LocationEdit> Rows { get; set; } = new();
+
+    /// <summary>
+    /// Saves every change made in the list at once (names of hand-added locations, districts, on/off).
+    /// All or nothing: if one name is not allowed, nothing is saved.
+    /// </summary>
+    public async Task<IActionResult> OnPostSaveAsync(CancellationToken ct)
+    {
+        var all = await _db.Locations.ToListAsync(ct);
+        var byId = all.ToDictionary(l => l.Id);
+        var now = DateTime.UtcNow;
+        var changed = 0;
+        var renamed = new List<Location>();
+        foreach (var edit in Rows)
+        {
+            if (!byId.TryGetValue(edit.Id, out var location)) continue;
+            var touched = false;
+            var name = (edit.Name ?? "").Trim();
+            if (location.FreshserviceId is null && edit.Name is not null && name != location.Name)
+            {
+                if (name.Length == 0 || name.Length > 200) return Flash($"“{location.Name}” needs a name (up to 200 characters). Nothing was saved.", false);
+                location.Name = name;
+                renamed.Add(location);
+                touched = true;
+            }
+            var district = (edit.District ?? "").Trim();
+            if (district.Length > 40) return Flash($"“{location.Name}”: a district code is at most 40 characters. Nothing was saved.", false);
+            var newDistrict = district.Length == 0 ? null : district;
+            if (!string.Equals(newDistrict, location.District, StringComparison.Ordinal)) { location.District = newDistrict; touched = true; }
+            if (edit.Active != location.IsActive) { location.IsActive = edit.Active; touched = true; }
+            if (touched) { location.UpdatedAt = now; changed++; }
+        }
+        // Only a new name is checked: the list may already hold the same name twice (a hand-added copy of a Freshservice location).
+        var clash = renamed.FirstOrDefault(r => all.Any(l => l != r && string.Equals(l.Name, r.Name, StringComparison.OrdinalIgnoreCase)));
+        if (clash is not null) return Flash($"There is already a location called “{clash.Name}”. Nothing was saved.", false);
+        if (changed == 0) return Flash("Nothing had changed.", true);
+        await _db.SaveChangesAsync(ct);
+        return Flash($"Saved {changed} location{(changed == 1 ? "" : "s")}.", true);
     }
 
     /// <summary>The district's locations named in the settings file's location matches.</summary>
@@ -127,30 +164,6 @@ public class LocationsModel : PageModel
         _db.Locations.Add(new Location { Name = name, UpdatedAt = DateTime.UtcNow });
         await _db.SaveChangesAsync();
         return Flash($"Added {name}.", true);
-    }
-
-    public async Task<IActionResult> OnPostRenameAsync(int id, string? name)
-    {
-        name = (name ?? "").Trim();
-        var location = await _db.Locations.FirstOrDefaultAsync(l => l.Id == id);
-        if (location is null) return NotFound();
-        if (location.FreshserviceId is not null) return Flash("This location comes from Freshservice. Rename it there and sync.", false);
-        if (name.Length == 0 || name.Length > 200) return Flash("Give the location a name (up to 200 characters).", false);
-        if (await _db.Locations.AnyAsync(l => l.Name == name && l.Id != id)) return Flash($"There is already a location called “{name}”.", false);
-        location.Name = name;
-        location.UpdatedAt = DateTime.UtcNow;
-        await _db.SaveChangesAsync();
-        return Flash($"Renamed to {name}.", true);
-    }
-
-    public async Task<IActionResult> OnPostToggleAsync(int id)
-    {
-        var location = await _db.Locations.FirstOrDefaultAsync(l => l.Id == id);
-        if (location is null) return NotFound();
-        location.IsActive = !location.IsActive;
-        location.UpdatedAt = DateTime.UtcNow;
-        await _db.SaveChangesAsync();
-        return Flash(location.IsActive ? $"{location.Name} is offered on forms again." : $"{location.Name} is switched off.", true);
     }
 
     private IActionResult Flash(string message, bool ok)

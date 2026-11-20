@@ -31,47 +31,54 @@
 }
 else
 {
+    <form method="post" asp-page-handler="Save" data-batch>
     <div class="panel table-wrap">
         <table class="table stack">
-            <thead><tr><th>Location</th><th>District</th><th>Source</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Location</th><th>District</th><th>Source</th><th>On forms</th></tr></thead>
             <tbody>
-            @foreach (var l in Model.Locations)
+            @for (var i = 0; i < Model.Locations.Count; i++)
             {
-                <tr class="@(l.IsActive ? "" : "row-off")">
+                var l = Model.Locations[i];
+                <tr class="@(l.IsActive ? "" : "row-off")" data-batch-row>
                     <td>
-                        <form method="post" asp-page-handler="Rename" class="row">
-                            <input type="hidden" name="id" value="@l.Id" />
-                            <input name="name" value="@l.Name" required maxlength="200" aria-label="Name" readonly="@(l.FreshserviceId != null)" />
-                            @if (l.FreshserviceId == null) { <button class="btn small">Rename</button> }
-                        </form>
+                        <input type="hidden" name="Rows[@i].Id" value="@l.Id" />
+                        @if (l.FreshserviceId == null)
+                        {
+                            <input name="Rows[@i].Name" value="@l.Name" required maxlength="200" aria-label="Name" />
+                        }
+                        else
+                        {
+                            <input value="@l.Name" aria-label="Name (renamed in Freshservice)" readonly />
+                        }
                     </td>
                     <td data-label="District">
-                        <form method="post" asp-page-handler="District" class="row">
-                            <input type="hidden" name="id" value="@l.Id" />
-                            @if (Model.DistrictChoices.Count > 0)
-                            {
-                                <select name="district" aria-label="District of @l.Name" data-autosubmit>
-                                    <option value="" selected="@string.IsNullOrEmpty(l.District)">—</option>
-                                    @foreach (var d in Model.DistrictChoices) { <option value="@d" selected="@string.Equals(d, l.District, StringComparison.OrdinalIgnoreCase)">@d</option> }
-                                </select>
-                            }
-                            else
-                            {
-                                <input name="district" value="@l.District" maxlength="40" aria-label="District of @l.Name" placeholder="e.g. BCTS" class="district-input" />
-                                <button class="btn small">Set</button>
-                            }
-                        </form>
+                        @if (Model.DistrictChoices.Count > 0)
+                        {
+                            <select name="Rows[@i].District" aria-label="District of @l.Name">
+                                <option value="" selected="@string.IsNullOrEmpty(l.District)">—</option>
+                                @foreach (var d in Model.DistrictChoices) { <option value="@d" selected="@string.Equals(d, l.District, StringComparison.OrdinalIgnoreCase)">@d</option> }
+                            </select>
+                        }
+                        else
+                        {
+                            <input name="Rows[@i].District" value="@l.District" maxlength="40" aria-label="District of @l.Name" placeholder="e.g. BCTS" class="district-input" />
+                        }
                     </td>
                     <td class="muted" data-label="Source">@(l.FreshserviceId is long fs ? $"Freshservice #{fs}" : "Added by hand")</td>
-                    <td data-label="Status"><span class="pill @(l.IsActive ? "ok" : "muted")">@(l.IsActive ? "Active" : "Off")</span></td>
-                    <td>
-                        <form method="post" asp-page-handler="Toggle"><input type="hidden" name="id" value="@l.Id" />
-                            <button class="btn small">@(l.IsActive ? "Switch off" : "Switch on")</button></form>
+                    <td data-label="On forms">
+                        <label class="check-inline"><input type="checkbox" name="Rows[@i].Active" value="true" checked="@l.IsActive" data-row-on /> <span>@(l.IsActive ? "Offered" : "Off")</span></label>
+                        <input type="hidden" name="Rows[@i].Active" value="false" />
                     </td>
                 </tr>
             }
             </tbody>
         </table>
     </div>
+    <div class="save-bar" data-batch-bar>
+        <span class="save-bar-text" aria-live="polite">No unsaved changes</span>
+        <button type="reset" class="btn" data-batch-undo disabled>Undo changes</button>
+        <button class="btn primary" data-batch-save disabled>Save changes</button>
+    </div>
+    </form>
 }
-<p class="muted small" data-tip="page">Locations from Freshservice are renamed there, not here. A switched-off location is no longer offered on forms; requests that already used it keep it. The district decides which locations a Location field limited to one district offers; "Add the district's locations" fills it in from the staff list for locations that have none.</p>
+<p class="muted small" data-tip="page">Locations from Freshservice are renamed there, not here. Change as many rows as you like, then press Save changes once. A location that is not ticked under "On forms" is no longer offered on forms; requests that already used it keep it. The district decides which locations a Location field limited to one district offers; "Add the district's locations" fills it in from the staff list for locations that have none.</p>
