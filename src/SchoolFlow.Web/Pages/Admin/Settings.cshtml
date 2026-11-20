@@ -22,7 +22,7 @@
     @if (Model.TestResult is not null) { <div class="flash @(Model.TestOk ? "ok" : "bad")">@Model.TestResult</div> }
 
     <h3 class="fs-fields-head">Freshservice ticket fields</h3>
-    <p class="muted small" data-tip>The fields on your Freshservice ticket form, with the exact name a Create ticket step needs. Category, sub-category and item go in the step's own boxes; any field whose name starts with <code>cf_</code> goes under "Custom fields" with that name. For a dropdown, the value sent must match one of its choices exactly.</p>
+    <p class="muted small" data-tip>The fields on your Freshservice ticket form, with the exact name a Create ticket step needs. Category, sub-category and item go in the step's own boxes; any field whose name starts with <code>cf_</code> goes under "Custom fields" with that name, its label, or the label people see on the portal. For a dropdown, the value sent must match one of its choices exactly.</p>
     <form method="post" asp-page-handler="TicketFields"><button class="btn">Show ticket fields</button></form>
     @if (Model.TicketFieldsError is not null) { <div class="flash bad">@Model.TicketFieldsError</div> }
     @if (Model.TicketFields is { Count: > 0 } ticketFields)
@@ -34,7 +34,7 @@
                 @foreach (var f in ticketFields)
                 {
                     <tr>
-                        <td><strong>@f.Label</strong></td>
+                        <td><strong>@f.Label</strong>@if (f.CustomerLabel is not null) { <br /><span class="muted small">On the portal: @f.CustomerLabel</span> }</td>
                         <td data-label="Name to use"><code>@f.Name</code>@(f.IsDefault ? "" : " (custom)")</td>
                         <td class="muted" data-label="Kind">@f.Type.Replace("default_", "").Replace("custom_", "").Replace('_', ' ')</td>
                         <td data-label="Choices">

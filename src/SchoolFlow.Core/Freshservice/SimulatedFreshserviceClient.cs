@@ -162,8 +162,8 @@ public sealed class SimulatedFreshserviceClient : IFreshserviceClient
         Task.FromResult<IReadOnlyList<TicketField>>(new[]
         {
             new TicketField("category", "Category", "default_category", true, new[] { "Hardware", "Hardware > Computer", "Hardware > Computer > Laptop", "Software", "Network" }),
-            new TicketField("cf_room_number", "Room #", "custom_text", false, Array.Empty<string>()),
-            new TicketField("cf_phone_extension", "Phone / Extension", "custom_text", false, Array.Empty<string>()),
+            new TicketField("cf_room_number", "Room #", "custom_text", false, Array.Empty<string>(), "Room Number"),
+            new TicketField("cf_phone_extension", "Extension / Phone #", "custom_text", false, Array.Empty<string>(), "Best number to reach you"),
             new TicketField("cf_building", "Location", "custom_dropdown", false, new[] { "Main Building", "Gymnasium", "Academy", "N. A. Bleshman Regional Day School", "Teterboro", "Venture Program" }),
             new TicketField("cf_availability", "Availability", "custom_paragraph", false, Array.Empty<string>()),
         });

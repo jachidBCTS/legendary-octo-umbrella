@@ -127,8 +127,8 @@
      },
      "customFields": {
       "Location": "{{location.name}}",
-      "Room Number": "{{room}}",
-      "Best number to reach you": "{{phone}}",
+      "Room #": "{{room}}",
+      "Extension / Phone #": "{{phone}}",
       "Please Note Your Availability / Free Periods": "{{availability}}"
      }
     },

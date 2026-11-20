@@ -201,6 +201,33 @@ public class FreshserviceClientTests
     }
 
     [Fact]
+    public void Custom_fields_also_match_the_label_requesters_see_on_the_portal()
+    {
+        // Agents see "Room #" and "Extension / Phone #"; the portal shows "Room Number" and "Best number to reach you".
+        using var doc = System.Text.Json.JsonDocument.Parse("""
+        {"ticket_fields":[
+          {"name":"cf_room","label":"Room #","label_for_customers":"Room Number","field_type":"custom_text","default_field":false},
+          {"name":"cf_extension","label":"Extension / Phone #","label_for_customers":"Best number to reach you","field_type":"custom_text","default_field":false},
+          {"name":"cf_same","label":"Notes","label_for_customers":"Notes","field_type":"custom_text","default_field":false}
+        ]}
+        """);
+        var form = FreshserviceClient.ParseTicketFields(doc.RootElement);
+        Assert.Equal("Room Number", form[0].CustomerLabel);
+        Assert.Null(form[2].CustomerLabel);                       // the same label twice is not repeated
+        var notes = new List<string>();
+        var sent = FreshserviceClient.MatchCustomFields(form, new Dictionary<string, object?>
+        {
+            ["Room Number"] = "214", ["Best number to reach you"] = "x4412", ["Room #"] = "215", ["Extension / Phone #"] = "x4413",
+        }, notes);
+        Assert.Empty(notes);
+        Assert.Equal("215", sent["cf_room"]);                     // both spellings reach the same field (the later one wins)
+        Assert.Equal("x4413", sent["cf_extension"]);
+        var portalOnly = FreshserviceClient.MatchCustomFields(form, new Dictionary<string, object?> { ["Room Number"] = "214", ["Best number to reach you"] = "x4412" }, notes);
+        Assert.Equal("214", portalOnly["cf_room"]);
+        Assert.Equal("x4412", portalOnly["cf_extension"]);
+    }
+
+    [Fact]
     public void A_category_that_is_not_a_choice_is_left_out_with_a_note()
     {
         var notes = new List<string>();

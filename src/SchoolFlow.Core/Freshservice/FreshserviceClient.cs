@@ -340,7 +340,9 @@ public sealed class FreshserviceClient : IFreshserviceClient
         {
             var field = custom.FirstOrDefault(f => f.Name == key)
                 ?? custom.FirstOrDefault(f => Simple(f.Name) == Simple(key))
-                ?? custom.FirstOrDefault(f => Simple(f.Label) == Simple(key));
+                ?? custom.FirstOrDefault(f => Simple(f.Label) == Simple(key))
+                // The label requesters see on the portal ("Room Number") may differ from the agents' ("Room #").
+                ?? custom.FirstOrDefault(f => f.CustomerLabel is not null && Simple(f.CustomerLabel) == Simple(key));
             if (field is null)
             {
                 notes.Add($"“{key}” is not a field on the Freshservice ticket form, so it was left out");
@@ -387,7 +389,10 @@ public sealed class FreshserviceClient : IFreshserviceClient
             var choices = new List<string>();
             if (f.TryGetProperty("choices", out var c)) Choices(c, "", choices);
             var isDefault = f.TryGetProperty("default_field", out var d) && d.ValueKind == JsonValueKind.True;
-            list.Add(new TicketField(name, Str(f, "label") ?? Str(f, "label_for_customers") ?? name, Str(f, "field_type") ?? "", isDefault, choices));
+            var label = Str(f, "label") ?? Str(f, "label_for_customers") ?? name;
+            var customer = Str(f, "label_for_customers");
+            list.Add(new TicketField(name, label, Str(f, "field_type") ?? "", isDefault, choices,
+                customer is not null && !string.Equals(customer.Trim(), label.Trim(), StringComparison.OrdinalIgnoreCase) ? customer.Trim() : null));
         }
         return list;
     }

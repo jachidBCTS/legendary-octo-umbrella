@@ -34,7 +34,8 @@ public sealed class TicketCreate
 /// needs (<see cref="Name"/>; custom fields are filled under custom_fields with this name). Choices of a
 /// nested field (category › sub-category › item) are listed as "A > B > C".
 /// </summary>
-public sealed record TicketField(string Name, string Label, string Type, bool IsDefault, IReadOnlyList<string> Choices);
+/// <param name="CustomerLabel">What requesters see on the portal, when it differs from the agents' label (e.g. "Room Number" vs "Room #").</param>
+public sealed record TicketField(string Name, string Label, string Type, bool IsDefault, IReadOnlyList<string> Choices, string? CustomerLabel = null);
 
 public sealed class TicketUpdate
 {
