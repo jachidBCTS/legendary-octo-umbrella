@@ -187,15 +187,10 @@ public sealed class PerDiemService
     }
 
     /// <summary>The timeline warning for a request whose per diem rates need checking, or null.</summary>
-    public static string? WarningFor(FormDefinition form, IDictionary<string, object?> values)
-    {
-        if (UsedFallback(form, values))
-            return "GSA per diem rates could not be looked up, so the standard rate was used. Please check the meal and hotel amounts.";
-        var early = form.Fields.Where(f => f.Type == FieldTypes.PerDiem).Select(f => values.TryGetValue(f.Key, out var v) ? v as Dictionary<string, object?> : null)
-            .FirstOrDefault(r => r is not null && !Values.IsBlank(r.GetValueOrDefault("rates_year")));
-        return early is null ? null
-            : $"GSA has not published per diem rates for fiscal year {Values.ToText(early.GetValueOrDefault("fiscal_year"))} yet, so fiscal year {Values.ToText(early.GetValueOrDefault("rates_year"))} rates were used. Please check the meal and hotel amounts.";
-    }
+    public static string? WarningFor(FormDefinition form, IDictionary<string, object?> values) =>
+        UsedFallback(form, values)
+            ? "GSA per diem rates could not be looked up, so the standard rate was used. Please check the meal and hotel amounts."
+            : null;
 
     /// <summary>True when an answer used the standard rate because GSA could not give one.</summary>
     public static bool UsedFallback(FormDefinition form, IDictionary<string, object?> values) =>

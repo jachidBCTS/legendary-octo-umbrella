@@ -2099,32 +2099,36 @@ public sealed class RunServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task PerDiem_ForAYearGsaHasNotPublished_UsesTheLatestPublishedYear_AndSaysSo()
+    public async Task PerDiem_ForAYearGsaHasNotPublished_BlocksTheRequest_OnlyWhenMealsOrAHotelAreClaimed()
     {
         var current = SchoolFlow.Core.Forms.PerDiemDirectory.FiscalYear(DateTime.Today);
-        // Travel in March of next fiscal year; GSA has only the current year so far.
-        var source = new PublishedThrough(current);
-        var form = await EvaluateTravelAsync(i => { i["from_date"] = $"{current + 1}-03-10"; i["to_date"] = $"{current + 1}-03-12"; }, source);
-        var gsa = (Dictionary<string, object?>)form.Values["gsa"]!;
-        Assert.Equal("gsa", gsa["source"]);                              // real GSA rates, not the standard fallback
-        Assert.Equal((decimal)(current + 1), gsa["fiscal_year"]);
-        Assert.Equal((decimal)current, gsa["rates_year"]);
-        Assert.Equal(59m + current - 2026, gsa["meals"]);
-        Assert.Contains("has not published its rates", (string)gsa["note"]!);
-        Assert.Equal(new[] { current + 1, current }, source.Asked.ToArray());
-        Assert.Contains($"fiscal year {current} rates were used", PerDiemService.WarningFor(Json.ParseDefinition((await TravelJsonAsync())).Form, form.Values));
+        void NextOctober(Dictionary<string, object?> i) { i["from_date"] = $"{current}-10-12"; i["to_date"] = $"{current}-10-14"; }   // fiscal year current + 1
 
-        // Once GSA publishes it, that year's own rates are used, with no note.
-        var published = await EvaluateTravelAsync(i => { i["from_date"] = $"{current + 1}-03-10"; i["to_date"] = $"{current + 1}-03-12"; }, new PublishedThrough(current + 1));
+        // Meals and a hotel claimed: GSA's own rates for that year are needed, and it has not published them.
+        var source = new PublishedThrough(current);
+        var claimed = await EvaluateTravelAsync(NextOctober, source);
+        var error = Assert.Single(claimed.Fields["gsa"].Errors);
+        Assert.Contains($"fiscal year {current + 1} (travel from October 1, {current})", error);
+        Assert.False(claimed.IsValid);
+        var shown = (Dictionary<string, object?>)claimed.Values["gsa"]!;
+        Assert.Equal((decimal)current, shown["rates_year"]);                 // last year's rates are shown for reference
+        Assert.Contains("for reference", (string)shown["note"]!);
+        Assert.Equal(new[] { current + 1, current }, source.Asked.ToArray());
+
+        // Nothing claimed that needs GSA (no meals, no hotel): the trip can go ahead.
+        var none = await EvaluateTravelAsync(i =>
+        {
+            NextOctober(i);
+            foreach (var key in new[] { "meal_first_people", "meal_days", "meal_day_people", "meal_last_people", "lodging_nights", "lodging_rate", "lodging_rooms" }) i[key] = null;
+        }, new PublishedThrough(current));
+        Assert.Empty(none.Fields["gsa"].Errors);
+
+        // Once GSA publishes the year, its own rates are used and the request can be submitted.
+        var published = await EvaluateTravelAsync(NextOctober, new PublishedThrough(current + 1));
+        Assert.Empty(published.Fields["gsa"].Errors);
         var own = (Dictionary<string, object?>)published.Values["gsa"]!;
         Assert.False(own.ContainsKey("rates_year"));
         Assert.Equal(59m + current + 1 - 2026, own["meals"]);
-    }
-
-    private async Task<string> TravelJsonAsync()
-    {
-        await using var db = Db();
-        return (await db.Workflows.SingleAsync(w => w.Name == "Request for Work Related Travel")).PublishedJson!;
     }
 
     [Fact]

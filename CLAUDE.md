@@ -212,9 +212,11 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   rates `gsa_standard_meals`/`gsa_standard_lodging` (seeded 68/110, cannot be removed). The fiscal year always comes
   from the travel dates. **A year GSA has not published yet** (rates come out each August; owner noticed Nov 20, 2026):
   `DirectoryForAsync` tries earlier years down to the current one (not after an outage — `LookupAsync` returns
-  `Failed`), stores `PerDiemArea.RatesYear` → answer `rates_year` + note, timeline warning via
-  `PerDiemService.WarningFor`; 404/400 from GSA = "none"; "none" is cached 4 h. `SimulatedPerDiemSource` follows the
-  same publishing schedule. Only mileage is
+  `Failed`), stores `PerDiemArea.RatesYear` → answer `rates_year` + a "for reference" note; 404/400 from GSA = "none";
+  "none" is cached 4 h. `SimulatedPerDiemSource` follows the same publishing schedule. **Business office rule (owner,
+  Nov 20, 2026): such a request cannot be submitted when the rates are needed** — `FormEvaluator.CheckPerDiem`: a per
+  diem field that is required (`required` / `requiredWhen`) errors when its answer has `rates_year`; the Travel template's
+  `gsa` field has `requiredWhen` = meals or lodging nights claimed. An outage still uses the standard rate, flagged. Only mileage is
   district-kept now; the old `meal_*` rates are no longer seeded. **Not verified against the real GSA
   API** (the reply shape in `GsaPerDiemClient.Parse` follows GSA's documentation; this workspace cannot
   reach api.gsa.gov). An existing site keeps its old Travel workflow until the new one is imported.

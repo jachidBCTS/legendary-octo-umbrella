@@ -90,8 +90,8 @@ public sealed class PerDiemDirectory
         {
             // GSA publishes a fiscal year's rates in August, shortly before it starts on October 1.
             record["rates_year"] = (decimal)ratesYear;
-            record["note"] = $"GSA has not published its rates for fiscal year {FiscalYear(from)} (October {FiscalYear(from) - 1} to September {FiscalYear(from)}) yet, "
-                + $"so the fiscal year {ratesYear} rates were used. The business office will check them."
+            record["note"] = $"GSA has not published its rates for fiscal year {FiscalYear(from)} (October {FiscalYear(from) - 1} to September {FiscalYear(from)}) yet; "
+                + $"the fiscal year {ratesYear} rates are shown for reference. A request that needs these rates (meals or a hotel) can be submitted once GSA publishes them, usually in August."
                 + (Source == "simulated" ? " (Example rates: GSA is not connected on this test site.)" : "");
         }
         return record;

@@ -309,6 +309,7 @@ public static class SeedData
             "rules": [ { "check": "to_date >= from_date", "message": "The return date is before the start date." } ] },
           { "key": "to_time", "label": "To time", "type": "time", "width": "half", "noCopy": true },
           { "key": "gsa", "label": "GSA per diem rates", "type": "perdiem", "perDiem": { "zip": "dest_zip", "from": "from_date", "to": "to_date" },
+            "requiredWhen": "meal_first_people > 0 || meal_days > 0 || meal_last_people > 0 || lodging_nights > 0",
             "help": "Looked up from gsa.gov for the destination ZIP code and your dates. The meal rates below come from here, and the hotel rate cannot be more than the limit unless it is the conference hotel." },
           { "key": "paid_by", "label": "Cost to be paid by", "type": "multiselect", "options": ["BOE", "Students", "Sponsor"], "required": true, "width": "half" },
           { "key": "sponsor_name", "label": "Name of Sponsor", "type": "text", "visibleWhen": "CONTAINS(paid_by, 'Sponsor')", "required": true, "width": "half" },

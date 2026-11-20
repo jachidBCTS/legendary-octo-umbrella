@@ -131,7 +131,12 @@ public static class FormEvaluator
         foreach (var field in fields)
         {
             var state = result.Fields[field.Key];
-            if (!state.Visible || FieldTypes.IsLayout(field.Type) || field.Type == FieldTypes.Calculated || field.Type == FieldTypes.PerDiem) continue;
+            if (state.Visible && field.Type == FieldTypes.PerDiem)
+            {
+                CheckPerDiem(field, state, scope);
+                continue;
+            }
+            if (!state.Visible || FieldTypes.IsLayout(field.Type) || field.Type == FieldTypes.Calculated) continue;
 
             state.Required = field.Required || EvaluateFlag(field.RequiredWhen, scope, false, state, "Required-when formula");
             var blank = field.Type == FieldTypes.Checkbox ? state.Value is not true : Values.IsBlank(state.Value);
@@ -397,6 +402,26 @@ public static class FormEvaluator
     /// Everything but the ID comes from the server's roster, and only for people allowed to use it.
     /// </summary>
     /// <summary>The per diem rates for the ZIP code and dates already answered, or blank until they are.</summary>
+    /// <summary>
+    /// A per diem field that is required (always, or when its "required when" holds — e.g. when meals or a hotel
+    /// are claimed) needs GSA's own rates for the travel year: a trip in a fiscal year GSA has not published yet
+    /// cannot be submitted (district business office rule, Nov 20, 2026). An outage still falls back to the
+    /// standard rate, flagged, as before.
+    /// </summary>
+    private static void CheckPerDiem(FieldDef field, FieldState state, Scope scope)
+    {
+        state.Required = field.Required || EvaluateFlag(field.RequiredWhen, scope, false, state, "Required-when formula");
+        if (!state.Required) return;
+        if (state.Value is not Dictionary<string, object?> quote)
+        {
+            if (state.Errors.Count == 0) state.Errors.Add("Enter the destination ZIP code and travel dates so the GSA rates can be looked up.");
+            return;
+        }
+        if (!Values.IsBlank(quote.GetValueOrDefault("rates_year")) && Values.TryToNumber(quote.GetValueOrDefault("fiscal_year"), out var year))
+            state.Errors.Add($"GSA has not published its per diem rates for fiscal year {year:0} (travel from October 1, {year - 1:0}) yet. "
+                + "They usually come out in August; this request can be submitted once they are.");
+    }
+
     private static object? PerDiemValue(FieldDef field, IDictionary<string, object?> values, PerDiemDirectory? directory, object? stored)
     {
         // No rates looked up (re-checking a stored request, e.g. to restore its student details): keep the

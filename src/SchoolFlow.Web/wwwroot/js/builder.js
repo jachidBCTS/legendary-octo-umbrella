@@ -878,6 +878,9 @@
       panel.append(
         toggle('Always required', field.required, (v) => { field.required = v; refresh(); }),
         row('Required when', formulaInput(field.requiredWhen, (v) => { field.requiredWhen = clean(v); refresh(); }, { placeholder: 'e.g. total >= 500' })));
+      if (field.type === 'perdiem')
+        panel.append(h('p', { class: 'b-help' }, 'Required here means GSA\'s own rates for the travel dates are needed (for example "Required when" meals or a hotel are claimed: '
+          + 'meal_days > 0 || lodging_nights > 0). A trip in a year GSA has not published yet (rates come out each August) then cannot be submitted.'));
 
       const rulesBox = h('div', { class: 'b-rules' });
       const renderRules = () => {
