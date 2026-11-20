@@ -91,7 +91,16 @@ public static class Template
     }
 
     /// <summary>Renders the template. <paramref name="encode"/> is applied to each substituted value (e.g. HTML-encoding).</summary>
-    public static string Render(string? text, Scope scope, Func<string, string>? encode = null)
+    public static string Render(string? text, Scope scope, Func<string, string>? encode = null) => Render(text, scope, encode, Values.ToText);
+
+    /// <summary>
+    /// Renders a setting that names people (approvers, recipients, CC, a requester). A person picked in a
+    /// Staff field is a record whose text is their name; here it gives their email address instead, so
+    /// <c>{{requester}}</c> works the same as <c>{{requester.email}}</c>.
+    /// </summary>
+    public static string RenderAddresses(string? text, Scope scope) => Render(text, scope, null, Values.ToAddressText);
+
+    private static string Render(string? text, Scope scope, Func<string, string>? encode, Func<object?, string> toText)
     {
         if (string.IsNullOrEmpty(text)) return "";
         var sb = new System.Text.StringBuilder();
@@ -107,7 +116,7 @@ public static class Template
             string value;
             try
             {
-                value = Values.ToText(Formula.Evaluate(source, scope));
+                value = toText(Formula.Evaluate(source, scope));
             }
             catch (ExpressionException ex)
             {

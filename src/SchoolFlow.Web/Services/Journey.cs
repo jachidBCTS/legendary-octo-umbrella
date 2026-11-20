@@ -199,7 +199,7 @@ public static class Journey
         var text = node.Get(setting);
         if (string.IsNullOrWhiteSpace(text)) return null;
         if (Template.GetExpressions(text).Any(e => Formula.TryParse(e, out var f, out _) && f!.References.Any(hiddenKeys.Contains))) return null;
-        try { text = Template.Render(text, new Scope(probe)); }
+        try { text = Template.RenderAddresses(text, new Scope(probe)); }
         catch (ExpressionException) { return null; }
         var teams = TeamName.Matches(text).Select(m => m.Groups[1].Value.Trim() + " team").ToList();
         var rest = TeamName.Replace(text, " ");

@@ -23,9 +23,13 @@ public static class ResubmitGuard
     /// could not be reached), without the requester having changed anything.
     /// </summary>
     public static bool SameAnswer(FieldDef field, object? a, object? b) =>
-        field.Type == FieldTypes.Student
-            ? string.Equals(Forms.FormEvaluator.StudentIdOf(a), Forms.FormEvaluator.StudentIdOf(b), StringComparison.OrdinalIgnoreCase)
-            : Same(a, b);
+        field.Type switch
+        {
+            FieldTypes.Student => string.Equals(Forms.FormEvaluator.StudentIdOf(a), Forms.FormEvaluator.StudentIdOf(b), StringComparison.OrdinalIgnoreCase),
+            // The same person, even if the staff list has since changed their title or department.
+            FieldTypes.Staff => Forms.FormEvaluator.StaffEmailOf(a) == Forms.FormEvaluator.StaffEmailOf(b),
+            _ => Same(a, b),
+        };
 
     /// <summary>
     /// The money fields (currency, and calculated amounts shown as currency) whose value went up. Plain

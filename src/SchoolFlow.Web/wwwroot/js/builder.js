@@ -365,6 +365,16 @@
     return names;
   }
 
+  // The parts of a person picked in a Staff or Student field. A Staff field on its own gives the name in text;
+  // in "who" settings it gives the email address.
+  function personParts(f) {
+    const name = f.label || f.key;
+    const parts = f.type === 'staff'
+      ? [['email', 'email'], ['name', 'name'], ['title', 'title'], ['location', 'location'], ['department', 'department'], ['district', 'district']]
+      : [['name', 'name'], ['id', 'student ID'], ['first', 'first name'], ['last', 'last name'], ['school', 'school'], ['grade', 'grade'], ['academy', 'academy']];
+    return parts.map(([part, label]) => [f.key + '.' + part, name + ' (' + label + ')']);
+  }
+
   function pickerValues(opts) {
     const items = [];
     if (opts.columns) opts.columns.forEach((c) => { if (c.key) items.push([c.key, 'This row: ' + (c.label || c.key)]); });
@@ -379,6 +389,8 @@
           items.push([f.key + '.id', (f.label || f.key) + ' (Freshservice ID)']);
         } else if (f.type === 'department' || f.type === 'location') {
           items.push([f.key + '.name', (f.label || f.key) + ' (name)']);
+        } else if (f.type === 'staff' || f.type === 'student') {
+          items.push(...personParts(f));
         } else if (f.type === 'attachments') {
           items.push(['COUNT(' + f.key + ')', 'Number of files in ' + (f.label || f.key)]);
         } else if (f.type === 'perdiem') {
@@ -403,7 +415,10 @@
         if (n.type === 'set_variable' && n.config.name) items.push([n.config.name.trim(), 'Value set by “' + (n.label || 'Set value') + '”']);
         if (n.type === 'fs_lookup' && n.config.saveAs) items.push([n.config.saveAs.trim() + '.name', 'Looked up by “' + (n.label || 'Look up') + '”']);
         if (n.type === 'task') (n.fields || []).forEach((f) => {
-          if (f.key && f.type !== 'section') items.push([f.type === 'attachments' ? 'COUNT(' + f.key + ')' : f.key, (f.label || f.key) + ' — filled in at “' + (n.label || 'Task') + '”']);
+          if (!f.key || LAYOUT.includes(f.type)) return;
+          const at = ' — filled in at “' + (n.label || 'Task') + '”';
+          if (f.type === 'staff') personParts(f).forEach(([code, label]) => items.push([code, label + at]));
+          else items.push([f.type === 'attachments' ? 'COUNT(' + f.key + ')' : f.key, (f.label || f.key) + at]);
         });
       });
       if (state.def.flow.nodes.some((n) => n.type === 'task'))

@@ -277,6 +277,9 @@ public static class DefinitionValidator
         {
             var label = string.IsNullOrWhiteSpace(f.Label) ? f.Key : f.Label;
             if (FieldTypes.HasOptions(f.Type)) CheckOptions(f.Options, message => Error(n.Id, $"“{Name(n)}”, “{label}”: {message}"));
+            if (f.Min is decimal min && f.Max is decimal max && min > max) Error(n.Id, $"“{Name(n)}”, “{label}”: minimum is greater than maximum.");
+            if (f.IsReadOnly && string.IsNullOrWhiteSpace(f.Default))
+                issues.Add(new Issue("warning", "flow", n.Id, $"“{Name(n)}”, “{label}” is read only but has no default value, so it will be blank the first time."));
             if (f.Type == FieldTypes.Calculated)
             {
                 if (string.IsNullOrWhiteSpace(f.Formula)) Error(n.Id, $"“{Name(n)}”, “{label}”: needs a formula.");
@@ -391,7 +394,7 @@ public static class DefinitionValidator
                     Text("description", "description", false);
                     Text("requesterEmail", "requester email", false);
                     Formula_("priorityFormula", "priority formula", false);
-                    foreach (var key in new[] { "groupId", "departmentId", "category", "subCategory", "tags" }) Text(key, key, false);
+                    foreach (var key in new[] { "groupId", "departmentId", "category", "subCategory", "itemCategory", "cc", "tags" }) Text(key, key, false);
                     if (!isForm && string.IsNullOrWhiteSpace(n.Get("requesterEmail")))
                         Error(n.Id, $"“{name}”: set the requester email — a ticket-triggered workflow has no submitter.");
                     break;

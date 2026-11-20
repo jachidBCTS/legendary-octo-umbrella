@@ -158,7 +158,10 @@ written at run time (`App_Data` holds the SQLite file and the data-protection ke
   aliases so `form-runtime.js` narrows the list. `FieldTypes.Staff`: browser sends an email; `StaffLookup.ForAsync`
   (singleton, 2-min cache, also looks up the submitter so `default: submitter.email` works) gives `StaffDirectory`;
   stored `{ email, name, title, location, department, district }` (several places joined with ", "); search
-  `/api/staff?q=&district=`. Allowed in tasks too.
+  `/api/staff?q=&district=`. Allowed in tasks too. In text a staff answer reads as the name; in settings that name
+  people (approvers, assignees, notify to, escalate to, due notify, ticket requester/CC, requester lookup) the engine
+  uses `Template.RenderAddresses` (`Values.ToAddressText`), so `{{requester}}` gives the email. Resubmit compares staff
+  answers by email; never copied from someone else's request; the builder preview checks the staff list too.
 - **Categories (Nov 19, 2026):** `Categories` table (`WorkflowCategory`, Admin → Categories: add, rename — renames
   every workflow's `Category` —, order, remove → "Other"). `Workflow.Category` stays a name. Filled once from
   existing workflows on start (`Categories.EnsureFromWorkflows`). Builder Settings picks from the list; Home

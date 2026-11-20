@@ -496,7 +496,7 @@ public sealed class WorkflowEngine
 
             case NodeTypes.Approval:
             {
-                var assignees = ResolveActingPeople(Template.Render(node.Get("approvers"), scope), Name(node));
+                var assignees = ResolveActingPeople(Template.RenderAddresses(node.Get("approvers"), scope), Name(node));
                 if (assignees.Count == 0)
                     throw new ExpressionException($"{Name(node)}: no approver email could be worked out. Check the Approvers setting.");
                 var rule = ApprovalRules.Normalize(node.Get("rule"));
@@ -518,7 +518,7 @@ public sealed class WorkflowEngine
 
             case NodeTypes.Task:
             {
-                var assignees = ResolveActingPeople(Template.Render(node.Get("assignees"), scope), Name(node));
+                var assignees = ResolveActingPeople(Template.RenderAddresses(node.Get("assignees"), scope), Name(node));
                 if (assignees.Count == 0)
                     throw new ExpressionException($"{Name(node)}: nobody to give this task to. Check the “Who does this” setting.");
                 state.PendingApproval = new PendingApproval
@@ -558,7 +558,7 @@ public sealed class WorkflowEngine
 
             case NodeTypes.Notify:
             {
-                var recipients = ResolvePeople(Template.Render(node.Get("to"), scope), Name(node));
+                var recipients = ResolvePeople(Template.RenderAddresses(node.Get("to"), scope), Name(node));
                 var title = Template.Render(node.Get("subject"), scope).Trim();
                 var message = Template.Render(node.Get("message"), scope).Trim();
                 if (title.Length == 0) throw new ExpressionException($"{Name(node)}: the notification has no subject.");
@@ -581,7 +581,7 @@ public sealed class WorkflowEngine
                 {
                     Subject = Template.Render(node.Get("subject"), scope).Trim(),
                     DescriptionHtml = RenderHtml(node.Get("description"), scope),
-                    RequesterEmail = Template.Render(Default(node.Get("requesterEmail"), "{{submitter.email}}"), scope).Trim(),
+                    RequesterEmail = Template.RenderAddresses(Default(node.Get("requesterEmail"), "{{submitter.email}}"), scope).Trim(),
                     Priority = ResolveInt(node, "priority", "priorityFormula", scope, 2, 1, 4, "Priority"),
                     Status = ResolveInt(node, "status", null, scope, 2, 2, 999, "Status"),   // above 5 = a custom Freshservice status
                     Type = NullIfBlank(node.Get("type")),
@@ -591,7 +591,7 @@ public sealed class WorkflowEngine
                     SubCategory = NullIfBlank(Template.Render(node.Get("subCategory"), scope)),
                     ItemCategory = NullIfBlank(Template.Render(node.Get("itemCategory"), scope)),
                     // Several addresses, separated by commas, semicolons or spaces; anything that is not an address is left out.
-                    CcEmails = Template.Render(node.Get("cc"), scope).Split(new[] { ',', ';', ' ', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    CcEmails = Template.RenderAddresses(node.Get("cc"), scope).Split(new[] { ',', ';', ' ', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                         .Where(e => e.Contains('@') && e.Length <= 320).Select(e => e.ToLowerInvariant()).Distinct().Take(50).ToList(),
                     Tags = Template.Render(node.Get("tags"), scope).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList(),
                     CustomFields = ResolveCustomFields(node, scope),
@@ -614,7 +614,7 @@ public sealed class WorkflowEngine
             {
                 var itemId = ResolveId(node.Get("itemId"), scope, "Catalog item ID")
                              ?? throw new ExpressionException($"{Name(node)}: the catalog item ID is empty.");
-                var email = Template.Render(Default(node.Get("requesterEmail"), "{{submitter.email}}"), scope).Trim();
+                var email = Template.RenderAddresses(Default(node.Get("requesterEmail"), "{{submitter.email}}"), scope).Trim();
                 if (email.Length == 0) throw new ExpressionException($"{Name(node)}: the requester email is empty.");
                 var quantity = (int)Math.Clamp(Values.ToNumber(Template.RenderValue(Default(node.Get("quantity"), "1"), scope)), 1, 1000);
                 var ticket = await _freshservice.PlaceServiceRequestAsync(itemId, email, quantity, ResolveCustomFields(node, scope), ct);
@@ -672,7 +672,7 @@ public sealed class WorkflowEngine
                 }
                 else
                 {
-                    var email = Template.Render(Default(node.Get("value"), "{{submitter.email}}"), scope).Trim();
+                    var email = Template.RenderAddresses(Default(node.Get("value"), "{{submitter.email}}"), scope).Trim();
                     found = email.Length == 0 ? null : await _freshservice.FindRequesterAsync(email, ct);
                 }
                 state.Context[saveAs] = found;
@@ -754,7 +754,7 @@ public sealed class WorkflowEngine
         approval.RemindDays = Days(node.Get("remindDays"), DefaultRemindDays);
         approval.EscalateDays = Days(node.Get("escalateDays"), 0);
         // People already asked are left out: escalating to someone who is ignoring it helps nobody.
-        approval.EscalateTo = ResolveActingPeople(Template.Render(node.Get("escalateTo"), NewScope(state)), Name(node)).Except(approval.Assignees).ToList();
+        approval.EscalateTo = ResolveActingPeople(Template.RenderAddresses(node.Get("escalateTo"), NewScope(state)), Name(node)).Except(approval.Assignees).ToList();
         if (approval.EscalateTo.Count == 0) approval.EscalateDays = 0;
 
         // A due date is a reminder, not a rule: a formula that cannot be worked out is noted and skipped.
@@ -774,7 +774,7 @@ public sealed class WorkflowEngine
             }
         }
         if (approval.DueOn is not null)
-            approval.DueNotify = ResolvePeople(Template.Render(node.Get("dueNotify"), NewScope(state)), Name(node)).Except(approval.Assignees).ToList();
+            approval.DueNotify = ResolvePeople(Template.RenderAddresses(node.Get("dueNotify"), NewScope(state)), Name(node)).Except(approval.Assignees).ToList();
     }
 
     /// <summary>

@@ -176,8 +176,8 @@ public sealed class FormsController : ControllerBase
                 HttpContext.RequestServices.GetService<StudentScopeService>()),
             allowedDomains: _domains.Domains,
             perDiem: await HttpContext.RequestServices.GetRequiredService<PerDiemService>().DirectoryForAsync(form, Json.ToValues(request.Values), ct),
-            // The builder's preview takes a picked person as given (like students); real forms check the staff list.
-            staff: request.Definition is not null ? null : await HttpContext.RequestServices.GetRequiredService<StaffLookup>().ForAsync(form.Fields, Json.ToValues(request.Values), ct, User.Email()),
+            // The staff list is open to anyone signed in, so the builder's preview checks it too (and fills in names).
+            staff: await HttpContext.RequestServices.GetRequiredService<StaffLookup>().ForAsync(form.Fields, Json.ToValues(request.Values), ct, User.Email()),
             places: await _calendar.PlacesAsync(ct), locked: locked);
         if (whole is not null) DistrictAddresses.Check(whole, result, _domains.Domains);
         return new JsonResult(Shape(result), Json.Options);

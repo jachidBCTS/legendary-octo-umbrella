@@ -18,10 +18,12 @@ public static class FormCopy
 
     /// <summary>
     /// What may be copied from someone else's request: the same, less personal contact details and the
-    /// approvers they chose, which belong to that person and not to the next requester.
+    /// approvers they chose, which belong to that person and not to the next requester. A Staff answer
+    /// is left out too: it is often "who is asking" (it holds an email address), and copying it would make
+    /// the earlier requester the requester of the new one.
     /// </summary>
     public static bool IsCopyable(FieldDef field, bool fromSomeoneElse) =>
-        IsCopyable(field) && !(fromSomeoneElse && field.Type is FieldTypes.Email or FieldTypes.Phone or FieldTypes.ApprovalChain);
+        IsCopyable(field) && !(fromSomeoneElse && field.Type is FieldTypes.Email or FieldTypes.Phone or FieldTypes.ApprovalChain or FieldTypes.Staff);
 
     /// <summary>
     /// The answers from <paramref name="previous"/> that the current form still has and allows copying.

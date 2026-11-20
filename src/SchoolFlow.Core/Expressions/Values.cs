@@ -109,6 +109,14 @@ public static class Values
         }
     }
 
+    /// <summary>Like <see cref="ToText"/>, but a record with an email (a Staff answer) gives the email, and a list gives each one's.</summary>
+    public static string ToAddressText(object? v) => v switch
+    {
+        Dictionary<string, object?> dict when dict.TryGetValue("email", out var e) && !IsBlank(e) => ToText(e),
+        List<object?> l => string.Join(", ", l.Select(ToAddressText)),
+        _ => ToText(v),
+    };
+
     public static string FormatNumber(decimal d)
     {
         var s = d.ToString("0.############################", CultureInfo.InvariantCulture);

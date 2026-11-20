@@ -35,7 +35,9 @@ public static class DistrictAddresses
         foreach (var key in KeysChoosingPeople(def))
         {
             if (!form.Fields.TryGetValue(key, out var state) || !state.Visible) continue;
-            if (form.Values.GetValueOrDefault(key) is not string email || !email.Contains('@')) continue;
+            // A Staff answer is a record; its address is what counts.
+            var email = Values.ToAddressText(form.Values.GetValueOrDefault(key)).Trim();
+            if (!email.Contains('@')) continue;
             var domain = email[(email.LastIndexOf('@') + 1)..].Trim().ToLowerInvariant();
             if (!domains.Contains(domain))
                 state.Errors.Add($"This person has to sign in to act on the request, so use a district address ({string.Join(" or ", domains.Select(d => "@" + d))}).");
