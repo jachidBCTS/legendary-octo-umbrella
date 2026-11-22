@@ -226,7 +226,7 @@ jobs:
           test -f kit/site/SchoolFlow.Web.exe
       - uses: actions/upload-artifact@v4
         with:
-          name: BergenForms-update-run-${{ github.run_number }}
+          name: Greenlight-update-run-${{ github.run_number }}
           path: kit
           if-no-files-found: error
           retention-days: 30
