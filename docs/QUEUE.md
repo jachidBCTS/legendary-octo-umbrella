@@ -15,6 +15,11 @@ Ask clarifying questions for unclear items in ONE message before starting.
 8. **Turn a personal approval chain into a shared template** (Nov 23). On the Approval chains page,
    a "Make shared template" action on a chain under "My chains" (builders/admins only, since only
    they create shared templates). Copy or move? Default: move it (it leaves "My chains"); ask if unclear.
+9. **Menu icons** (Nov 23). Left menu: Teams → a group of people; Rates → a dollar sign;
+   Student access → a caution (warning triangle) sign. Icons live in `Pages/Shared/_Icons`.
+10. **Menu labels in Title Case** (Nov 23). Every left-menu item capitalised: "Approval Chains",
+   "Approvals & Tasks", "My Requests", "Away / Stand-In", "Formula Guide", "School Calendar",
+   "Student Access", "Audit Log", etc. (menu only; page headings can follow if they match the menu).
 
 ## Done
 
