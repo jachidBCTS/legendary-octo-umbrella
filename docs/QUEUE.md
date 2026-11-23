@@ -20,6 +20,12 @@ Ask clarifying questions for unclear items in ONE message before starting.
 10. **Menu labels in Title Case** (Nov 23). Every left-menu item capitalised: "Approval Chains",
    "Approvals & Tasks", "My Requests", "Away / Stand-In", "Formula Guide", "School Calendar",
    "Student Access", "Audit Log", etc. (menu only; page headings can follow if they match the menu).
+11. **Daily email digest** (Nov 23; owner asked if possible — yes). In "Notifications by email",
+   each person can choose "Send right away" (today) or "Once a day at [time]": their emails are held
+   and sent as one summary email at the time they pick (never holds more than 1 day). Needs: a
+   per-person setting + time, `EmailOutboxWorker` grouping held emails, the in-app notifications
+   unchanged. Bigger feature — confirm with the owner first: should anything always go right away
+   (e.g. "approval needed today", overdue/escalations), and weekends/closed days?
 
 ## Done
 
