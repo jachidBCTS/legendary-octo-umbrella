@@ -12,6 +12,9 @@ Ask clarifying questions for unclear items in ONE message before starting.
    (`ul.people-pop`) behind/below the dialog instead of on top. Likely z-index / the list being
    placed outside the `<dialog>` (top layer). Check every dialog with email boxes (chains, teams,
    departments, stand-ins, forward).
+8. **Turn a personal approval chain into a shared template** (Nov 23). On the Approval chains page,
+   a "Make shared template" action on a chain under "My chains" (builders/admins only, since only
+   they create shared templates). Copy or move? Default: move it (it leaves "My chains"); ask if unclear.
 
 ## Done
 
