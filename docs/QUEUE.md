@@ -12,5 +12,13 @@ Ask clarifying questions for unclear items in ONE message before starting.
    "Abas_Ekrem (Bergen County Technical Schools): Total estimated expenses"). Show "Ekrem Abas"
    instead, everywhere names appear (pages, emails, PDFs, tickets). Likely: build from Graph
    givenName + surname, fall back to flipping "Last_First", then display name.
+2. **Help desk requests say "Completed" too early** (Nov 23). When a request's job is just to open a
+   Freshservice ticket, the status tracker shows "Completed", which reads as if the issue is fixed.
+   Show "Submitted" (the ticket is open) instead.
+3. **Show live ticket status and replies on the request page** (Nov 23, owner asked if possible;
+   answer: yes). Pull the ticket's status (Open / Pending / Resolved / Closed) and the agents'
+   public replies from the Freshservice API (ticket + conversations) and show them on the request
+   page. Never show private agent notes. Refresh when the page is opened (short cache), plus the
+   existing 15-minute check / webhook. Bigger feature: confirm details with the owner first.
 
 ## Done
