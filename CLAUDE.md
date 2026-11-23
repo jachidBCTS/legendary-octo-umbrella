@@ -44,6 +44,9 @@ deploy/                Install/Update scripts, SQL, templates      docs/DEPLOY-I
 - School IT admin, not a .NET developer, follows from a phone: plain language, say what was and was
   not verified. Site is in **testing mode** (data may be cleared; help scrap test data at go-live).
 - Ask before big features. Owner's email is private — never send it to outside services.
+- **Change queue** (owner, Nov 23, 2026): new requests go into `docs/QUEUE.md` as numbered items —
+  reply in one line ("Added as #N"), don't start them, don't run tests. On **"start making the
+  changes"**, do all open items as one batch. Questions, quick answers and urgent fixes are done at once.
 - **Keep usage low** (owner, Nov 22, 2026): batch work; run the full unit + browser tests and
   screenshots **once per batch** before pushing (not after every small edit); read only the parts of
   files and notes you need; suggest a fresh session when the topic changes.

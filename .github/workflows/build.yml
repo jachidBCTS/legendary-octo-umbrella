@@ -5,6 +5,8 @@ name: Build, test and package
 
 on:
   pull_request:
+    # Notes and the change queue alone do not need a new package.
+    paths-ignore: ['docs/**', '**/*.md']
   push:
     branches: [main]
   workflow_dispatch:
