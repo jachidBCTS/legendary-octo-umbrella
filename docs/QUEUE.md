@@ -20,5 +20,10 @@ Ask clarifying questions for unclear items in ONE message before starting.
    public replies from the Freshservice API (ticket + conversations) and show them on the request
    page. Never show private agent notes. Refresh when the page is opened (short cache), plus the
    existing 15-minute check / webhook. Bigger feature: confirm details with the owner first.
+4. **Table field with "Add row"** (Nov 23). New form field type: a table whose columns the builder
+   defines (text, number, date, dropdown, etc.); on the form the requester adds/removes rows as
+   needed. Needs: server-side validation per cell, formulas over columns (e.g. sum of a cost
+   column), display on request page / print / emails / CSV, phone layout. Bigger feature: confirm
+   column types, row limits and totals with the owner first.
 
 ## Done
