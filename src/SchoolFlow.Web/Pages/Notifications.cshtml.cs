@@ -19,6 +19,7 @@ public class NotificationsModel : PageModel
 
     public List<Notification> Items { get; private set; } = new();
     public bool WantsEmail { get; private set; } = true;
+    public int? DigestMinute { get; private set; }
     public bool EmailEnabled => _email.IsEnabled;
 
     public async Task<IActionResult> OnGetAsync(int? open)
@@ -35,7 +36,9 @@ public class NotificationsModel : PageModel
         }
         Items = await _db.Notifications.AsNoTracking().Where(n => n.UserEmail == email && email != "")
             .OrderByDescending(n => n.Id).Take(100).ToListAsync();
-        WantsEmail = await _db.Users.AsNoTracking().Where(u => u.Email == email).Select(u => (bool?)u.EmailNotifications).FirstOrDefaultAsync() ?? true;
+        var me = await _db.Users.AsNoTracking().Where(u => u.Email == email).Select(u => new { u.EmailNotifications, u.DigestMinute }).FirstOrDefaultAsync();
+        WantsEmail = me?.EmailNotifications ?? true;
+        DigestMinute = me?.DigestMinute;
         return Page();
     }
 
@@ -48,15 +51,27 @@ public class NotificationsModel : PageModel
         return RedirectToPage();
     }
 
-    public async Task<IActionResult> OnPostPreferenceAsync(bool email)
+    public async Task<IActionResult> OnPostPreferenceAsync(bool email, string? digest)
     {
         var address = User.Email();
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == address);
         if (user is not null)
         {
+            int? minute = int.TryParse(digest, out var m) && m >= 0 && m < 24 * 60 ? m : null;
+            // Unticking email keeps the chosen summary time for when it is ticked again (the box is not posted then).
+            if (email) user.DigestMinute = minute;
+            var wasDigest = user.EmailNotifications && user.DigestMinute is not null;
             user.EmailNotifications = email;
+            // Anything already held follows the new choice: sent now, or not emailed at all.
+            if (!email || user.DigestMinute is null)
+            {
+                var held = await _db.Notifications.Where(n => n.UserEmail == address && n.EmailStatus == EmailStatus.Held).ToListAsync();
+                foreach (var n in held) n.EmailStatus = email ? EmailStatus.Pending : EmailStatus.None;
+            }
             await _db.SaveChangesAsync();
-            TempData["Flash"] = email ? "You will also get notifications by email." : "Email notifications are off. You will still see them here.";
+            TempData["Flash"] = !email ? "Email notifications are off. You will still see them here."
+                : user.DigestMinute is int at ? $"You will get one summary email a day at {DateTime.Today.AddMinutes(at):h:mm tt} on school days (urgent ones still come right away)."
+                : "You will get each notification by email right away.";
         }
         return RedirectToPage();
     }

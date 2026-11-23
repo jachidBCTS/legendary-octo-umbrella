@@ -192,17 +192,20 @@ public sealed class NotificationService
     /// Queues a notification for each address. People who use Greenlight see it in the app and get a link;
     /// outside addresses (a parent, a vendor) only ever get the email, without a link they could not open.
     /// </summary>
-    public async Task NotifyAsync(IEnumerable<string> emails, string title, string body, string link, CancellationToken ct)
+    /// <param name="urgent">Sent right away even to people who chose a daily summary (sent back for changes,
+    /// escalated, overdue — owner, Nov 23, 2026).</param>
+    public async Task NotifyAsync(IEnumerable<string> emails, string title, string body, string link, CancellationToken ct, bool urgent = false)
     {
         var recipients = emails.Select(e => e.Trim().ToLowerInvariant()).Where(e => e.Contains('@') && e.Length <= 320).Distinct().ToList();
         if (recipients.Count == 0) return;
         var known = await _db.Users.AsNoTracking().Where(u => recipients.Contains(u.Email))
-            .Select(u => new { u.Email, u.EmailNotifications }).ToDictionaryAsync(u => u.Email, u => u.EmailNotifications, ct);
+            .Select(u => new { u.Email, u.EmailNotifications, u.DigestMinute }).ToDictionaryAsync(u => u.Email, ct);
 
         foreach (var email in recipients)
         {
-            var isUser = known.TryGetValue(email, out var wantsEmail);
-            var sendEmail = _email.IsEnabled && (!isUser || wantsEmail);
+            var isUser = known.TryGetValue(email, out var person);
+            var sendEmail = _email.IsEnabled && (!isUser || person!.EmailNotifications);
+            var hold = sendEmail && !urgent && person?.DigestMinute is not null;
             // Someone who has not signed in yet may still be staff, so they keep the link and will find
             // the notification waiting in the app. Only clearly outside addresses lose the link.
             var outside = !isUser && _email.IsEnabled && !IsStaffDomain(email);
@@ -213,7 +216,7 @@ public sealed class NotificationService
                 Body = body.Length > 4000 ? body[..4000] : body,
                 Link = outside ? "" : link,
                 CreatedAt = DateTime.UtcNow,
-                EmailStatus = sendEmail ? EmailStatus.Pending : EmailStatus.None,
+                EmailStatus = hold ? EmailStatus.Held : sendEmail ? EmailStatus.Pending : EmailStatus.None,
             });
         }
     }
@@ -239,10 +242,29 @@ public sealed class NotificationService
         var paragraphs = string.Join("", body.Replace("\r\n", "\n").Split("\n\n", StringSplitOptions.RemoveEmptyEntries)
             .Select(p => $"<p style=\"margin:0 0 12px\">{E(p.Trim()).Replace("\n", "<br>")}</p>"));
         var button = string.IsNullOrEmpty(absoluteLink) ? "" :
-            $"<p style=\"margin:20px 0 0\"><a href=\"{E(absoluteLink)}\" style=\"background:#4f46e5;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;display:inline-block\">Open in Greenlight</a></p>";
+            $"<p style=\"margin:20px 0 0\"><a href=\"{E(absoluteLink)}\" style=\"background:#15803d;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;display:inline-block\">Open in Greenlight</a></p>";
         return "<div style=\"font-family:Segoe UI,Arial,sans-serif;font-size:15px;line-height:1.5;color:#1b1f33;max-width:560px\">" +
                $"<h2 style=\"font-size:18px;margin:0 0 12px\">{E(title)}</h2>{paragraphs}{button}" +
-               "<p style=\"margin:24px 0 0;color:#6c728c;font-size:12.5px\">Sent by SchoolFlow. You can turn off these emails on the Notifications page.</p></div>";
+               "<p style=\"margin:24px 0 0;color:#6c728c;font-size:12.5px\">Sent by Greenlight. You can turn off these emails, or get one summary a day, on the Notifications page.</p></div>";
+    }
+
+    /// <summary>One email listing several notifications (the daily summary).</summary>
+    public static string BuildDigestHtml(IReadOnlyList<Notification> items, string baseUrl)
+    {
+        static string E(string s) => WebUtility.HtmlEncode(s);
+        var rows = string.Join("", items.Select(n =>
+        {
+            var link = n.Link.StartsWith('/') && baseUrl.Length > 0 ? baseUrl + n.Link : null;
+            var title = link is null ? E(n.Title) : $"<a href=\"{E(link)}\" style=\"color:#15803d;font-weight:600\">{E(n.Title)}</a>";
+            var body = n.Body.Length > 400 ? n.Body[..400] + "…" : n.Body;
+            return "<li style=\"margin:0 0 14px\">" + title +
+                   $"<div style=\"color:#6c728c;font-size:12.5px\">{E(Ui.Local(n.CreatedAt).ToString("ddd MMM d, h:mm tt"))}</div>" +
+                   $"<div>{E(body).Replace("\n", "<br>")}</div></li>";
+        }));
+        return "<div style=\"font-family:Segoe UI,Arial,sans-serif;font-size:15px;line-height:1.5;color:#1b1f33;max-width:560px\">" +
+               $"<h2 style=\"font-size:18px;margin:0 0 12px\">Your Greenlight summary: {items.Count} notification{(items.Count == 1 ? "" : "s")}</h2>" +
+               $"<ul style=\"padding-left:18px;margin:0\">{rows}</ul>" +
+               "<p style=\"margin:24px 0 0;color:#6c728c;font-size:12.5px\">Sent by Greenlight once a day at the time you chose. Urgent items (sent back for changes, escalated, overdue) still come right away. Change this on the Notifications page.</p></div>";
     }
 }
 
@@ -269,8 +291,11 @@ public sealed class EmailOutboxWorker : BackgroundService
             try
             {
                 using var scope = _scopes.CreateScope();
-                await ProcessBatchAsync(scope.ServiceProvider.GetRequiredService<AppDbContext>(),
-                    scope.ServiceProvider.GetRequiredService<IEmailSender>(), _settings.BaseUrl, DateTime.UtcNow, stoppingToken);
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var sender = scope.ServiceProvider.GetRequiredService<IEmailSender>();
+                await ProcessBatchAsync(db, sender, _settings.BaseUrl, DateTime.UtcNow, stoppingToken);
+                await ProcessDigestsAsync(db, sender, _settings.BaseUrl, DateTime.UtcNow,
+                    await scope.ServiceProvider.GetRequiredService<SchoolCalendar>().ClosedDaysAsync(stoppingToken), stoppingToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -306,6 +331,58 @@ public sealed class EmailOutboxWorker : BackgroundService
                 var retry = ex is not EmailException { Transient: false } && n.EmailAttempts < MaxAttempts;
                 if (retry) n.EmailNextAttemptAt = nowUtc.AddMinutes(Math.Pow(2, n.EmailAttempts)); // 2, 4, 8, 16 minutes
                 else n.EmailStatus = EmailStatus.Failed;
+            }
+            await db.SaveChangesAsync(ct);
+        }
+        return sent;
+    }
+
+    /// <summary>
+    /// Daily summaries: on school days (not weekends or closed days), once the person's chosen time has
+    /// passed, their held emails go out as one email. Returns how many summaries were sent.
+    /// </summary>
+    public static async Task<int> ProcessDigestsAsync(AppDbContext db, IEmailSender sender, string baseUrl, DateTime nowUtc,
+        IReadOnlySet<DateTime> closed, CancellationToken ct)
+    {
+        const int MaxItems = 100;
+        var local = Ui.Local(nowUtc);
+        var today = local.Date;
+        if (local.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday || closed.Contains(today)) return 0;
+        var minute = local.Hour * 60 + local.Minute;
+        var due = await db.Users.Where(u => u.DigestMinute != null && u.DigestMinute <= minute && (u.DigestSentOn == null || u.DigestSentOn < today))
+            .Take(50).ToListAsync(ct);
+        var sent = 0;
+        foreach (var user in due)
+        {
+            var held = await db.Notifications
+                .Where(n => n.UserEmail == user.Email && n.EmailStatus == EmailStatus.Held && (n.EmailNextAttemptAt == null || n.EmailNextAttemptAt <= nowUtc))
+                .OrderBy(n => n.Id).Take(MaxItems).ToListAsync(ct);
+            if (held.Count == 0)
+            {
+                // Nothing to send (or only items waiting to retry): done for today unless a retry is pending.
+                if (!await db.Notifications.AnyAsync(n => n.UserEmail == user.Email && n.EmailStatus == EmailStatus.Held, ct))
+                    user.DigestSentOn = today;
+                await db.SaveChangesAsync(ct);
+                continue;
+            }
+            try
+            {
+                var subject = held.Count == 1 ? held[0].Title : $"Greenlight: {held.Count} notifications";
+                await sender.SendAsync(user.Email, subject, NotificationService.BuildDigestHtml(held, baseUrl), ct);
+                foreach (var n in held) { n.EmailStatus = EmailStatus.Sent; n.EmailError = null; }
+                if (held.Count < MaxItems) user.DigestSentOn = today;   // a very full day goes out in more than one email
+                sent++;
+            }
+            catch (Exception ex) when (ex is EmailException or HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
+            {
+                var message = ex is EmailException ? ex.Message : "Could not reach Microsoft 365: " + ex.Message;
+                foreach (var n in held)
+                {
+                    n.EmailAttempts++;
+                    n.EmailError = message.Length > 1000 ? message[..1000] : message;
+                    if (ex is not EmailException { Transient: false } && n.EmailAttempts < MaxAttempts) n.EmailNextAttemptAt = nowUtc.AddMinutes(Math.Pow(2, n.EmailAttempts));
+                    else n.EmailStatus = EmailStatus.Failed;
+                }
             }
             await db.SaveChangesAsync(ct);
         }

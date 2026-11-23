@@ -6,11 +6,14 @@
   const actions = document.getElementById('chain-actions');
   if (!root) return;
 
+  let canShare = false;
+
   function card(chain) {
     return h('article', { class: 'panel chain-card' },
       h('div', { class: 'row-between' },
         h('div', null, h('strong', null, chain.name), chain.description ? h('div', { class: 'muted small' }, chain.description) : null),
         chain.canEdit ? h('span', { class: 'row' },
+          !chain.shared && canShare ? h('button', { type: 'button', class: 'btn small', onclick: () => share(chain) }, 'Make shared template') : null,
           h('button', { type: 'button', class: 'btn small', onclick: () => edit(chain, chain.shared) }, 'Edit'),
           h('button', { type: 'button', class: 'btn small ghost-danger', onclick: () => remove(chain) }, 'Delete')) : null),
       h('ol', { class: 'chain-steps' }, chain.steps.map((s) => h('li', null, h('strong', null, s.name), ' ',
@@ -20,9 +23,10 @@
   async function load() {
     try {
       const data = await api('GET', '/api/chains');
+      canShare = !!data.canManageShared;
       actions.textContent = '';
-      actions.append(h('button', { type: 'button', class: 'btn primary', onclick: () => edit(null, false) }, '+ New chain of my own'),
-        data.canManageShared ? h('button', { type: 'button', class: 'btn', onclick: () => edit(null, true) }, '+ New shared template') : null);
+      actions.append(h('button', { type: 'button', class: 'btn primary', onclick: () => edit(null, false) }, '+ New chain of my own'));
+      if (data.canManageShared) actions.append(h('button', { type: 'button', class: 'btn', onclick: () => edit(null, true) }, '+ New shared template'));
       root.textContent = '';
       root.append(
         h('h2', { class: 'section-title' }, 'Shared templates'),
@@ -71,7 +75,18 @@
     name.focus();
   }
 
-  async function remove(chain) {
+  async function share(chain) {
+    if (!window.confirm('Make “' + chain.name + '” a shared template? Everyone can then use it, builders and admins can edit it, and it leaves My chains.')) return;
+    try {
+      await api('POST', '/api/chains/' + chain.id + '/share');
+      toast('Now a shared template.');
+      load();
+    } catch (e) {
+      toast(e.message, 'bad');
+    }
+  }
+
+    async function remove(chain) {
     if (!window.confirm('Delete “' + chain.name + '”? Requests already submitted keep the approvers they started with.')) return;
     try {
       await api('DELETE', '/api/chains/' + chain.id);

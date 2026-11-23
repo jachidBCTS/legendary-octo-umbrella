@@ -363,7 +363,7 @@ public sealed class RunService
             await _notifications.NotifyAsync(new[] { run.SubmitterEmail }, $"Changes needed: {run.WorkflowName} #{run.Id}",
                 $"{(string.IsNullOrWhiteSpace(name) ? email : name)} sent your request back for changes:\n\n{comment}\n\nOpen the request, choose “Edit and resubmit”, and it will go back to " +
                 (restart ? "the first approver." : "the same approver."),
-                $"/Requests/Detail/{run.Id}", ct);
+                $"/Requests/Detail/{run.Id}", ct, urgent: true);
             return await TrySaveAsync(run, state, ct) ? new ActionResult(true, RunId: run.Id) : ActionResult.Fail(Raced);
         }
 
@@ -462,7 +462,7 @@ public sealed class RunService
             state.NewEvents.Add(new RunEvent(DateTime.Now, node.Id, "returned", $"Sent back for changes by {who} — “{comment}”"));
             await _notifications.NotifyAsync(new[] { run.SubmitterEmail }, $"Changes needed: {run.WorkflowName} #{run.Id}",
                 $"{sender} sent your request back for changes:\n\n{comment}\n\nOpen the request, choose “Edit and resubmit”, and it will go back to the same step.",
-                $"/Requests/Detail/{run.Id}", ct);
+                $"/Requests/Detail/{run.Id}", ct, urgent: true);
         }
         return await TrySaveAsync(run, state, ct) ? new ActionResult(true, RunId: run.Id)
             : ActionResult.Fail("Someone else acted on this request at the same moment. Refresh to see the latest.");
@@ -776,7 +776,7 @@ public sealed class RunService
                         Message = $"No decision after {waitingDays} school day{(waitingDays == 1 ? "" : "s")}: escalated to {string.Join(", ", targets)}, who can now decide this step.",
                     });
                     await _notifications.NotifyAsync(targets, $"Escalated to you: {label}",
-                        $"“{task.Title}” has had no decision from {string.Join(", ", task.AssigneeList)} for {waitingDays} school day{(waitingDays == 1 ? "" : "s")}, so it has been escalated to you. You can now approve, reject or send it back.", link, ct);
+                        $"“{task.Title}” has had no decision from {string.Join(", ", task.AssigneeList)} for {waitingDays} school day{(waitingDays == 1 ? "" : "s")}, so it has been escalated to you. You can now approve, reject or send it back.", link, ct, urgent: true);
                     run.UpdatedAt = nowUtc;
                     escalated++;
                 }
@@ -812,11 +812,11 @@ public sealed class RunService
                     task.DueSoonSentAt ??= nowUtc;
                     // The person who owes it, and whoever the step says should know (they are told it is overdue, not asked to act).
                     await _notifications.NotifyAsync(owing, $"Overdue: {task.Title} — {label}",
-                        $"This was due on {dueOn:dddd, MMMM d, yyyy} and is still waiting for you to {what} it: {task.Title}.", link, ct);
+                        $"This was due on {dueOn:dddd, MMMM d, yyyy} and is still waiting for you to {what} it: {task.Title}.", link, ct, urgent: true);
                     var others = task.DueNotifyList.Except(owing).Where(e => e != "").ToList();
                     if (others.Count > 0)
                         await _notifications.NotifyAsync(others, $"Overdue: {task.Title} — {label}",
-                            $"“{task.Title}” was due on {dueOn:dddd, MMMM d, yyyy} and has not been done yet. It is waiting for {string.Join(", ", task.AssigneeList)}.", link, ct);
+                            $"“{task.Title}” was due on {dueOn:dddd, MMMM d, yyyy} and has not been done yet. It is waiting for {string.Join(", ", task.AssigneeList)}.", link, ct, urgent: true);
                     _db.RunEvents.Add(new RunEventRow
                     {
                         RunId = run.Id, At = nowUtc, NodeId = task.NodeId, Kind = "waiting",

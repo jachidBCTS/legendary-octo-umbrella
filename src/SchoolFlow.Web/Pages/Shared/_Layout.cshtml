@@ -49,15 +49,15 @@
         </a>
         <nav>
             <a class="@Active("/", true)" href="/"><partial name="_Icons" model='"home"' /> Home</a>
-            <a class="@Active("/Requests")" href="/Requests"><partial name="_Icons" model='"inbox"' /> My requests</a>
-            <a class="@Active("/Approvals")" href="/Approvals"><partial name="_Icons" model='"check"' /> Approvals &amp; tasks
+            <a class="@Active("/Requests")" href="/Requests"><partial name="_Icons" model='"inbox"' /> My Requests</a>
+            <a class="@Active("/Approvals")" href="/Approvals"><partial name="_Icons" model='"check"' /> Approvals &amp; Tasks
                 @if (pendingCount > 0) { <span class="badge">@pendingCount</span> }
             </a>
             <a class="@Active("/Notifications")" href="/Notifications"><partial name="_Icons" model='"bell"' /> Notifications
                 <span class="badge" data-note-badge hidden="@(unreadCount == 0)">@(unreadCount > 99 ? "99+" : unreadCount.ToString())</span>
             </a>
-            <a class="@Active("/Chains")" href="/Chains"><partial name="_Icons" model='"chain"' /> Approval chains</a>
-            <a class="@Active("/Away")" href="/Away"><partial name="_Icons" model='"clock"' /> Away / stand-in</a>
+            <a class="@Active("/Chains")" href="/Chains"><partial name="_Icons" model='"chain"' /> Approval Chains</a>
+            <a class="@Active("/Away")" href="/Away"><partial name="_Icons" model='"clock"' /> Away / Stand-In</a>
             <a class="@Active("/Account/Display")" href="/Account/Display"><partial name="_Icons" model='"eye"' /> Accessibility@(a11y ? " (on)" : "")</a>
             @if (showBuild)
             {
@@ -66,7 +66,7 @@
                 <summary class="nav-label">Build</summary>
                 <a class="@Active("/Builder")" href="/Builder"><partial name="_Icons" model='"flow"' /> Workflows</a>
                 <a class="@Active("/Reports")" href="/Reports"><partial name="_Icons" model='"chart"' /> Reports</a>
-                <a class="@Active("/Help")" href="/Help/Formulas"><partial name="_Icons" model='"fx"' /> Formula guide</a>
+                <a class="@Active("/Help")" href="/Help/Formulas"><partial name="_Icons" model='"fx"' /> Formula Guide</a>
                 </details>
             }
             @if (User.IsAdmin())
@@ -76,12 +76,12 @@
                 <summary class="nav-label">Admin</summary>
                 <a class="@Active("/Admin/Departments")" href="/Admin/Departments"><partial name="_Icons" model='"building"' /> Departments</a>
                 <a class="@Active("/Admin/Categories")" href="/Admin/Categories"><partial name="_Icons" model='"tag"' /> Categories</a>
-                <a class="@Active("/Admin/Teams")" href="/Admin/Teams"><partial name="_Icons" model='"chain"' /> Teams</a>
+                <a class="@Active("/Admin/Teams")" href="/Admin/Teams"><partial name="_Icons" model='"people"' /> Teams</a>
                 <a class="@Active("/Admin/Locations")" href="/Admin/Locations"><partial name="_Icons" model='"pin"' /> Locations</a>
-                <a class="@Active("/Admin/Calendar")" href="/Admin/Calendar"><partial name="_Icons" model='"calendar"' /> School calendar</a>
-                <a class="@Active("/Admin/Rates")" href="/Admin/Rates"><partial name="_Icons" model='"fx"' /> Rates</a>
-                <a class="@Active("/Admin/StudentAccess")" href="/Admin/StudentAccess"><partial name="_Icons" model='"check"' /> Student access</a>
-                <a class="@Active("/Admin/Audit")" href="/Admin/Audit"><partial name="_Icons" model='"clock"' /> Audit log</a>
+                <a class="@Active("/Admin/Calendar")" href="/Admin/Calendar"><partial name="_Icons" model='"calendar"' /> School Calendar</a>
+                <a class="@Active("/Admin/Rates")" href="/Admin/Rates"><partial name="_Icons" model='"dollar"' /> Rates</a>
+                <a class="@Active("/Admin/StudentAccess")" href="/Admin/StudentAccess"><partial name="_Icons" model='"alert"' /> Student Access</a>
+                <a class="@Active("/Admin/Audit")" href="/Admin/Audit"><partial name="_Icons" model='"clock"' /> Audit Log</a>
                 <a class="@Active("/Admin/Settings")" href="/Admin/Settings"><partial name="_Icons" model='"gear"' /> Settings</a>
                 </details>
             }

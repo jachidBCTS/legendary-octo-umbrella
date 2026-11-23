@@ -137,6 +137,25 @@ public sealed class ChainsController : ControllerBase
         return Ok(Shape(chain, true));
     }
 
+    /// <summary>
+    /// Turns one of your own chains into a shared template (builders and admins; owner, Nov 23, 2026).
+    /// The chain is moved, not copied, so it leaves "My chains". Requests already using it are unaffected.
+    /// </summary>
+    [HttpPost("chains/{id:int}/share")]
+    public async Task<IActionResult> Share(int id, CancellationToken ct)
+    {
+        var email = User.Email();
+        var chain = await _db.ApprovalChains.FirstOrDefaultAsync(c => c.Id == id && c.OwnerEmail == email && email != "", ct);
+        if (chain is null) return NotFound();
+        if (!User.IsBuilder()) return Forbid();
+        if (await _db.ApprovalChains.AnyAsync(c => c.OwnerEmail == "" && c.Name == chain.Name, ct))
+            return BadRequest(new { error = $"There is already a shared template called “{chain.Name}”. Rename this chain first." });
+        chain.OwnerEmail = "";
+        HttpContext.RequestServices.GetRequiredService<AuditService>().Record(User, "chain.shared", chain.Name, "Personal approval chain made a shared template.");
+        await _db.SaveChangesAsync(ct);
+        return Ok(Shape(chain, true));
+    }
+
     [HttpDelete("chains/{id:int}")]
     public async Task<IActionResult> Delete(int id, CancellationToken ct)
     {

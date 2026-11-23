@@ -23,6 +23,12 @@ namespace SchoolFlow.Web.Migrations.Sqlite
                         .HasMaxLength(320)
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("DigestMinute")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("DigestSentOn")
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("EmailNotifications")
                         .HasColumnType("INTEGER");
 

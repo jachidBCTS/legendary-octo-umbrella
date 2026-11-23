@@ -419,6 +419,62 @@ public sealed class RunServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task DailySummary_HoldsEmails_AndSendsOneOnSchoolDays()
+    {
+        await using var db = Db();
+        static DateTime At(int day, int hour) => DateTime.SpecifyKind(new DateTime(2026, 11, day, hour, 0, 0), DateTimeKind.Local).ToUniversalTime();
+        db.Users.Add(new AppUser { Email = "a@school.org", Name = "A", DigestMinute = 8 * 60 });
+        db.Users.Add(new AppUser { Email = "b@school.org", Name = "B" });
+        db.Notifications.AddRange(
+            new Notification { UserEmail = "a@school.org", Title = "One", Body = "first", Link = "/Requests/Detail/1", EmailStatus = EmailStatus.Held, CreatedAt = At(13, 15) },
+            new Notification { UserEmail = "a@school.org", Title = "Two <b>", Body = "second", EmailStatus = EmailStatus.Held, CreatedAt = At(13, 16) });
+        await db.SaveChangesAsync();
+        var sender = new FakeSender();
+        var none = new HashSet<DateTime>();
+
+        // Saturday the 14th: no summary on weekends, even after the chosen time.
+        Assert.Equal(0, await EmailOutboxWorker.ProcessDigestsAsync(db, sender, "https://flow.school.org", At(14, 9), none, default));
+        // Monday the 16th is a closed day.
+        Assert.Equal(0, await EmailOutboxWorker.ProcessDigestsAsync(db, sender, "", At(16, 9), new HashSet<DateTime> { new(2026, 11, 16) }, default));
+        // Tuesday before 8 a.m.: not yet. After: one email with both.
+        Assert.Equal(0, await EmailOutboxWorker.ProcessDigestsAsync(db, sender, "", At(17, 7), none, default));
+        Assert.Equal(1, await EmailOutboxWorker.ProcessDigestsAsync(db, sender, "https://flow.school.org", At(17, 9), none, default));
+        var mail = sender.Sent.Single();
+        Assert.Equal("a@school.org", mail.To);
+        Assert.Contains("2 notifications", mail.Subject);
+        Assert.Contains("https://flow.school.org/Requests/Detail/1", mail.Html);
+        Assert.Contains("Two &lt;b&gt;", mail.Html);
+        Assert.All(await db.Notifications.ToListAsync(), n => Assert.Equal(EmailStatus.Sent, n.EmailStatus));
+        // Only once a day.
+        db.Notifications.Add(new Notification { UserEmail = "a@school.org", Title = "Three", EmailStatus = EmailStatus.Held, CreatedAt = At(17, 10) });
+        await db.SaveChangesAsync();
+        Assert.Equal(0, await EmailOutboxWorker.ProcessDigestsAsync(db, sender, "", At(17, 11), none, default));
+        Assert.Equal(1, await EmailOutboxWorker.ProcessDigestsAsync(db, sender, "", At(18, 8), none, default));
+    }
+
+    [Fact]
+    public async Task DailySummary_UrgentEmailsAreNotHeld()
+    {
+        await using var db = Db();
+        db.Users.Add(new AppUser { Email = "a@school.org", Name = "A", DigestMinute = 8 * 60 });
+        db.Users.Add(new AppUser { Email = "b@school.org", Name = "B" });
+        await db.SaveChangesAsync();
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Email:Mode"] = "Graph", ["Email:From"] = "flow@school.org", ["Email:BaseUrl"] = "https://flow.school.org",
+            ["Email:TenantId"] = "t", ["Email:ClientId"] = "c", ["Email:ClientSecret"] = "s",
+        }).Build();
+        var service = new NotificationService(db, new EmailSettings(config), config);
+        await service.NotifyAsync(new[] { "a@school.org", "b@school.org" }, "Approved", "ok", "/", default);
+        await service.NotifyAsync(new[] { "a@school.org" }, "Overdue", "late", "/", default, urgent: true);
+        await db.SaveChangesAsync();
+        var rows = await db.Notifications.OrderBy(n => n.Id).ToListAsync();
+        Assert.Equal(EmailStatus.Held, rows.Single(n => n.UserEmail == "a@school.org" && n.Title == "Approved").EmailStatus);
+        Assert.Equal(EmailStatus.Pending, rows.Single(n => n.UserEmail == "b@school.org").EmailStatus);
+        Assert.Equal(EmailStatus.Pending, rows.Single(n => n.Title == "Overdue").EmailStatus);
+    }
+
+    [Fact]
     public async Task Outbox_Sends_Retries_AndGivesUp()
     {
         await using var db = Db();

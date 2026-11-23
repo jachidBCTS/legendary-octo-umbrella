@@ -484,3 +484,14 @@ Known gaps (not requested yet, worth raising):
   (`GET /api/v2/tickets/{id}/conversations`, only `private: false`). Unverified against real Freshservice.
 - **Signature**: button fills `body[data-my-name]`; print shows the typed name + signed date (form
   fields: request created; task fields: task completed).
+
+## Nov 23, 2026 batch 2 (queue #7–#11)
+
+- **Daily summary email** (owner): per person "right away" or "once a day at <time>" (6 AM–6 PM,
+  30-min steps) on the Notifications page. Non-urgent emails are stored `EmailStatus.Held` and sent as
+  one email by `EmailOutboxWorker.ProcessDigestsAsync` once their time has passed, on school days only
+  (weekends and `ClosedDays` skipped, owner's choice). `NotifyAsync(..., urgent: true)` skips holding:
+  "Changes needed", "Escalated to you", "Overdue". Switching back to right away releases held ones.
+- **Chains**: personal → shared template is a move (owner's choice), builders/admins only.
+- **Email suggestion list** is re-parented into an open modal `<dialog>` so it shows on top.
+- **Review brief** for outside reviewers (Anti-Gravity): `docs/REVIEW.md`.

@@ -388,10 +388,17 @@ async function login(page, email) {
   await page.click('dialog button.primary');
   await page.waitForSelector('dialog .sf-error:not([hidden])');
   check((await page.locator('dialog .sf-error').textContent()).includes('not an email address'), 'chain with a bad email is refused');
+  await page.fill('dialog .ce-step input >> nth=1', '');
+  await page.locator('dialog .ce-step input >> nth=1').pressSequentially('adm');
+  await page.waitForSelector('dialog .people-pop:not([hidden]) li');
+  check(await page.locator('dialog .people-pop').count() === 1, 'email suggestions show inside the pop-up window, on top of it');
+  await page.screenshot({ path: S + '/shots/18a-chain-suggestions.png' });
+  await page.keyboard.press('Escape');
   await page.fill('dialog .ce-step input >> nth=1', 'admin@example.org');
   await page.click('dialog button.primary');
   await page.waitForSelector('.chain-card');
   check((await page.locator('.chain-card').textContent()).includes('Team leader'), 'personal chain saved');
+  check(await page.locator('.chain-card button:has-text("Make shared template")').count() === 0, 'staff cannot turn their chain into a shared template');
   await page.screenshot({ path: S + '/shots/18-chains.png' });
 
   await page.goto(base + '/');
@@ -693,6 +700,18 @@ async function login(page, email) {
   await login(page, 'builder@example.org');
   check(await page.locator('.sidebar a[href="/Builder"]').count() === 1, 'a member of the builders group gets the Build menu');
   check(await page.locator('.sidebar a[href="/Admin/Settings"]').count() === 0, 'but not the Admin menu');
+  await page.goto(base + '/Chains');
+  await page.waitForSelector('#chain-actions button');
+  await page.evaluate(async () => {
+    await fetch('/api/chains', { method: 'POST', headers: { 'Content-Type': 'application/json', RequestVerificationToken: document.querySelector('meta[name=csrf-token]').content },
+      body: JSON.stringify({ name: 'Builder sign-off', shared: false, steps: [{ name: 'Lead', approvers: ['admin@example.org'] }] }) });
+  });
+  await page.reload();
+  await page.waitForSelector('.chain-card:has-text("Builder sign-off") button:has-text("Make shared template")');
+  page.once('dialog', (d) => d.accept());
+  await page.click('.chain-card:has-text("Builder sign-off") button:has-text("Make shared template")');
+  await page.waitForFunction(() => [...document.querySelectorAll('.chain-card')].some((c) => c.textContent.includes('Builder sign-off') && !c.textContent.includes('Make shared template')));
+  check(await page.locator('.chain-card:has-text("Builder sign-off")').count() === 1, 'a builder turns their own chain into a shared template (moved, not copied)');
   await page.goto(base + '/Builder');
   check(await page.locator('.wf-tile').count() === 0, 'a builder does not see workflows they do not own');
   check(await statusOf('/api/builder/1') === 404, 'a builder cannot load another workflow in the builder API');
@@ -963,6 +982,12 @@ async function login(page, email) {
   await login(page, 'principal@example.org');
   await page.goto(base + '/Notifications');
   check((await page.locator('body').textContent()).includes('Withdrawn'), 'the approver is told it was withdrawn');
+  await page.selectOption('#digest', String(16 * 60));
+  await page.waitForSelector('.flash.ok');
+  check((await page.locator('.flash.ok').textContent()).includes('one summary email a day at 4:00 PM') && await page.locator('#digest').inputValue() === '960', 'a person can choose one summary email a day');
+  await page.screenshot({ path: S + '/shots/44-daily-summary.png' });
+  await page.selectOption('#digest', '');
+  await page.waitForSelector('.flash.ok');
   await page.goto(base + '/Away');
   await page.locator('tr:has-text("builder@example.org") button:has-text("Remove")').click();
   await page.waitForSelector('.flash.ok');

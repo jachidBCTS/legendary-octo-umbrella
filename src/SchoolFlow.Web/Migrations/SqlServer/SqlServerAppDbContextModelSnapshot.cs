@@ -28,6 +28,12 @@ namespace SchoolFlow.Web.Migrations.SqlServer
                         .HasMaxLength(320)
                         .HasColumnType("nvarchar(320)");
 
+                    b.Property<int?>("DigestMinute")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("DigestSentOn")
+                        .HasColumnType("datetime2");
+
                     b.Property<bool>("EmailNotifications")
                         .HasColumnType("bit");
 

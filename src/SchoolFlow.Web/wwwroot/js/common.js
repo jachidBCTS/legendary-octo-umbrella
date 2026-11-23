@@ -142,6 +142,10 @@
   }
   function showPeople(input, people, head) {
     const el = popEl();
+    // An open modal <dialog> sits in the browser's top layer, above everything in <body>: the list
+    // must live inside that dialog to show on top of it (owner's bug report, Nov 23, 2026).
+    const host = input.closest('dialog[open]') || document.body;
+    if (el.parentNode !== host) host.appendChild(el);
     pop.input = input; pop.items = people; pop.head = head; pop.active = -1;
     input.setAttribute('role', 'combobox');
     input.setAttribute('aria-autocomplete', 'list');

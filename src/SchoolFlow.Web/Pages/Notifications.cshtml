@@ -38,8 +38,22 @@ else
     {
         <p class="muted">Email notifications are not switched on for this site yet, so notifications only appear here.</p>
     }
-    <form method="post" asp-page-handler="Preference" class="row">
+    <form method="post" asp-page-handler="Preference" class="email-prefs">
         <label class="b-toggle"><input type="checkbox" name="email" value="true" checked="@Model.WantsEmail" data-autosubmit /> <span>Also send my notifications by email</span></label>
+        @if (Model.WantsEmail)
+        {
+            <p class="muted" data-tip>Once a day: your emails are held and sent together as one summary at that time on school days (not on weekends or days the school is closed). Urgent ones still come right away: requests sent back to you for changes, and escalated or overdue approvals and tasks. Notifications on this page and pop-ups are not affected.</p>
+            <div class="row digest-row">
+                <label class="lbl" for="digest">When</label>
+                <select id="digest" name="digest" data-autosubmit>
+                    <option value="" selected="@(Model.DigestMinute is null)">Right away, one email each</option>
+                    @for (var m = 6 * 60; m <= 18 * 60; m += 30)
+                    {
+                        <option value="@m" selected="@(Model.DigestMinute == m)">Once a day at @DateTime.Today.AddMinutes(m).ToString("h:mm tt")</option>
+                    }
+                </select>
+            </div>
+        }
     </form>
 </section>
 

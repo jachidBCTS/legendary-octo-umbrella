@@ -267,6 +267,13 @@ public class AppUser
     public DateTime LastSeenAt { get; set; }
     /// <summary>Whether this person also wants notifications by email (they always get them in the app).</summary>
     public bool EmailNotifications { get; set; } = true;
+    /// <summary>
+    /// Daily summary (owner, Nov 23, 2026): minutes after midnight, local time, when held emails are sent
+    /// as one summary on school days. Null = each email right away.
+    /// </summary>
+    public int? DigestMinute { get; set; }
+    /// <summary>The local date the last daily summary went out (one a day at most).</summary>
+    public DateTime? DigestSentOn { get; set; }
     /// <summary>The Entra group IDs seen at this person's last sign-in (packed), so admins can see where a role comes from.</summary>
     public string Groups { get; set; } = "";
     /// <summary>The role Entra itself assigned through an app role ("Admin"/"Builder"), if any, at last sign-in.</summary>
@@ -447,6 +454,8 @@ public static class EmailStatus
     /// <summary>In-app only (email switched off, or the person opted out).</summary>
     public const string None = "None";
     public const string Pending = "Pending", Sent = "Sent", Failed = "Failed";
+    /// <summary>Waiting for the person's daily summary email.</summary>
+    public const string Held = "Held";
 }
 
 /// <summary>A message for one person: always shown in the app, and emailed when email is configured.</summary>

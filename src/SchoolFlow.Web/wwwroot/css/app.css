@@ -109,7 +109,7 @@ body.has-sidebar { display: grid; grid-template-columns: 236px minmax(0, 1fr); m
 .sidebar nav a:hover { background: rgba(255, 255, 255, .07); color: #fff; text-decoration: none; }
 .sidebar nav a.active { background: #14382a; color: #fff; font-weight: 700; }
 .nav-label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #8fb5a0; padding: 16px 10px 6px; }
-.badge { margin-left: auto; background: var(--go); color: var(--go-ink); font-size: 12px; font-weight: 800; border-radius: 99px; padding: 0 7px; min-width: 20px; text-align: center; }
+.badge { margin-left: auto; background: #dc2626; color: #fff; font-size: 12px; font-weight: 800; border-radius: 99px; padding: 0 6px; min-width: 20px; height: 20px; line-height: 20px; text-align: center; box-shadow: 0 0 0 2px rgba(220, 38, 38, .25); }
 .sidebar nav { flex: none; }
 .sidebar-user { margin-top: auto; flex: none; display: flex; align-items: center; gap: 9px; padding: 10px 6px 0; border-top: 1px solid rgba(255, 255, 255, .1); }
 .sidebar-user .who { display: grid; min-width: 0; flex: 1; line-height: 1.25; }
@@ -1070,3 +1070,7 @@ html.a11y .form-group > summary::after { transition: none; }
   border-bottom: 1px solid currentColor; padding: 0 4px 2px; width: max-content; min-width: 260px; max-width: 100%; }
 /* ---- help desk ticket on the request page ---- */
 .ticket-live h2 .pill { margin-left: 8px; vertical-align: middle; }
+/* ---- notifications: daily summary choice ---- */
+.email-prefs { display: grid; gap: 8px; }
+.digest-row { align-items: center; gap: 10px; }
+.digest-row .lbl { margin: 0; }
