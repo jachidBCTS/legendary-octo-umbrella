@@ -7,7 +7,11 @@ Ask clarifying questions for unclear items in ONE message before starting.
 
 ## Open
 
-(none)
+7. **Email suggestions show behind the pop-up window** (Nov 23, bug). Approval chains page →
+   "New chain of my own" dialog: typing in a step's email box shows the suggestion list
+   (`ul.people-pop`) behind/below the dialog instead of on top. Likely z-index / the list being
+   placed outside the `<dialog>` (top layer). Check every dialog with email boxes (chains, teams,
+   departments, stand-ins, forward).
 
 ## Done
 
