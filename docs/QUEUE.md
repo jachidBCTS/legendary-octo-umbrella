@@ -25,6 +25,10 @@ Ask clarifying questions for unclear items in ONE message before starting.
    decides the name, not the browser). The typed signature must appear on the printed / PDF output
    (Print page currently has only a blank "Signature / Date" line) — show the signed name, styled
    as a signature, with the date signed, for every form that has a signature field.
+6. **Builder preview: page scrolls past the bottom of the form** (Nov 23, visual bug). In the
+   builder's Preview, the browser scroll bar keeps going well past the end of the form (empty space
+   below). Find what makes the page taller than its content (likely a hidden panel or fixed height)
+   and fix it. Screenshot did not come through.
 
 ## Done
 
