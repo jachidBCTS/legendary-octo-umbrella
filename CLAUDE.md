@@ -51,4 +51,5 @@ deploy/                Install/Update scripts, SQL, templates      docs/DEPLOY-I
   screenshots **once per batch** before pushing (not after every small edit); read only the parts of
   files and notes you need; suggest a fresh session when the topic changes.
 - Develop on `claude/school-agentic-workflow-5wdvee`; push as usual — every green CI run makes a
-  complete update package; tell the owner its run number. Build a zip only when asked.
+  complete update package. Don't watch or report CI runs — the owner checks GitHub Actions
+  themselves (Nov 23, 2026). Build a zip only when asked.
