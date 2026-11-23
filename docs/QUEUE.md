@@ -20,10 +20,13 @@ Ask clarifying questions for unclear items in ONE message before starting.
    public replies from the Freshservice API (ticket + conversations) and show them on the request
    page. Never show private agent notes. Refresh when the page is opened (short cache), plus the
    existing 15-minute check / webhook. Bigger feature: confirm details with the owner first.
-4. **Table field with "Add row"** (Nov 23). New form field type: a table whose columns the builder
-   defines (text, number, date, dropdown, etc.); on the form the requester adds/removes rows as
-   needed. Needs: server-side validation per cell, formulas over columns (e.g. sum of a cost
-   column), display on request page / print / emails / CSV, phone layout. Bigger feature: confirm
-   column types, row limits and totals with the owner first.
+5. **Signature: "Sign with my name" button + show it on the PDF** (Nov 23). On a signature field,
+   add a button that fills in the requester's name as "First Last" (same name rule as #1; server
+   decides the name, not the browser). The typed signature must appear on the printed / PDF output
+   (Print page currently has only a blank "Signature / Date" line) — show the signed name, styled
+   as a signature, with the date signed, for every form that has a signature field.
 
 ## Done
+
+- #4 Table field with "Add row" (Nov 23): already exists — builder field type **Table**
+  (columns, "+ Add row", optional max rows). Told the owner; reopen if something is missing.
