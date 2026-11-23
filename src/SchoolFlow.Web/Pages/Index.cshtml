@@ -97,7 +97,7 @@
         <ul class="panel recent-list">
             @foreach (var r in Model.Recent)
             {
-                var (label, css) = Ui.Status(r.Status);
+                var (label, css) = Ui.Status(r);
                 <li>
                     <a class="recent-name" href="/Requests/Detail/@r.Id"><strong>@r.WorkflowName</strong> <span class="muted">#@r.Id</span></a>
                     <div class="recent-meta"><span class="pill @css">@label</span>

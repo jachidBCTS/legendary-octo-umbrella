@@ -362,7 +362,9 @@ html.a11y .toast { transition: none; font-size: 17px; }
 .sf-attach { border: 1px dashed var(--line-2); border-radius: 10px; padding: 12px; background: #fbfbfe; }
 .sf-attach-top { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 /* The real file input is kept for keyboard and screen-reader use but drawn as the button beside it. */
-.sf-file-input { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+/* Anchored to its field: a loose absolute input made the page scroll past the form (builder preview, Nov 23). */
+.sf-field:has(.sf-file-input) { position: relative; }
+.sf-file-input { position: absolute; top: 0; left: 0; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
 .sf-file-input:focus-visible + .btn { outline: 2px solid var(--brand); outline-offset: 2px; }
 .btn.disabled { opacity: .55; cursor: not-allowed; }
 .sf-files, .file-list { list-style: none; margin: 0; padding: 0; }
@@ -1058,3 +1060,13 @@ html.a11y .form-group > summary::after { transition: none; }
   .hero h1, .hero-now { color: #000; }
   .hero-ring, .stat-row { display: none; }
 }
+
+/* ---- signature: "Sign with my name" and the signed name on the printout ---- */
+.sf-sign-row { display: flex; gap: 8px; align-items: center; }
+.sf-sign-row .sf-signature { flex: 1 1 auto; min-width: 0; }
+.sf-sign-row .btn { flex: none; white-space: nowrap; }
+.print-signature { display: flex; flex-direction: column; gap: 2px; }
+.print-signature .sig-name { font-family: "Segoe Script", "Brush Script MT", "Snell Roundhand", cursive; font-size: 22px;
+  border-bottom: 1px solid currentColor; padding: 0 4px 2px; width: max-content; min-width: 260px; max-width: 100%; }
+/* ---- help desk ticket on the request page ---- */
+.ticket-live h2 .pill { margin-left: 8px; vertical-align: middle; }

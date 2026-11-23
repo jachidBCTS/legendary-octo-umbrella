@@ -20,6 +20,17 @@ public static class Ui
         return local.ToString(local.Year == today.Year ? "MMM d, h:mm tt" : "MMM d, yyyy", Values.DisplayCulture);
     }
 
+    /// <summary>
+    /// The run's status label. A finished request whose job was to open a help desk ticket reads
+    /// "Submitted" (the ticket is open; the issue is not fixed yet — owner, Nov 23, 2026).
+    /// </summary>
+    public static (string Label, string Css) Status(SchoolFlow.Web.Data.WorkflowRun run) =>
+        HandedToHelpDesk(run) ? ("Submitted", "info") : Status(run.Status);
+
+    /// <summary>Finished by opening a help desk ticket, without waiting for the ticket to be resolved.</summary>
+    public static bool HandedToHelpDesk(SchoolFlow.Web.Data.WorkflowRun run) =>
+        run.Status == RunStatus.Completed && run.TicketId is not null && run.WaitingTicketId is null;
+
     public static (string Label, string Css) Status(string status) => status switch
     {
         RunStatus.Running => ("In progress", "info"),

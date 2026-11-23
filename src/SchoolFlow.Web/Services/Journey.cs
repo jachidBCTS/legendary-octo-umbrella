@@ -157,6 +157,7 @@ public static class Journey
 
         stops.Add(run.Status switch
         {
+            RunStatus.Completed when Ui.HandedToHelpDesk(run) => new JourneyStop("finish", "Submitted", "done", "Ticket is with the help desk", Ui.When(run.UpdatedAt)),
             RunStatus.Completed => new JourneyStop("finish", "Completed", "done", When: Ui.When(run.UpdatedAt)),
             RunStatus.Rejected => new JourneyStop("finish", "Not approved", "rejected", When: Ui.When(run.UpdatedAt)),
             RunStatus.Cancelled => new JourneyStop("finish", "Cancelled", "cancelled", When: Ui.When(run.UpdatedAt)),

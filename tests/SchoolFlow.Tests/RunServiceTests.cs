@@ -134,7 +134,7 @@ public sealed class RunServiceTests : IDisposable
         {
             var run = await db.Runs.SingleAsync(r => r.Id == runId);
             Assert.Equal(RunStatus.Completed, run.Status);
-            Assert.Null(run.WaitingTicketId);
+            Assert.Equal(90001, run.WaitingTicketId);   // kept once the wait ends: it waited, so it reads "Completed"
             Assert.Contains(await db.RunEvents.Where(e => e.RunId == runId).ToListAsync(), e => e.Message == "Purchase complete");
         }
     }

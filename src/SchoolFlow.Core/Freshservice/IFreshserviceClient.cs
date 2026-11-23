@@ -53,6 +53,9 @@ public sealed class TicketUpdate
 /// <summary>A file to attach to a ticket.</summary>
 public sealed record TicketFile(string Name, string ContentType, byte[] Content);
 
+/// <summary>A reply on a ticket that the requester can see (never a private agent note).</summary>
+public sealed record TicketReply(DateTime AtUtc, bool FromHelpDesk, string Text);
+
 public sealed record LookupItem(string Id, string Name, string? Email = null, string? Detail = null);
 
 /// <summary>Everything the workflow engine and the form lookups need from Freshservice.</summary>
@@ -85,6 +88,13 @@ public interface IFreshserviceClient
     /// <summary>Verifies the connection; returns a short human-readable summary or throws.</summary>
     Task<string> TestConnectionAsync(CancellationToken ct = default);
 
+    /// <summary>
+    /// The ticket's public conversation, oldest first: help desk replies and the requester's own
+    /// emails. Private notes are left out here, never later.
+    /// </summary>
+    Task<IReadOnlyList<TicketReply>> PublicRepliesAsync(long ticketId, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<TicketReply>>(Array.Empty<TicketReply>());
+
     /// <summary>The fields on the ticket form, with their API names and choices (for setting up Create ticket steps).</summary>
     Task<IReadOnlyList<TicketField>> TicketFieldsAsync(CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<TicketField>>(Array.Empty<TicketField>());
@@ -94,4 +104,8 @@ public static class TicketFields
 {
     public static readonly (int Value, string Label)[] Priorities = { (1, "Low"), (2, "Medium"), (3, "High"), (4, "Urgent") };
     public static readonly (int Value, string Label)[] Statuses = { (2, "Open"), (3, "Pending"), (4, "Resolved"), (5, "Closed") };
+
+    /// <summary>A ticket status number as a word; custom statuses (not in the list) read "In progress".</summary>
+    public static string StatusLabel(int status) =>
+        Statuses.Where(s => s.Value == status).Select(s => s.Label).FirstOrDefault() ?? "In progress";
 }

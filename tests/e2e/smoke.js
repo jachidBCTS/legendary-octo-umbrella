@@ -155,7 +155,10 @@ async function login(page, email) {
   await field('Details').locator('textarea').fill('Left on the bus');
   await page.click('main button[type=submit]');
   await page.waitForURL(/Requests\/Detail\/\d+/);
-  check((await page.locator('.page-head .pill').textContent()) === 'Completed', 'repair run completed');
+  check((await page.locator('.page-head .pill').textContent()) === 'Submitted', 'repair run reads Submitted (its ticket is open)');
+  const liveTicket = await page.locator('.ticket-live').textContent();
+  check(liveTicket.includes('Help desk ticket #') && liveTicket.includes('Open') && liveTicket.includes('a technician will be in touch'), 'the request page shows the ticket status and the help desk reply');
+  await page.screenshot({ path: S + '/shots/05b-ticket-live.png', fullPage: true });
   const t2 = await page.locator('.timeline').textContent();
   check(t2.includes('Set priority_level = 4'), 'priority computed as 4');
   check(t2.includes('private note'), 'lost/stolen branch taken');
@@ -1052,12 +1055,19 @@ async function login(page, email) {
   await field('Signature').waitFor({ state: 'visible' });
   await page.click('.sf-form button[type=submit]');
   await page.waitForSelector('.sf-banner:not([hidden])');
-  await field('Signature').locator('input').fill('Taylor Teacher');
+  await field('Signature').locator('button:has-text("Sign with my name")').click();
+  const signed = await field('Signature').locator('input').inputValue();
+  check(signed.length > 0 && !signed.includes('_') && !signed.includes('@'), '"Sign with my name" fills in the name (' + signed + ')');
   await page.screenshot({ path: S + '/shots/42-pages-last.png', fullPage: true });
   await page.click('.sf-form button[type=submit]');
   await page.waitForURL(/Requests\/Detail\/\d+/);
+  const outingUrl = page.url();
   const outingAnswers = await page.locator('.answers').textContent();
-  check(outingAnswers.includes('16:30') && outingAnswers.includes('(201) 555-0142') && outingAnswers.includes('Taylor Teacher') && !outingAnswers.includes('Timing'), 'time, phone and signature are stored; page breaks are not answers');
+  check(outingAnswers.includes('16:30') && outingAnswers.includes('(201) 555-0142') && outingAnswers.includes(signed) && !outingAnswers.includes('Timing'), 'time, phone and signature are stored; page breaks are not answers');
+  await page.goto(outingUrl.replace('/Detail/', '/Print/'));
+  check(await page.locator('.print-signature .sig-name').textContent() === signed && (await page.locator('.print-signature').textContent()).includes('Signed electronically')
+    && await page.locator('.print-sign').count() === 0, 'the printout shows the typed signature and when it was signed');
+  await page.screenshot({ path: S + '/shots/42b-print-signature.png', fullPage: true });
   await page.setViewportSize({ width: 390, height: 800 });
   await page.goto(base + '/Start/' + outingId);
   await page.waitForSelector('.sf-steps li');

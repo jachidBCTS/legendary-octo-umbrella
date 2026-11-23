@@ -60,7 +60,7 @@ public sealed class PeopleController : ControllerBase
         foreach (var user in await _db.Users.AsNoTracking()
                      .Where(u => u.Email.ToLower().Contains(q) || u.Name.ToLower().Contains(q))
                      .OrderBy(u => u.Name).Take(MaxResults).Select(u => new { u.Email, u.Name }).ToListAsync(ct))
-            Add(user.Email, user.Name);
+            Add(user.Email, SchoolFlow.Core.PersonName.Tidy(user.Name));
 
         // Team members and department approvers are stored as address lists; only the addresses are searchable.
         var lists = await _db.Teams.AsNoTracking().Where(t => t.Members.ToLower().Contains(q)).Select(t => t.Members).Take(50).ToListAsync(ct);
@@ -103,7 +103,7 @@ public sealed class PeopleController : ControllerBase
         var unnamed = found.Where(p => p.Value.Length == 0).Select(p => p.Key).ToList();
         if (unnamed.Count > 0)
             foreach (var user in await _db.Users.AsNoTracking().Where(u => unnamed.Contains(u.Email)).Select(u => new { u.Email, u.Name }).ToListAsync(ct))
-                found[user.Email.ToLowerInvariant()] = user.Name;
+                found[user.Email.ToLowerInvariant()] = SchoolFlow.Core.PersonName.Tidy(user.Name);
 
         var result = found
             .OrderBy(p => p.Key.StartsWith(q) || p.Value.StartsWith(q, StringComparison.OrdinalIgnoreCase) ? 0 : 1)

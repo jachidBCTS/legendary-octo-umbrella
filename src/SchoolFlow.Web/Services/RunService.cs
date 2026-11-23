@@ -1068,7 +1068,9 @@ public sealed class RunService
         run.Status = state.Status;
         run.CurrentNodeId = state.CurrentNodeId;
         run.ContextJson = Stored(run, state.Context);
-        run.WaitingTicketId = state.Status == RunStatus.WaitingTicket ? state.WaitingTicketId : null;
+        // Kept after the wait ends (every lookup also checks Status == WaitingTicket): a finished request
+        // that once waited on its ticket reads "Completed"; one that only opened a ticket reads "Submitted".
+        run.WaitingTicketId = state.Status == RunStatus.WaitingTicket ? state.WaitingTicketId : run.WaitingTicketId;
         run.Error = state.Status == RunStatus.Failed ? state.Error : null;
         run.UpdatedAt = DateTime.UtcNow;
         run.Version++;

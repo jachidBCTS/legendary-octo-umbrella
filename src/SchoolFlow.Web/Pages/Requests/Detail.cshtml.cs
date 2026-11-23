@@ -44,7 +44,7 @@ public class DetailModel : PageModel
 
     public sealed record FileLink(string Name, string Size, string Url);
     public sealed record Answer(string Label, string Value, List<string>? Columns = null, List<List<string>>? Rows = null, List<FileLink>? Files = null, bool Heading = false,
-        string? PreviousValue = null);
+        string? PreviousValue = null, DateTime? SignedAt = null);
     /// <summary>Tasks (fill-in steps) waiting for this person on this request.</summary>
     public List<ApprovalTask> MyWork { get; private set; } = new();
     public string TaskFormJson { get; private set; } = "{}";
@@ -192,17 +192,17 @@ public class DetailModel : PageModel
         Stops = Journey.Build(def, run, context, tasks, DateTime.UtcNow, await _calendar.ClosedDaysAsync(), nameOf,
             seesStudents ? new HashSet<string>() : studentKeys);
         string? Was(string key) => previous is not null && previous.TryGetValue(key, out var was) && !studentKeys.Contains(key) ? Values.ToText(was) : null;
-        AddAnswers(def.Form.Fields);
+        AddAnswers(def.Form.Fields, run.CreatedAt);
         // What was added along the way by completed tasks (the latest time each task was done).
         foreach (var done in tasks.Where(t => t.Kind == TaskKinds.Task && t.Status == ApprovalStatus.Done).GroupBy(t => t.NodeId).Select(g => g.OrderBy(t => t.Id).Last()).OrderBy(t => t.Id))
         {
             if (def.Flow.Nodes.FirstOrDefault(n => n.Id == done.NodeId)?.Fields is not { Count: > 0 } taskFields) continue;
             Fields.Add(new Answer(done.Title, $"Completed by {done.DecidedBy}{(done.DecidedAt is DateTime at ? " · " + Ui.Local(at).ToString("MMM d, yyyy h:mm tt") : "")}", Heading: true));
-            AddAnswers(taskFields);
+            AddAnswers(taskFields, done.DecidedAt ?? run.UpdatedAt);
         }
         return true;
 
-        void AddAnswers(IEnumerable<FieldDef> answered)
+        void AddAnswers(IEnumerable<FieldDef> answered, DateTime signedAt)
         {
         foreach (var f in answered.Where(f => !FieldTypes.IsLayout(f.Type)))
         {
@@ -228,6 +228,10 @@ public class DetailModel : PageModel
                         .Select(r => columns.Select(c => Ui.Display(r.GetValueOrDefault(c.Key), c.Type, c.Format, c.Decimals)).ToList()).ToList(),
                     PreviousValue: Was(f.Key)));
             }
+            else if (f.Type == FieldTypes.Signature)
+            {
+                Fields.Add(new Answer(f.Label, Values.ToText(value).Trim(), PreviousValue: Was(f.Key), SignedAt: signedAt));
+            }
             else
             {
                 Fields.Add(new Answer(f.Label, Ui.Display(value, f.Type, f.Format, f.Decimals), PreviousValue: Was(f.Key)));
@@ -236,7 +240,16 @@ public class DetailModel : PageModel
         }
     }
 
-    public async Task<IActionResult> OnGetAsync(int id) => await LoadAsync(id) ? Page() : NotFound();
+    /// <summary>The live help desk ticket (status and public replies), when the request opened one.</summary>
+    public TicketView? Ticket { get; private set; }
+
+    public async Task<IActionResult> OnGetAsync(int id, CancellationToken ct)
+    {
+        if (!await LoadAsync(id)) return NotFound();
+        if (Run.TicketId is long ticketId)
+            Ticket = await TicketView.LoadAsync(_freshservice, HttpContext.RequestServices.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>(), ticketId, ct);
+        return Page();
+    }
 
     public async Task<IActionResult> OnPostCommentAsync(int id, string? body, CancellationToken ct)
     {

@@ -137,6 +137,31 @@ public sealed class FreshserviceClient : IFreshserviceClient
         return doc is null ? null : Unwrap(doc, "ticket");
     }
 
+    public async Task<IReadOnlyList<TicketReply>> PublicRepliesAsync(long ticketId, CancellationToken ct = default)
+    {
+        var replies = new List<TicketReply>();
+        for (var page = 1; page <= 3; page++)
+        {
+            using var doc = await SendAsync(HttpMethod.Get, $"api/v2/tickets/{ticketId}/conversations?per_page=100&page={page}", null, ct, notFoundIsNull: true);
+            if (doc is null || !doc.RootElement.TryGetProperty("conversations", out var list) || list.ValueKind != JsonValueKind.Array) break;
+            foreach (var c in list.EnumerateArray())
+            {
+                // Private notes stay private: anything not explicitly public is skipped.
+                if (!c.TryGetProperty("private", out var priv) || priv.ValueKind != JsonValueKind.False) continue;
+                var text = c.TryGetProperty("body_text", out var b) && b.ValueKind == JsonValueKind.String ? b.GetString() ?? "" : "";
+                text = text.Trim();
+                if (text.Length == 0) continue;
+                if (text.Length > 4000) text = text[..4000] + "…";
+                var incoming = c.TryGetProperty("incoming", out var inc) && inc.ValueKind == JsonValueKind.True;
+                var at = c.TryGetProperty("created_at", out var t) && t.ValueKind == JsonValueKind.String && t.TryGetDateTime(out var when)
+                    ? when.ToUniversalTime() : DateTime.UtcNow;
+                replies.Add(new TicketReply(at, !incoming, text));
+            }
+            if (list.GetArrayLength() < 100) break;
+        }
+        return replies.OrderBy(r => r.AtUtc).ToList();
+    }
+
     public async Task<Dictionary<string, object?>?> FindRequesterAsync(string email, CancellationToken ct = default)
     {
         // Staff are often agents rather than requesters in Freshservice, so check both.

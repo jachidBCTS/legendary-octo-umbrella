@@ -376,8 +376,20 @@
           body = input(h('input', { id, type: 'tel', autocomplete: 'tel', inputmode: 'tel', maxlength: 40, placeholder: field.placeholder || null }), field.key, control);
           break;
         case 'signature':
-          body = input(h('input', { id, type: 'text', class: 'sf-signature', autocomplete: 'name', maxlength: 200, placeholder: 'Type your full name to sign' }), field.key, control);
+        {
+          // "Sign with my name" fills in the signed-in person's name as First Last (owner, Nov 23, 2026).
+          const box = input(h('input', { id, type: 'text', class: 'sf-signature', autocomplete: 'name', maxlength: 200, placeholder: 'Type your full name to sign' }), field.key, control);
+          const myName = (document.body.dataset.myName || '').trim();
+          body = myName
+            ? h('div', { class: 'sf-sign-row' }, box, h('button', { type: 'button', class: 'btn small', onclick: () => {
+                if (box.disabled || box.readOnly) return;
+                box.value = myName;
+                box.dispatchEvent(new Event('input', { bubbles: true }));
+                box.dispatchEvent(new Event('change', { bubbles: true }));
+              } }, 'Sign with my name'))
+            : box;
           break;
+        }
         case 'email':
           body = input(h('input', { id, type: 'email', autocomplete: 'off', spellcheck: 'false', 'data-people': '', placeholder: field.placeholder || null }), field.key, control);
           break;

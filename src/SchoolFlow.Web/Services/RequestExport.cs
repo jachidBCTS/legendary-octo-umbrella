@@ -43,7 +43,7 @@ public static class RequestExport
         csv.AppendLine(string.Join(",", Fixed.Concat(columns).Select(Cell)));
         foreach (var run in runs)
         {
-            var (status, _) = Ui.Status(run.Status);
+            var (status, _) = Ui.Status(run);
             var cells = new List<string>
             {
                 run.Id.ToString(), run.WorkflowName, status, run.SubmitterName, run.SubmitterEmail, run.DepartmentName,

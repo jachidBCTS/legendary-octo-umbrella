@@ -60,7 +60,7 @@ else
             <tbody>
             @foreach (var r in Model.Runs)
             {
-                var (label, css) = Ui.Status(r.Status);
+                var (label, css) = Ui.Status(r);
                 <tr>
                     <td><a href="/Requests/Detail/@r.Id"><strong>@r.WorkflowName</strong></a> <span class="muted">#@r.Id</span></td>
                     @if (Model.ShowsOthers) { <td data-label="Submitted by">@r.SubmitterName</td> }

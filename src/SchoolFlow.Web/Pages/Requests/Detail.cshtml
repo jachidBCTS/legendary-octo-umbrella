@@ -2,7 +2,7 @@
 @model SchoolFlow.Web.Pages.Requests.DetailModel
 @{
     ViewData["Title"] = $"{Model.Run.WorkflowName} #{Model.Run.Id}";
-    var (label, css) = Ui.Status(Model.Run.Status);
+    var (label, css) = Ui.Status(Model.Run);
 }
 @section Hero {
 @{
@@ -119,6 +119,36 @@
                 }
             </ol>
         </div>
+    </section>
+}
+
+@if (Model.Ticket is { } ticket)
+{
+    <section class="panel ticket-live" aria-labelledby="ticket-title">
+        <h2 id="ticket-title">Help desk ticket #@ticket.Id
+            @if (!ticket.Unavailable) { <span class="pill @ticket.Css">@ticket.Status</span> }
+        </h2>
+        @if (ticket.Unavailable)
+        {
+            <p class="muted">The help desk could not be reached just now. Refresh the page in a minute to see the ticket's status and replies.</p>
+        }
+        else if (ticket.Replies.Count == 0)
+        {
+            <p class="muted">No replies from the help desk yet. Replies they send you appear here.</p>
+        }
+        else
+        {
+            <ul class="comments">
+                @foreach (var reply in ticket.Replies)
+                {
+                    var who = reply.FromHelpDesk ? "Help desk" : Model.Run.SubmitterName;
+                    <li>
+                        <span class="avatar">@Ui.Initials(who)</span>
+                        <div><strong>@who</strong> <span class="muted small">@Ui.When(reply.AtUtc)</span><div class="pre">@reply.Text</div></div>
+                    </li>
+                }
+            </ul>
+        }
     </section>
 }
 

@@ -82,6 +82,15 @@ public sealed class SimulatedFreshserviceClient : IFreshserviceClient
             return Task.FromResult(_tickets.TryGetValue(ticketId, out var record) ? Copy(record) : null);
     }
 
+    /// <summary>Simulation: one help desk reply on every ticket, so the request page has something to show.</summary>
+    public Task<IReadOnlyList<TicketReply>> PublicRepliesAsync(long ticketId, CancellationToken ct = default)
+    {
+        lock (_gate)
+            return Task.FromResult<IReadOnlyList<TicketReply>>(_tickets.ContainsKey(ticketId)
+                ? new[] { new TicketReply(DateTime.UtcNow.AddMinutes(-5), true, "Thanks, we have your ticket and a technician will be in touch.") }
+                : Array.Empty<TicketReply>());
+    }
+
     public Task<Dictionary<string, object?>?> FindRequesterAsync(string email, CancellationToken ct = default)
     {
         var person = Values.NewDict();

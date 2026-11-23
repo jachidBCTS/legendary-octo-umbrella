@@ -472,3 +472,15 @@ Known gaps (not requested yet, worth raising):
   2026). Build the zip only on request.
 - **Push as usual** (owner, Nov 20, 2026): every push makes a new CI package (`Greenlight-update-run-NN`), and
   each package holds *all* changes so far — the owner installs the newest green one. Tell them its run number.
+
+## Nov 23, 2026 batch (queue #1–#6)
+
+- **Names**: Entra display names are "Last_First"; Greenlight shows "First Last" via
+  `SchoolFlow.Core.PersonName` (`User.DisplayName()` prefers given_name + family_name claims).
+- **Help desk status wording**: a request that finished by opening a ticket (without a Wait-for-ticket
+  step) reads "Submitted" (`Ui.HandedToHelpDesk`). `WorkflowRun.WaitingTicketId` is now kept after the
+  wait ends, so "did it wait?" is answerable; all lookups also check `Status == WaitingTicket`.
+- **Live ticket** on the request page: `TicketView.LoadAsync` → `GetTicketAsync` + `PublicRepliesAsync`
+  (`GET /api/v2/tickets/{id}/conversations`, only `private: false`). Unverified against real Freshservice.
+- **Signature**: button fills `body[data-my-name]`; print shows the typed name + signed date (form
+  fields: request created; task fields: task completed).

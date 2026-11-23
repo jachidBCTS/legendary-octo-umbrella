@@ -26,8 +26,10 @@ public static class UserExtensions
 
     public static string DisplayName(this ClaimsPrincipal user)
     {
-        var name = user.FindFirst("name")?.Value ?? user.FindFirst(ClaimTypes.GivenName)?.Value;
-        if (!string.IsNullOrWhiteSpace(name)) return name.Trim();
+        var given = user.FindFirst("given_name")?.Value ?? user.FindFirst(ClaimTypes.GivenName)?.Value;
+        var surname = user.FindFirst("family_name")?.Value ?? user.FindFirst(ClaimTypes.Surname)?.Value;
+        var name = SchoolFlow.Core.PersonName.From(given, surname, user.FindFirst("name")?.Value ?? given);
+        if (!string.IsNullOrWhiteSpace(name)) return name;
         var email = user.Email();
         return email.Length > 0 ? email.Split('@')[0] : "Unknown";
     }
