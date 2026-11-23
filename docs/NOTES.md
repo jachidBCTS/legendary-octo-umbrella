@@ -397,6 +397,15 @@ The full design notes moved out of CLAUDE.md (Nov 22, 2026) to keep every sessio
   phones. Use `minmax(0, 1fr)` for grid tracks; plain `1fr` caused real overflow bugs.
 - Dates/"today" use the server's time zone; database timestamps are UTC (`Ui.Local` for display).
 - Money/number display is fixed to en-US (`Values.DisplayCulture`).
+- **Look: design direction B ("Bold")** — chosen by the owner Nov 23, 2026 from the Calm / Bold /
+  Compact samples. Colours are the `:root` tokens in `app.css` (deep-green sidebar `--side`, header
+  band `--band`, emerald `--brand`, bright `--go` for badges and main buttons in the band). Font: Plus
+  Jakarta Sans, served from `wwwroot/fonts` (OFL licence file beside it; CSP allows only 'self').
+  A page puts its title in the band with `@section Hero { ... }`; the layout renders it first inside
+  `<main>`. Used by Home (greeting + three number tiles: waiting on you, in progress, completed this
+  month) and Request detail (progress ring, "Now: <stop> · waiting on <who>"). The band keeps
+  `.page-head` so the browser test's `.page-head .pill` / `.sub` checks still apply. Form colours
+  (`tone-*`, chosen per form in the builder) are unchanged; form icons are now solid tiles of that colour.
 
 ## Not verified against real systems
 

@@ -4,10 +4,25 @@
     ViewData["Title"] = $"{Model.Run.WorkflowName} #{Model.Run.Id}";
     var (label, css) = Ui.Status(Model.Run.Status);
 }
+@section Hero {
+@{
+    var heroTotal = Model.Stops.Count;
+    var heroDone = Model.Stops.Count(st => st.State == "done");
+    var heroNow = Model.Stops.FirstOrDefault(st => st.State is "current" or "returned");
+    var heroDeg = heroTotal == 0 ? 0 : (int)Math.Round(360.0 * heroDone / heroTotal);
+}
 <a class="back-link" href="/Requests"><partial name="_Icons" model='"back"' /> Requests</a>
-<div class="page-head">
+<div class="page-head hero-head hero-status">
+    @if (heroTotal > 0)
+    {
+        <span class="hero-ring" style="--done: @(heroDeg)deg" role="img" aria-label="@heroDone of @heroTotal stops done"><span><strong>@heroDone/@heroTotal</strong><small>stops</small></span></span>
+    }
     <div>
         <h1>@Model.Run.WorkflowName <span class="muted">#@Model.Run.Id</span></h1>
+        @if (heroNow is not null)
+        {
+            <p class="hero-now">@(heroNow.State == "returned" ? "Sent back: " : "Now: ")@heroNow.Title@(heroNow.Who is null ? "" : " · " + (heroNow.State == "current" ? "waiting on " : "") + heroNow.Who)</p>
+        }
         <p class="sub">
             <span class="pill @css">@label</span>
             Submitted by @Model.Run.SubmitterName · @Ui.When(Model.Run.CreatedAt)
@@ -43,6 +58,7 @@
         </div>
     }
 </div>
+}
 
 @if (Model.Run.Status == RunStatus.Failed)
 {

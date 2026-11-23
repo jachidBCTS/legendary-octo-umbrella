@@ -37,7 +37,7 @@ deploy/                Install/Update scripts, SQL, templates      docs/DEPLOY-I
 - Student data: only the ID is stored; access per person; see NOTES before touching it.
 - Phones: list tables `class="table stack"` + `data-label`; grid tracks `minmax(0, 1fr)`.
 - Owner's UI taste: fold-out sections, tight spacing, instructions behind ⓘ tips, suggestion lists
-  under the box. A new design direction is being chosen (samples: Calm / Bold / Compact).
+  under the box. Look: design direction B ("Bold"), see NOTES "Look".
 
 ## Working with the owner
 

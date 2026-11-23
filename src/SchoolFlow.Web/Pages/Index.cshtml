@@ -3,27 +3,36 @@
 @{
     ViewData["Title"] = "Home";
 }
-<div class="page-head">
+@section Hero {
+<div class="page-head hero-head">
     <div>
+        <p class="hero-kicker">@DateTime.Now.ToString("dddd, MMMM d")</p>
         <h1>@Model.Greeting, @User.DisplayName().Split(' ')[0]</h1>
         <p class="sub" data-tip>Start a request, or pick up where you left off.</p>
     </div>
 </div>
+}
+
+<div class="stat-row">
+    <a class="stat-tile stat-warn" href="/Approvals">
+        <span class="stat-num">@Model.Pending.Count</span>
+        <span class="stat-label">Waiting on you</span>
+        <span class="stat-note">@(Model.Pending.Count == 0 ? "Nothing to approve" : string.Join(" · ", Model.Pending.Take(2).Select(p => p.Title)))</span>
+    </a>
+    <a class="stat-tile stat-info" href="/Requests">
+        <span class="stat-num">@Model.InProgress</span>
+        <span class="stat-label">In progress</span>
+        <span class="stat-note">Your requests moving along</span>
+    </a>
+    <a class="stat-tile stat-ok" href="/Requests">
+        <span class="stat-num">@Model.CompletedThisMonth</span>
+        <span class="stat-label">Completed this month</span>
+        <span class="stat-note">Your requests that finished</span>
+    </a>
+</div>
 
 <div class="home-grid">
 <div class="home-main">
-@if (Model.Pending.Count > 0)
-{
-    <section class="callout">
-        <div class="callout-icon"><partial name="_Icons" model='"clock"' /></div>
-        <div class="grow">
-            <strong>@Model.Pending.Count request@(Model.Pending.Count == 1 ? " is" : "s are") waiting for your approval</strong>
-            <div class="muted">@string.Join(" · ", Model.Pending.Take(3).Select(p => p.Title))</div>
-        </div>
-        <a class="btn primary" href="/Approvals">Review</a>
-    </section>
-}
-
 @if (Model.Drafts.Count > 0)
 {
     <h2 class="section-title">Your drafts</h2>
