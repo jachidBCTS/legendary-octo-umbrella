@@ -38,8 +38,10 @@ Ask clarifying questions for unclear items in ONE message before starting.
   Once approved: turn the approved text into an in-app Help page (sections: getting around, starting a
   request, following it, approving and tasks, notifications/away/accessibility, tips and FAQs, getting
   help), and add a floating round "?" button (bottom corner, every signed-in page, keyboard reachable,
-  `aria-label`) that opens it. Keep the guide in sync with features when they change. Fill in the help
-  desk contact the owner gives; open question in the draft: staff-only guide, or also builders/admins?
+  `aria-label`) that opens it. Keep the guide in sync with features when they change. Owner's answers
+  (Nov 24): everyday staff only (no builder/admin pages); the contact for Greenlight problems is the
+  owner (ask at build time how to show them on the page: name only, no email unless they say so);
+  don't mention that form questions go to departments; frame it as the same forms, now online.
 
 ## Done
 
