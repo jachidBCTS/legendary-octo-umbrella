@@ -324,6 +324,10 @@
                         </table></div>
                     </dd>
                 }
+                else if (f.SignatureUrl is string signature)
+                {
+                    <dd class="print-signature"><img class="sig-picture" src="@signature" alt="Signature of @f.Value" /><span class="muted small">@f.Value · signed electronically</span></dd>
+                }
                 else
                 {
                     <dd class="pre">@f.Value</dd>

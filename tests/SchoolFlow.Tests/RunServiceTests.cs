@@ -2390,4 +2390,44 @@ public sealed class RunServiceTests : IDisposable
         Assert.False(ResubmitGuard.SameAnswer(field, numberOnly, new Dictionary<string, object?> { ["id"] = "20452" }));
         Assert.False(ResubmitGuard.Same(numberOnly, full));                   // other fields still compare in full
     }
+    // ---- uploaded signature pictures (queue #14) ----------------------------------------------
+
+    [Fact]
+    public async Task SigningWithYourOwnName_AttachesYourOwnPicture_AndMarksItUsed()
+    {
+        int picture;
+        Workflow workflow;
+        await using (var db = Db())
+        {
+            var image = new SignatureImage { OwnerEmail = "t@school.org", Data = SignatureTests.Png(600, 200), Width = 600, Height = 200, CreatedAt = DateTime.UtcNow };
+            db.SignatureImages.Add(image);
+            await db.SaveChangesAsync();
+            picture = image.Id;
+            (await db.Users.SingleAsync(u => u.Email == "t@school.org")).SignatureImageId = picture;
+            var def = new WorkflowDefinition
+            {
+                Form = { Fields = { new FieldDef { Key = "sig", Label = "Signature", Type = FieldTypes.Signature, Required = true } } },
+                Flow = { Nodes = { new NodeDef { Id = "start", Type = NodeTypes.Start }, new NodeDef { Id = "end", Type = NodeTypes.End } }, Edges = { new EdgeDef { From = "start", To = "end" } } },
+            };
+            var json = Json.Serialize(def);
+            workflow = new Workflow { Name = "Sign here", DraftJson = json, PublishedJson = json, PublishedVersion = 1, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
+            db.Workflows.Add(workflow);
+            await db.SaveChangesAsync();
+        }
+
+        async Task<Dictionary<string, object?>> Submit(string signed, string email, string name)
+        {
+            await using var db = Db();
+            var (form, runId) = await Service(db).SubmitFormAsync(workflow, new Dictionary<string, object?> { ["sig"] = signed }, email, name, default);
+            Assert.True(form.IsValid);
+            return Json.ToValues((await db.Runs.SingleAsync(r => r.Id == runId)).ContextJson);
+        }
+
+        Assert.Equal(picture, Signatures.PictureFor(await Submit("T Teacher", "t@school.org", "T Teacher"), "sig"));
+        Assert.Null(Signatures.PictureFor(await Submit("Someone Else", "t@school.org", "T Teacher"), "sig"));
+        // Typing the picture owner's name gets nobody else their picture.
+        Assert.Null(Signatures.PictureFor(await Submit("T Teacher", "optout@school.org", "Opt Out"), "sig"));
+        await using var check = Db();
+        Assert.NotNull((await check.SignatureImages.SingleAsync(i => i.Id == picture)).UsedAt);
+    }
 }

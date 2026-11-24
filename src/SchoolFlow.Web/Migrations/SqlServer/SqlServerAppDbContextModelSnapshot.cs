@@ -59,6 +59,9 @@ namespace SchoolFlow.Web.Migrations.SqlServer
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<int?>("SignatureImageId")
+                        .HasColumnType("int");
+
                     b.Property<bool>("StudentAccess")
                         .HasColumnType("bit");
 
@@ -748,6 +751,42 @@ namespace SchoolFlow.Web.Migrations.SqlServer
                     b.HasIndex("RunId");
 
                     b.ToTable("RunEvents");
+                });
+
+            modelBuilder.Entity("SchoolFlow.Web.Data.SignatureImage", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<byte[]>("Data")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<int>("Height")
+                        .HasColumnType("int");
+
+                    b.Property<string>("OwnerEmail")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<DateTime?>("UsedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("Width")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerEmail");
+
+                    b.ToTable("SignatureImages");
                 });
 
             modelBuilder.Entity("SchoolFlow.Web.Data.Team", b =>

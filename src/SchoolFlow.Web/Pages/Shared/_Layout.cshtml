@@ -14,8 +14,10 @@
         (exact ? path == prefix || path == "/Index" : path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) ? "active" : "";
     var pendingCount = 0;
     var unreadCount = 0;
+    int? signatureId = null;
     if (signedIn && email.Length > 0)
     {
+        signatureId = await Db.Users.Where(u => u.Email == email).Select(u => u.SignatureImageId).FirstOrDefaultAsync();
         var needle = ";" + email + ";";
         pendingCount = await Db.ApprovalTasks.CountAsync(t => t.Status == ApprovalStatus.Pending && (t.Assignees.Contains(needle) || t.Extra.Contains(needle)) && !t.ApprovedBy.Contains(needle));
         unreadCount = await Db.Notifications.CountAsync(n => n.UserEmail == email && n.ReadAt == null);
@@ -37,7 +39,7 @@
     <link rel="stylesheet" href="~/css/app.css" asp-append-version="true" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%2322c55e'/%3E%3Cpath d='M9 16.5l4.5 4.5L23 11.5' fill='none' stroke='%2306281a' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
 </head>
-<body class="@(wide ? "wide" : "") @(signedIn ? "has-sidebar" : "")" data-alerts="@(signedIn && email.Length > 0 ? "on" : null)" data-my-name="@(signedIn ? name : null)">
+<body class="@(wide ? "wide" : "") @(signedIn ? "has-sidebar" : "")" data-alerts="@(signedIn && email.Length > 0 ? "on" : null)" data-my-name="@(signedIn ? name : null)" data-my-signature="@(signatureId is int sig ? $"/signatures/mine?v={sig}" : null)">
 <a class="skip-link" href="#main">Skip to main content</a>
 @if (signedIn)
 {
@@ -60,6 +62,7 @@
             </a>
             <a class="@Active("/Chains")" href="/Chains"><partial name="_Icons" model='"chain"' /> Approval Chains</a>
             <a class="@Active("/Away")" href="/Away"><partial name="_Icons" model='"clock"' /> Away / Stand-In</a>
+            <a class="@Active("/Account/Signature")" href="/Account/Signature"><partial name="_Icons" model='"pen"' /> My Signature</a>
             <a class="@Active("/Account/Display")" href="/Account/Display"><partial name="_Icons" model='"eye"' /> Accessibility@(a11y ? " (on)" : "")</a>
             @if (showBuild)
             {

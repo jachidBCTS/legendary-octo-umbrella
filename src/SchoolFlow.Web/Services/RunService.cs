@@ -103,6 +103,9 @@ public sealed class RunService
         var context = Values.NewDict();
         foreach (var kv in form.Values) context[kv.Key] = kv.Value;
         context["submitter"] = SubmitterRecord(email, name);
+        // "Sign" with an uploaded signature picture: the server attaches the signer's own picture.
+        await Signatures.MarkUsedAsync(_db, Signatures.Stamp(context, def.Form.Fields, form.Values, null, name,
+            await Signatures.CurrentAsync(_db, email, ct)), ct);
 
         var run = NewRun(workflow, email, name);
         // The first Department field on the form categorises the request.
@@ -282,6 +285,8 @@ public sealed class RunService
             state.NewEvents.Add(new RunEvent(DateTime.Now, node.Id, "info",
                 $"Removed {removedFiles.Count} file{(removedFiles.Count == 1 ? "" : "s")} taken off the task: {string.Join(", ", removedFiles.Select(f => f.FileName))}."));
         }
+        await Signatures.MarkUsedAsync(_db, Signatures.Stamp(state.Context, node.Fields ?? new List<FieldDef>(), form.Values,
+            new Dictionary<string, object?>(state.Context, StringComparer.OrdinalIgnoreCase), name, await Signatures.CurrentAsync(_db, email, ct)), ct);
         await (await EngineAsync(ct)).ResumeWithTaskAsync(def.Flow, state, who, form.Values, ct);
         if (!await TrySaveAsync(run, state, ct))
             return (form, ActionResult.Fail("Someone else acted on this request at the same moment. Refresh to see the latest."));
@@ -613,6 +618,8 @@ public sealed class RunService
              && ResubmitGuard.Reasons(def.Flow, run.CurrentNodeId, def.Form.Fields, before, form.Values).Count > 0);
         foreach (var kv in form.Values) state.Context[kv.Key] = kv.Value;
         RememberPrevious(state.Context, def.Form.Fields, previous);
+        await Signatures.MarkUsedAsync(_db, Signatures.Stamp(state.Context, def.Form.Fields, form.Values, before, name,
+            await Signatures.CurrentAsync(_db, email, ct)), ct);
         // The request's files: the form's (as resubmitted) and any that completed tasks added.
         var files = AllFiles(def, state.Context);
         state.Context["attachments"] = files;
