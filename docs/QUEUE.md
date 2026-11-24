@@ -7,7 +7,19 @@ Ask clarifying questions for unclear items in ONE message before starting.
 
 ## Open
 
-(none)
+- #12 **Easter egg on the "t" in Greenlight** (Nov 24; owner approved the mockup:
+  https://claude.ai/artifact/BhD3YztxxrHGB8NkTqDXM2; copy in `docs/mockups/easter-egg.html`).
+  Clicking the last letter of the sidebar / phone-bar logo plays a ~12 s pixel-art scene along the
+  bottom of the page: he walks out from behind the menu, waves with an "I'm out!" bubble, sunglasses
+  drop on, he walks to the convertible parked just beside him, hops in, faces the viewer and waves,
+  revs and drives off right with white smoke. Sprites (checkerboard removed, sunglasses drawn in,
+  car mirrored to face right) are already in `wwwroot/img/egg/` (~200 KB, unused so far). To build:
+  move the mockup's script to `wwwroot/js/egg.js` (CSP: no inline script; the smoke-puff SVG can
+  stay a data: URI in `app.css`, since `img-src` allows data:), split "Greenligh" link + a `<button>`
+  "t" in `_Layout.cshtml` (logo link must still go Home), load sprites only on click, skip when
+  `prefers-reduced-motion`, Escape stops it, stage `pointer-events: none`. Walk = alternating
+  legs-apart / legs-passing poses with a 6 px lift (owner: "good enough"). Optional later: two
+  frames with the other leg leading would make the walk more natural.
 
 ## Done
 
