@@ -50,6 +50,9 @@ deploy/                Install/Update scripts, SQL, templates      docs/DEPLOY-I
 - **Keep usage low** (owner, Nov 22, 2026): batch work; run the full unit + browser tests and
   screenshots **once per batch** before pushing (not after every small edit); read only the parts of
   files and notes you need; suggest a fresh session when the topic changes.
+- **Ponytail plugin** (owner, Nov 24, 2026): enabled in `.claude/settings.json`, pinned to v5.3.3 after a
+  review of its hooks (no network unless a webhook is set — never set one). Decline its status-line offer.
+  Project rules here still win (tests, security, owner's UI taste). Off: set it to false there.
 - Develop on `claude/school-agentic-workflow-5wdvee`; push as usual — every green CI run makes a
   complete update package. Don't watch or report CI runs — the owner checks GitHub Actions
   themselves (Nov 23, 2026). Build a zip only when asked.
