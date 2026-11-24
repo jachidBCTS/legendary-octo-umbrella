@@ -7,7 +7,13 @@ Ask clarifying questions for unclear items in ONE message before starting.
 
 ## Open
 
-(none)
+- #15 Address suggestions (Nov 24): as someone types an address (e.g. "540"), show matching full
+  addresses under the box (street + town, state) to pick from — like Google Maps' list, screenshot
+  sent by the owner. Doesn't have to be Google. To settle when starting: which fields get it (a new
+  "Address" field type in the builder vs. a switch on Text fields); which service (free options:
+  OpenStreetMap Photon/Nominatim, no key, ~1 search/sec fair-use; or a keyed one such as Geoapify,
+  Mapbox, Google). Lookups go through our server (CSP, rate limit, cache, no user details sent),
+  NJ/nearby results first, typed text always allowed if the service is down.
 
 ## Done
 
