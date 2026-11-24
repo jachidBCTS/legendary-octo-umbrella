@@ -54,6 +54,9 @@ namespace SchoolFlow.Web.Migrations.Sqlite
                         .HasMaxLength(20)
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("SignatureImageId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("StudentAccess")
                         .HasColumnType("INTEGER");
 
@@ -713,6 +716,40 @@ namespace SchoolFlow.Web.Migrations.Sqlite
                     b.HasIndex("RunId");
 
                     b.ToTable("RunEvents");
+                });
+
+            modelBuilder.Entity("SchoolFlow.Web.Data.SignatureImage", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<byte[]>("Data")
+                        .IsRequired()
+                        .HasColumnType("BLOB");
+
+                    b.Property<int>("Height")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("OwnerEmail")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("UsedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Width")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerEmail");
+
+                    b.ToTable("SignatureImages");
                 });
 
             modelBuilder.Entity("SchoolFlow.Web.Data.Team", b =>

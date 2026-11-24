@@ -380,13 +380,27 @@
           // "Sign with my name" fills in the signed-in person's name as First Last (owner, Nov 23, 2026).
           const box = input(h('input', { id, type: 'text', class: 'sf-signature', autocomplete: 'name', maxlength: 200, placeholder: 'Type your full name to sign' }), field.key, control);
           const myName = (document.body.dataset.myName || '').trim();
+          // With an uploaded signature picture (My Signature), signing with your own name signs with the
+          // picture: the server attaches it on submit, so the browser only shows a preview here.
+          const myPicture = myName ? (document.body.dataset.mySignature || '') : '';
+          const preview = myPicture ? h('div', { class: 'sf-sign-picture', hidden: true }, h('img', { src: myPicture, alt: 'Your signature' })) : null;
+          const showPicture = () => {
+            if (preview) preview.hidden = box.value.trim().toLowerCase() !== myName.toLowerCase();
+          };
+          if (preview) {
+            box.addEventListener('input', showPicture);
+            box.addEventListener('change', showPicture);
+            // values filled in later (a request sent back, a copied request) show it too
+            const set = control.set;
+            control.set = (v) => { set(v); showPicture(); };
+          }
           body = myName
-            ? h('div', { class: 'sf-sign-row' }, box, h('button', { type: 'button', class: 'btn small', onclick: () => {
+            ? h('div', null, h('div', { class: 'sf-sign-row' }, box, h('button', { type: 'button', class: 'btn small', onclick: () => {
                 if (box.disabled || box.readOnly) return;
                 box.value = myName;
                 box.dispatchEvent(new Event('input', { bubbles: true }));
                 box.dispatchEvent(new Event('change', { bubbles: true }));
-              } }, 'Sign with my name'))
+              } }, myPicture ? 'Sign' : 'Sign with my name')), preview)
             : box;
           break;
         }

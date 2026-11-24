@@ -109,7 +109,7 @@
     if (/^[0-9]/.test(s)) s = 'f_' + s;
     return s;
   };
-  const RESERVED = ['submitter', 'ticket', 'approval', 'approvals', 'run', 'event', 'chain', 'attachments', 'rates', 'task', '_previous', '_restart', 'true', 'false', 'null', 'blank', 'and', 'or', 'not'];
+  const RESERVED = ['submitter', 'ticket', 'approval', 'approvals', 'run', 'event', 'chain', 'attachments', 'rates', 'task', '_previous', '_restart', '_signatures', 'true', 'false', 'null', 'blank', 'and', 'or', 'not'];
   function uniqueKey(base, taken) {
     let key = RESERVED.includes(base) ? base + '_field' : base;
     let n = 2;

@@ -484,6 +484,18 @@ Known gaps (not requested yet, worth raising):
   (`GET /api/v2/tickets/{id}/conversations`, only `private: false`). Unverified against real Freshservice.
 - **Signature**: button fills `body[data-my-name]`; print shows the typed name + signed date (form
   fields: request created; task fields: task completed).
+- **Signature pictures** (owner, Nov 24, 2026, queue #14): menu → **My Signature**
+  (`/Account/Signature`) uploads a PNG (`Signatures.Check`: real PNG magic + IHDR + IEND, 500 KB,
+  20–4000 px; recommended 600 × 200 shown on the page). Stored in `SignatureImages` (rows never
+  change; `AppUser.SignatureImageId` = current). Owner's choice: if a picture exists, "Sign" signs
+  with it automatically. The browser only fills in the name; on submit / task done / resubmit
+  `RunService` calls `Signatures.Stamp`, which puts the **signer's own** current picture in the
+  run's `_signatures` (field key → picture id, reserved name) only when the answer equals their own
+  display name; an unchanged answer keeps its picture (snapshot). Used pictures get `UsedAt` and are
+  kept when replaced/removed (unused ones are deleted). Served by `SignaturesController`:
+  `/signatures/mine` (own only) and `/signatures/run/{id}/{key}` (`CanViewRunAsync`, else 404).
+  Request page and printout show the picture + "signed electronically". Not removed by retention
+  when a request is deleted (small; open item if it matters). Not browser-tested yet.
 
 ## Nov 23, 2026 batch 2 (queue #7–#11)
 

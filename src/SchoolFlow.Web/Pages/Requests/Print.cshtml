@@ -51,7 +51,11 @@
             }
             else if (f.SignedAt is DateTime signed)
             {
-                <dd class="print-signature"><span class="sig-name">@f.Value</span><span class="muted small">Signed electronically · @Ui.Local(signed).ToString("MMM d, yyyy h:mm tt")</span></dd>
+                <dd class="print-signature">
+                    @if (f.SignatureUrl is string signature) { <img class="sig-picture" src="@signature" alt="Signature of @f.Value" /> }
+                    else { <span class="sig-name">@f.Value</span> }
+                    <span class="muted small">@(f.SignatureUrl is null ? "" : f.Value + " · ")Signed electronically · @Ui.Local(signed).ToString("MMM d, yyyy h:mm tt")</span>
+                </dd>
             }
             else { <dd class="pre">@f.Value</dd> }
         }

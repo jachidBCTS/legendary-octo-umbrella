@@ -247,6 +247,23 @@ public class FormImage
     public string UpdatedBy { get; set; } = "";
 }
 
+/// <summary>
+/// A person's uploaded signature picture (PNG). Rows are never changed: a new upload is a new row, so a
+/// request signed with a picture keeps showing that picture even after the person replaces or removes
+/// theirs. A picture never used on a request is deleted when replaced or removed.
+/// </summary>
+public class SignatureImage
+{
+    public int Id { get; set; }
+    public string OwnerEmail { get; set; } = "";
+    public byte[] Data { get; set; } = Array.Empty<byte>();
+    public int Width { get; set; }
+    public int Height { get; set; }
+    public DateTime CreatedAt { get; set; }
+    /// <summary>When it was first put on a request (then it is kept as part of that record).</summary>
+    public DateTime? UsedAt { get; set; }
+}
+
 public class Team
 {
     public int Id { get; set; }
@@ -285,6 +302,8 @@ public class AppUser
     /// location (from the staff list), their whole district, or every district. See <see cref="StudentScopes"/>.
     /// </summary>
     public string StudentScope { get; set; } = StudentScopes.Location;
+    /// <summary>The person's current signature picture (<see cref="SignatureImage"/>), if they uploaded one.</summary>
+    public int? SignatureImageId { get; set; }
 }
 
 /// <summary>
@@ -507,6 +526,7 @@ public class AppDbContext : DbContext
     public DbSet<Team> Teams => Set<Team>();
     public DbSet<WorkflowCategory> Categories => Set<WorkflowCategory>();
     public DbSet<FormImage> FormImages => Set<FormImage>();
+    public DbSet<SignatureImage> SignatureImages => Set<SignatureImage>();
     public DbSet<WorkflowVersion> WorkflowVersions => Set<WorkflowVersion>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 
@@ -613,6 +633,11 @@ public class AppDbContext : DbContext
         {
             e.Property(x => x.Name).HasMaxLength(100);
             e.HasIndex(x => x.Name).IsUnique();
+        });
+        b.Entity<SignatureImage>(e =>
+        {
+            e.Property(x => x.OwnerEmail).HasMaxLength(320);
+            e.HasIndex(x => x.OwnerEmail);
         });
         b.Entity<FormImage>(e =>
         {

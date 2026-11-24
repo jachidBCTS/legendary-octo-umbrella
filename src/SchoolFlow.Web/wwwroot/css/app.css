@@ -1068,6 +1068,14 @@ html.a11y .form-group > summary::after { transition: none; }
 .print-signature { display: flex; flex-direction: column; gap: 2px; }
 .print-signature .sig-name { font-family: "Segoe Script", "Brush Script MT", "Snell Roundhand", cursive; font-size: 22px;
   border-bottom: 1px solid currentColor; padding: 0 4px 2px; width: max-content; min-width: 260px; max-width: 100%; }
+/* uploaded signature pictures (My Signature): scaled to fit a signature line, never wider than the box */
+.sf-sign-picture { margin-top: 6px; }
+.sf-sign-picture img, .sig-preview img, .print-signature .sig-picture { display: block; max-width: min(300px, 100%); max-height: 100px;
+  width: auto; height: auto; object-fit: contain; }
+.sig-preview { padding: 10px 14px; border: 1px dashed var(--line, #ccc); border-radius: 8px; background: #fff; width: max-content; max-width: 100%; margin-bottom: 6px; }
+.print-signature .sig-picture { border-bottom: 1px solid currentColor; padding: 0 4px 2px; min-width: 200px; }
+.sig-upload { display: grid; gap: 6px; margin: 12px 0; max-width: 520px; }
+.sig-upload input[type=file] { max-width: 100%; }
 /* ---- help desk ticket on the request page ---- */
 .ticket-live h2 .pill { margin-left: 8px; vertical-align: middle; }
 /* ---- notifications: daily summary choice ---- */

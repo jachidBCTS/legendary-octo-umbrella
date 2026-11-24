@@ -44,7 +44,7 @@ public class DetailModel : PageModel
 
     public sealed record FileLink(string Name, string Size, string Url);
     public sealed record Answer(string Label, string Value, List<string>? Columns = null, List<List<string>>? Rows = null, List<FileLink>? Files = null, bool Heading = false,
-        string? PreviousValue = null, DateTime? SignedAt = null);
+        string? PreviousValue = null, DateTime? SignedAt = null, string? SignatureUrl = null);
     /// <summary>Tasks (fill-in steps) waiting for this person on this request.</summary>
     public List<ApprovalTask> MyWork { get; private set; } = new();
     public string TaskFormJson { get; private set; } = "{}";
@@ -230,7 +230,8 @@ public class DetailModel : PageModel
             }
             else if (f.Type == FieldTypes.Signature)
             {
-                Fields.Add(new Answer(f.Label, Values.ToText(value).Trim(), PreviousValue: Was(f.Key), SignedAt: signedAt));
+                Fields.Add(new Answer(f.Label, Values.ToText(value).Trim(), PreviousValue: Was(f.Key), SignedAt: signedAt,
+                    SignatureUrl: Signatures.PictureFor(context, f.Key) is not null ? Signatures.UrlFor(run.Id, f.Key) : null));
             }
             else
             {

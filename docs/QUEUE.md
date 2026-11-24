@@ -24,11 +24,6 @@ Ask clarifying questions for unclear items in ONE message before starting.
   required-if, calculations) friendlier for non-technical staff — plain-language "When … then …"
   rule builder with pick-lists for fields/values, formulas only as an "advanced" fold-out. Look at
   the current UI and ask the owner what feels hardest before designing (big feature).
-- #14 Uploaded signature image (Nov 24): on their settings page a user can upload a PNG of their
-  signature and use it instead of the script-font "Sign with my name" signature (on the form and
-  printout). Server-side checks (real PNG, size limit), only the owner can set/remove it.
-  Show the recommended size next to the upload box (ⓘ tip): 600 × 200 px (3:1, wide), transparent
-  or white background, dark ink, max 500 KB; scale larger/smaller images to fit the signature line.
 
 ## Done
 
@@ -50,3 +45,5 @@ Ask clarifying questions for unclear items in ONE message before starting.
 - Red count badges in the menu (Nov 23, asked during the batch).
 - #11 Daily summary email (Nov 23): `AppUser.DigestMinute`/`DigestSentOn`, `EmailStatus.Held`,
   `EmailOutboxWorker.ProcessDigestsAsync`; school days only; urgent = sent back, escalated, overdue.
+- #14 Signature picture (Nov 24): menu → My Signature uploads a PNG (600 × 200 recommended, 500 KB);
+  "Sign" then signs with it (server attaches only the signer's own picture); request page + printout show it.
