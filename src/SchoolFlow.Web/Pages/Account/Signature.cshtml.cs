@@ -10,8 +10,8 @@ namespace SchoolFlow.Web.Pages.Account;
 /// "My Signature" (owner, Nov 24, 2026): each person may upload a PNG of their signature. "Sign" on a
 /// form's Signature field then signs with it instead of their name in script.
 /// </summary>
-[RequestSizeLimit(Signatures.MaxBytes + 64 * 1024)]
-[RequestFormLimits(MultipartBodyLengthLimit = Signatures.MaxBytes + 64 * 1024)]
+[RequestSizeLimit(10_000_000)] // well above the 500 KB limit, so a big photo gets our own message rather than a bare error page
+[RequestFormLimits(MultipartBodyLengthLimit = 10_000_000)]
 public class SignatureModel : PageModel
 {
     private readonly AppDbContext _db;

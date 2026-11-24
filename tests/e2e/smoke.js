@@ -176,7 +176,8 @@ async function login(page, email) {
   await page.click('.wf-tile:has-text("Technology Purchase") a.btn');
   await page.waitForSelector('.fld-card');
   await page.click('.fld-card:has-text("Line total"), .fld-card:has-text("Order total")');
-  await page.waitForSelector('.b-fx-status.ok');
+  await page.locator('.b-fx-status.ok').first().waitFor({ state: 'attached' });  // checked even while folded under "Advanced"
+  check(await page.locator('.bld-inspector .b-maker .b-cond').count() > 0, 'the calculation shows in the plain-language maker');
   await page.screenshot({ path: S + '/shots/07-builder-form.png' });
   await page.click('.bld-tabs button:has-text("Flow")');
   await page.waitForSelector('.fl-node');
@@ -230,7 +231,7 @@ async function login(page, email) {
   check((await page.locator('.bld-issues').textContent()).includes('“Cost” formula'), 'publish blocked with issue list');
   await page.locator('.bld-issues .issue').first().click();
   await page.locator('.bld-inspector textarea.b-formula').first().fill('hours * hourly_rate');
-  await page.waitForSelector('.b-fx-status.ok');
+  await page.locator('.bld-inspector .b-fx-status.ok').first().waitFor({ state: 'attached' });
   check(await page.locator('.bld-inspector .b-logic').first().locator('select[aria-label="Kind of calculation"]').inputValue() === 'mul', 'a typed formula in a simple shape shows again in the calculation maker');
   // The plain-language rule maker: "Required when Hours is more than 10".
   await page.locator('.fld-card:has-text("Hourly rate")').first().click();
