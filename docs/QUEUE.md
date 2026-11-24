@@ -20,6 +20,15 @@ Ask clarifying questions for unclear items in ONE message before starting.
   `prefers-reduced-motion`, Escape stops it, stage `pointer-events: none`. Walk = alternating
   legs-apart / legs-passing poses with a 6 px lift (owner: "good enough"). Optional later: two
   frames with the other leg leading would make the walk more natural.
+- #13 Form logic area too technical (Nov 24): make the builder's form logic (show/hide rules,
+  required-if, calculations) friendlier for non-technical staff — plain-language "When … then …"
+  rule builder with pick-lists for fields/values, formulas only as an "advanced" fold-out. Look at
+  the current UI and ask the owner what feels hardest before designing (big feature).
+- #14 Uploaded signature image (Nov 24): on their settings page a user can upload a PNG of their
+  signature and use it instead of the script-font "Sign with my name" signature (on the form and
+  printout). Server-side checks (real PNG, size limit), only the owner can set/remove it.
+  Show the recommended size next to the upload box (ⓘ tip): 600 × 200 px (3:1, wide), transparent
+  or white background, dark ink, max 500 KB; scale larger/smaller images to fit the signature line.
 
 ## Done
 
