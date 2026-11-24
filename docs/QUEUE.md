@@ -33,6 +33,14 @@ Ask clarifying questions for unclear items in ONE message before starting.
   Lay the category fold-outs side by side in 2 columns (category order kept: across, then down),
   filling that space; one column on phones. Owner's screenshot: Home, Nov 24.
 
+- #20 Help guide + floating "?" button (Nov 24): **waiting on the owner's approval of the draft**
+  (Claude Doc "Greenlight Help Guide (draft)": https://claude.ai/artifact/QobzUe6Vk6kdpL85cuJqeX).
+  Once approved: turn the approved text into an in-app Help page (sections: getting around, starting a
+  request, following it, approving and tasks, notifications/away/accessibility, tips and FAQs, getting
+  help), and add a floating round "?" button (bottom corner, every signed-in page, keyboard reachable,
+  `aria-label`) that opens it. Keep the guide in sync with features when they change. Fill in the help
+  desk contact the owner gives; open question in the draft: staff-only guide, or also builders/admins?
+
 ## Done
 
 - #12 Easter egg (Nov 24): `wwwroot/js/egg.js` + `.egg-*` in `app.css`; the "t" of the sidebar and
