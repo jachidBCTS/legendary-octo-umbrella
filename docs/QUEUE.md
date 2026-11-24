@@ -7,7 +7,12 @@ Ask clarifying questions for unclear items in ONE message before starting.
 
 ## Open
 
-(none)
+- #21 Custom ticket status names (Nov 24): Greenlight only knows Open/Pending/Resolved/Closed; custom
+  Freshservice statuses (e.g. "Pending client info", "Travel Pending") show as "In progress" in the
+  request page's ticket box (`TicketFields.StatusLabel`). Read the real status list from Freshservice
+  (`GET /api/v2/ticket_form_fields`, status choices; cache ~1 day, fall back to the built-in four) and
+  show the real name; also list custom statuses by name in the builder's ticket-status dropdowns.
+  Found testing request 47063.
 
 ## Done
 
