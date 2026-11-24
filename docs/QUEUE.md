@@ -42,6 +42,8 @@ Ask clarifying questions for unclear items in ONE message before starting.
   (Nov 24): everyday staff only (no builder/admin pages); the contact for Greenlight problems is the
   owner (ask at build time how to show them on the page: name only, no email unless they say so);
   don't mention that form questions go to departments; frame it as the same forms, now online.
+  The draft now has 6 annotated screenshots (orange numbered callouts + a numbered key under each);
+  regenerate them for the in-app page with `docs/help/help-shots.js` (notes at its top).
 
 ## Done
 
