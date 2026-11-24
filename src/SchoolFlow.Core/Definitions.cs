@@ -159,6 +159,9 @@ public sealed class FieldDef
     /// value (worked out by the server), and a request that is sent back keeps the value it was submitted with.
     /// </summary>
     public bool? ReadOnly { get; set; }
+    /// <summary>Text fields: "address" lists matching street addresses under the box as people type (queue #15).
+    /// The answer is still plain text: anything typed is kept, picked or not.</summary>
+    public string? Suggest { get; set; }
     /// <summary>Location and staff fields: only offer those in this district (e.g. "BCTS").</summary>
     public string? District { get; set; }
     /// <summary>Location and staff fields: only offer those in the district chosen in this other field of the form.</summary>

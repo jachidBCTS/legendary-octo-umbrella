@@ -7,45 +7,30 @@ Ask clarifying questions for unclear items in ONE message before starting.
 
 ## Open
 
-- #15 Address suggestions (Nov 24): as someone types an address (e.g. "540"), show matching full
-  addresses under the box (street + town, state) to pick from — like Google Maps' list, screenshot
-  sent by the owner. Doesn't have to be Google. To settle when starting: which fields get it (a new
-  "Address" field type in the builder vs. a switch on Text fields); which service (free options:
-  OpenStreetMap Photon/Nominatim, no key, ~1 search/sec fair-use; or a keyed one such as Geoapify,
-  Mapbox, Google). Lookups go through our server (CSP, rate limit, cache, no user details sent),
-  NJ/nearby results first, typed text always allowed if the service is down.
-
-- #16 Menu icon hover animation (Nov 24): the small icons in the left sidebar get a playful little
-  animation on hover (and keyboard focus) for "a bit more pizzazz". Keep it short and subtle; none
-  under `prefers-reduced-motion`; must not clash with the existing bell ring on unread notifications.
-- #17 Traffic-light logo (Nov 24): a red → yellow → green light animation on the Greenlight logo
-  mark. Ask at batch start: play once on page load, on hover, or both (not a constant loop, which
-  distracts)? Must keep working with the #12 easter-egg "t"; none under `prefers-reduced-motion`.
-
-- #18 All requests page (Nov 24): swap the Status and Form filters so the order is Any form, Any
-  status, Any department. Subtitle "Every request across the school." becomes "Every request from
-  across the district" (`Pages/Requests/Index.cshtml`; check other places with the same wording).
-  Ask at batch start: should the workflow-owner and department views keep their own subtitles
-  ("Requests submitted on the workflows you own"), since "every request" would not be true there?
-
-- #19 Home "Start a request" in two columns (Nov 24): each category fold-out holds one form card
-  and they stack in one narrow column, leaving empty space between it and "Your recent requests".
-  Lay the category fold-outs side by side in 2 columns (category order kept: across, then down),
-  filling that space; one column on phones. Owner's screenshot: Home, Nov 24.
-
-- #20 Help guide + floating "?" button (Nov 24): **waiting on the owner's approval of the draft**
-  (Claude Doc "Greenlight Help Guide (draft)": https://claude.ai/artifact/QobzUe6Vk6kdpL85cuJqeX).
-  Once approved: turn the approved text into an in-app Help page (sections: getting around, starting a
-  request, following it, approving and tasks, notifications/away/accessibility, tips and FAQs, getting
-  help), and add a floating round "?" button (bottom corner, every signed-in page, keyboard reachable,
-  `aria-label`) that opens it. Keep the guide in sync with features when they change. Owner's answers
-  (Nov 24): everyday staff only (no builder/admin pages); the contact for Greenlight problems is the
-  owner (ask at build time how to show them on the page: name only, no email unless they say so);
-  don't mention that form questions go to departments; frame it as the same forms, now online.
-  The draft now has 6 annotated screenshots (orange numbered callouts + a numbered key under each);
-  regenerate them for the in-app page with `docs/help/help-shots.js` (notes at its top).
+(none)
 
 ## Done
+
+- #15 Address suggestions (Nov 24): builder → Text field → "Suggest addresses as people type"
+  (`FieldDef.Suggest = "address"`; the answer stays plain text). `GET /api/addresses?q=` (3+ characters)
+  → `AddressLookup` (1-day cache, about 1 search/second site-wide, failure = "not connected", box keeps
+  working) → `PhotonAddressSource` (OpenStreetMap via photon.komoot.io, owner's choice; biased to
+  Hackensack; US only; "540 Main Street, Hackensack, NJ 07601"). Development uses `SampleAddressSource`.
+  `Addresses:Provider` photon | sample | off. Not tried against the real Photon service (no internet here).
+- #16 Menu icons (Nov 24): CSS keyframes per menu item on hover/keyboard focus (hop, drop, wiggle, spin,
+  blink, scribble, pop; bell rings only when there is no unread badge). Off under reduced motion and
+  accessibility mode.
+- #17 Logo (Nov 24): on hover (owner's choice) the mark goes red → yellow → green and the tick draws in
+  (`sf-traffic`, `.brand-check`). Easter egg "t" unchanged.
+- #18 All requests (Nov 24): filters Form, Status, Department; admin subtitle "Every request from across
+  the district." (also Reports). Workflow-owner and department views keep their own (owner's choice).
+- #19 Home (Nov 24): `.form-groups` puts the category fold-outs in 2 columns (one card per row inside);
+  one column under 640 px.
+- #20 Help (Nov 24): `/Guide` (`Pages/Guide.cshtml`), fold-out sections from the approved Claude Doc,
+  6 annotated screenshots in `wwwroot/img/help` (WebP, from `docs/help/help-shots.js`), contact
+  "Jacob Hidalgo" (owner's choice, name only). Round "?" button bottom right on every signed-in page
+  except builder pages; pages got 96 px more room at the bottom so it covers nothing. Update the guide
+  when a feature it describes changes.
 
 - #12 Easter egg (Nov 24): `wwwroot/js/egg.js` + `.egg-*` in `app.css`; the "t" of the sidebar and
   phone-bar logo is a button (`.egg-t`), the rest stays the Home link (`.brand-link`). Sprites in

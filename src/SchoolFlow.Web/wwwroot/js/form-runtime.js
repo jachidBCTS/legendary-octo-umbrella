@@ -503,6 +503,7 @@
           break;
         default:
           body = input(h('input', { id, type: 'text', placeholder: field.placeholder || null, maxlength: 10000 }), field.key, control);
+          if (field.type === 'text' && field.suggest === 'address' && !compact) body = addressSuggestions(body);
       }
 
       if (compact) {
@@ -551,6 +552,54 @@
         values[key] = el.value;
       };
       return el;
+    }
+
+    // Text fields with "Suggest addresses": matching addresses appear under the box as people type; picking one
+    // fills the box. The answer stays plain text, so a typed address that is not in the list is fine too.
+    function addressSuggestions(box) {
+      box.setAttribute('autocomplete', 'off');
+      box.setAttribute('role', 'combobox');
+      box.setAttribute('aria-autocomplete', 'list');
+      box.setAttribute('aria-expanded', 'false');
+      const list = h('div', { class: 'sf-suggest', hidden: true, role: 'listbox' });
+      let latest = 0;
+      const close = () => { list.hidden = true; box.setAttribute('aria-expanded', 'false'); };
+      const search = debounce(async () => {
+        const query = box.value.trim();
+        const mine = ++latest;
+        if (query.length < 3) { close(); return; }
+        let data;
+        try { data = await api('GET', '/api/addresses?q=' + encodeURIComponent(query)); } catch { close(); return; }
+        if (mine !== latest || document.activeElement !== box) return;
+        const items = data.items || [];
+        list.textContent = '';
+        if (items.length === 0) { close(); return; }   // nothing to offer: just keep typing
+        for (const item of items) {
+          list.appendChild(h('button', { type: 'button', class: 'sf-suggest-item', role: 'option', onmousedown: (e) => e.preventDefault(), onclick: () => {
+            box.value = item.label;
+            box.dispatchEvent(new Event('input', { bubbles: true }));
+            box.dispatchEvent(new Event('change', { bubbles: true }));
+            close();
+            box.focus();
+          } }, item.label));
+        }
+        list.hidden = false;
+        box.setAttribute('aria-expanded', 'true');
+      }, 300);
+      box.addEventListener('input', (e) => { if (e.isTrusted) search(); });
+      box.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') close();
+        if (e.key === 'ArrowDown' && !list.hidden) { e.preventDefault(); list.querySelector('button')?.focus(); }
+      });
+      list.addEventListener('keydown', (e) => {
+        const items = [...list.querySelectorAll('button')], i = items.indexOf(document.activeElement);
+        if (e.key === 'ArrowDown') { e.preventDefault(); items[Math.min(i + 1, items.length - 1)]?.focus(); }
+        if (e.key === 'ArrowUp') { e.preventDefault(); (i <= 0 ? box : items[i - 1]).focus(); }
+        if (e.key === 'Escape') { close(); box.focus(); }
+      });
+      const wrap = h('div', { class: 'sf-typeahead' }, box, list);
+      wrap.addEventListener('focusout', () => setTimeout(() => { if (!wrap.contains(document.activeElement)) close(); }, 150));
+      return wrap;
     }
 
     function buildLookupSelect(field, id, control) {

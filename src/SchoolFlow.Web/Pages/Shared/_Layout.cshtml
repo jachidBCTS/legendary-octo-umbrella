@@ -48,7 +48,7 @@
         @* The last letter of the name is its own button: it plays a small easter egg (js/egg.js). *@
         <div class="brand">
             <a class="brand-link" href="/" aria-label="Greenlight home">
-                <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M9 16.5l4.5 4.5L23 11.5" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32"><path class="brand-check" d="M9 16.5l4.5 4.5L23 11.5" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
                 <span>Greenligh</span></a><button type="button" class="egg-t" aria-label="A little surprise">t</button>
         </div>
         <nav>
@@ -132,6 +132,11 @@
         @RenderBody()
     </main>
 </div>
+@if (signedIn && !wide && !path.StartsWith("/Guide", StringComparison.OrdinalIgnoreCase))
+{
+    @* Floating help button on every signed-in page (queue #20); builder pages (wide) leave it out. *@
+    <a class="help-fab" href="/Guide" aria-label="Help: how to use Greenlight" title="Help">?</a>
+}
 <script src="~/js/common.js" asp-append-version="true"></script>
 @if (signedIn)
 {

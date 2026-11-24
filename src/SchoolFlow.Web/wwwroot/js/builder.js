@@ -821,6 +821,9 @@
 
     if (['text', 'textarea', 'number', 'currency', 'email', 'phone', 'lookup'].includes(field.type) && field.source !== 'departments')
       panel.append(row('Placeholder', textInput(field.placeholder, (v) => { field.placeholder = clean(v); })));
+    if (field.type === 'text')
+      panel.append(toggle('Suggest addresses as people type', field.suggest === 'address', (v) => { if (v) field.suggest = 'address'; else delete field.suggest; refresh(); }),
+        h('p', { class: 'b-help' }, 'Lists matching street addresses (from OpenStreetMap) under the box after a few characters, nearby ones first. Picking one fills the box; anything typed is still accepted.'));
 
     if (isSheet) {
       const toText = (rows) => (rows || []).map((r) => [r.number || '', r.item || '', r.description || '', r.cost || ''].join(' | ')).join('\n');

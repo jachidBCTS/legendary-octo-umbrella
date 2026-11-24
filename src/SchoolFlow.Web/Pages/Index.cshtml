@@ -62,6 +62,7 @@
         @if (User.IsBuilder()) { <a class="btn primary" href="/Builder">Open the workflow builder</a> }
     </div>
 }
+<div class="form-groups">
 @foreach (var group in Model.Groups)
 {
     var groupName = group.Key.Length == 0 ? "Other" : group.Key;
@@ -83,6 +84,7 @@
         </div>
     </details>
 }
+</div>
 </div>
 
 <aside class="home-side" aria-labelledby="recent-title">

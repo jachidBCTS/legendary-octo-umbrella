@@ -52,7 +52,7 @@ public class IndexModel : PageModel
         if (Scope is not ("managed" or "department") || (Scope == "managed" && !CanSeeManaged) || (Scope == "department" && !CanSeeDepartment))
             Scope = CanSeeManaged ? "managed" : "department";
         if (Period is not (30 or 90 or 365)) Period = 90;
-        ScopeLabel = Scope == "department" ? "The departments you give final approval for" : User.IsAdmin() ? "Every request across the school" : "The workflows you own";
+        ScopeLabel = Scope == "department" ? "The departments you give final approval for" : User.IsAdmin() ? "Every request from across the district" : "The workflows you own";
 
         var since = DateTime.UtcNow.AddDays(-Period);
         var query = _db.Runs.AsNoTracking().Where(r => r.CreatedAt >= since);

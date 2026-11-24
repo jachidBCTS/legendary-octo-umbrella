@@ -4,7 +4,7 @@
     var heading = Model.Scope switch { "managed" => User.IsAdmin() ? "All requests" : "Requests on my workflows", "department" => "My department's requests", _ => "My requests" };
     var blurb = Model.Scope switch
     {
-        "managed" => User.IsAdmin() ? "Every request across the school." : "Requests submitted on the workflows you own.",
+        "managed" => User.IsAdmin() ? "Every request from across the district." : "Requests submitted on the workflows you own.",
         "department" => "Requests filed under the departments you give final approval for.",
         _ => "Requests you have submitted.",
     };
@@ -26,13 +26,6 @@
 </div>
 <form method="get" class="filters">
     <input type="hidden" name="scope" value="@Model.Scope" />
-    <select name="status" data-autosubmit aria-label="Filter by status">
-        <option value="">Any status</option>
-        @foreach (var s in new[] { RunStatus.WaitingApproval, RunStatus.WaitingTask, RunStatus.ChangesRequested, RunStatus.WaitingTicket, RunStatus.Completed, RunStatus.Rejected, RunStatus.Failed, RunStatus.Cancelled })
-        {
-            <option value="@s" selected="@(Model.Status == s)">@Ui.Status(s).Label</option>
-        }
-    </select>
     @if (Model.Workflows.Count > 1)
     {
         <select name="workflow" data-autosubmit aria-label="Filter by form">
@@ -40,6 +33,13 @@
             @foreach (var w in Model.Workflows) { <option value="@w.Id" selected="@(Model.Workflow == w.Id)">@w.Name</option> }
         </select>
     }
+    <select name="status" data-autosubmit aria-label="Filter by status">
+        <option value="">Any status</option>
+        @foreach (var s in new[] { RunStatus.WaitingApproval, RunStatus.WaitingTask, RunStatus.ChangesRequested, RunStatus.WaitingTicket, RunStatus.Completed, RunStatus.Rejected, RunStatus.Failed, RunStatus.Cancelled })
+        {
+            <option value="@s" selected="@(Model.Status == s)">@Ui.Status(s).Label</option>
+        }
+    </select>
     @if (Model.Departments.Count > 0)
     {
         <select name="department" data-autosubmit aria-label="Filter by department">

@@ -129,6 +129,26 @@ else if (builder.Environment.IsDevelopment())
 }
 builder.Services.AddScoped<PerDiemService>();
 
+// ---- Address suggestions (text fields with "Suggest addresses") ---------------------------------
+// OpenStreetMap through Photon by default (free, no key; owner's choice, Nov 24, 2026). Addresses:Provider
+// "off" switches it off, "sample" uses made-up local addresses (the default in Development, which has no
+// internet in tests). Addresses:BaseUrl points at another Photon server if the school runs its own.
+var addressProvider = (config["Addresses:Provider"] ?? (builder.Environment.IsDevelopment() ? "sample" : "photon")).Trim().ToLowerInvariant();
+if (addressProvider == "photon")
+{
+    var photonBase = config["Addresses:BaseUrl"];
+    builder.Services.AddSingleton<IAddressSource>(_ => new PhotonAddressSource(new HttpClient
+    {
+        BaseAddress = new Uri((string.IsNullOrWhiteSpace(photonBase) ? "https://photon.komoot.io" : photonBase.TrimEnd('/')) + "/"),
+        Timeout = TimeSpan.FromSeconds(5),
+        // The public service asks callers to name their app; no person or school details are sent.
+        DefaultRequestHeaders = { { "User-Agent", "Greenlight-school-forms/1.0" }, { "Accept", "application/json" } },
+    }));
+}
+else if (addressProvider == "sample") builder.Services.AddSingleton<IAddressSource, SampleAddressSource>();
+else builder.Services.AddSingleton<IAddressSource, NoAddressSource>();
+builder.Services.AddSingleton<AddressLookup>();
+
 // ---- Freshservice -----------------------------------------------------------------------
 var fsDomain = config["Freshservice:Domain"];
 var fsKey = config["Freshservice:ApiKey"];

@@ -26,7 +26,7 @@ Replace `schoolflow.yourschool.org`, `YOUR-SQL-SERVER` and `YOURDOMAIN` with you
 | An empty SQL Server database | Created by your DBA (section 3) |
 | A Microsoft Entra app registration | Section 5 |
 | A Freshservice API key | From a dedicated Freshservice agent account |
-| Outbound internet from the server (port 443) | To `login.microsoftonline.com`, `graph.microsoft.com`, `yourschool.freshservice.com` and `api.gsa.gov` (travel per diem rates) |
+| Outbound internet from the server (port 443) | To `login.microsoftonline.com`, `graph.microsoft.com`, `yourschool.freshservice.com` and `api.gsa.gov` (travel per diem rates) and `photon.komoot.io` (address suggestions) |
 | Inbound 443 from the internet | For staff off-site and for the Freshservice webhook |
 
 ## 2. Getting the package
@@ -149,6 +149,8 @@ On the server, copy `appsettings.Production.example.json` (in the package) to
   decide who sees which students; `Students:Match:Districts`/`Locations` translate the staff list's
   place names into the roster's where they differ.
   Then use **Admin → Student access → Check the connection**. Leave it out and Student fields find nobody.
+- `Addresses:Provider` — address suggestions on text fields: `photon` (default: OpenStreetMap, free, no key), or
+  `off`. `Addresses:BaseUrl` points at another Photon server if you ever run your own.
 - `Gsa:ApiKey` — the api.data.gov key for GSA's per diem rates (travel form). Without it the travel
   form uses the "GSA fallback" amounts on Admin → Rates and flags each request.
 - `Email` — leave `Mode` as `Off` until sign-in works; see the README to turn it on.
