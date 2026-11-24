@@ -53,6 +53,7 @@ public class SettingsModel : PageModel
     /// <summary>The Freshservice ticket form's fields, when an admin asked to see them.</summary>
     public IReadOnlyList<SchoolFlow.Core.Freshservice.TicketField>? TicketFields { get; private set; }
     public string? TicketFieldsError { get; private set; }
+    public IReadOnlyList<(int Value, string Label)>? TicketStatuses { get; private set; }
 
     public async Task OnPostTicketFieldsAsync(CancellationToken ct)
     {
@@ -60,6 +61,10 @@ public class SettingsModel : PageModel
         {
             TicketFields = await _freshservice.TicketFieldsAsync(ct);
             if (TicketFields.Count == 0) TicketFieldsError = "Freshservice returned no ticket fields.";
+            // Also refresh the status names the rest of the site uses.
+            var names = HttpContext.RequestServices.GetRequiredService<TicketStatusNames>();
+            names.Forget();
+            TicketStatuses = await names.AllAsync(ct);
         }
         catch (Exception ex) when (ex is FreshserviceException or HttpRequestException or TaskCanceledException)
         {

@@ -7,15 +7,16 @@ Ask clarifying questions for unclear items in ONE message before starting.
 
 ## Open
 
-- #21 Custom ticket status names (Nov 24): Greenlight only knows Open/Pending/Resolved/Closed; custom
-  Freshservice statuses (e.g. "Pending client info", "Travel Pending") show as "In progress" in the
-  request page's ticket box (`TicketFields.StatusLabel`). Read the real status list from Freshservice
-  (`GET /api/v2/ticket_form_fields`, status choices; cache ~1 day, fall back to the built-in four) and
-  show the real name; also list custom statuses by name in the builder's ticket-status dropdowns.
-  Found testing request 47063.
+(none)
 
 ## Done
 
+- #21 Custom ticket status names (Nov 24): `TicketStatusNames` (Web service) reads the Status field's
+  choices (`IFreshserviceClient.TicketStatusesAsync` → `ticket_form_fields`, `FreshserviceClient.ParseStatuses`),
+  cached 1 day (10 min after a failure, standard four meanwhile). Request page ticket box shows the real
+  name (custom "…pending…" names get the Pending colour); builder status dropdowns and the rule maker list
+  them by name (`ticketStatuses` from `GET /api/builder/{id}`); Settings → "Show ticket fields" also lists
+  statuses with numbers and refreshes the cached list. Simulation adds 6 "Pending client info", 7 "Travel Pending".
 - #15 Address suggestions (Nov 24): builder → Text field → "Suggest addresses as people type"
   (`FieldDef.Suggest = "address"`; the answer stays plain text). `GET /api/addresses?q=` (3+ characters)
   → `AddressLookup` (1-day cache, about 1 search/second site-wide, failure = "not connected", box keeps

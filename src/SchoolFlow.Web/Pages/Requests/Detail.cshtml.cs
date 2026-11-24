@@ -248,7 +248,8 @@ public class DetailModel : PageModel
     {
         if (!await LoadAsync(id)) return NotFound();
         if (Run.TicketId is long ticketId)
-            Ticket = await TicketView.LoadAsync(_freshservice, HttpContext.RequestServices.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>(), ticketId, ct);
+            Ticket = await TicketView.LoadAsync(_freshservice, HttpContext.RequestServices.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>(),
+                HttpContext.RequestServices.GetRequiredService<TicketStatusNames>(), ticketId, ct);
         return Page();
     }
 

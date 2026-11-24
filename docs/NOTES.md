@@ -490,6 +490,11 @@ Known gaps (not requested yet, worth raising):
   wait ends, so "did it wait?" is answerable; all lookups also check `Status == WaitingTicket`.
 - **Live ticket** on the request page: `TicketView.LoadAsync` → `GetTicketAsync` + `PublicRepliesAsync`
   (`GET /api/v2/tickets/{id}/conversations`, only `private: false`). Unverified against real Freshservice.
+- **Ticket status names** (queue #21, Nov 24): custom statuses by name via `TicketStatusNames`
+  (see QUEUE #21). The shape of the Status field's choices in real Freshservice is **unverified**; the parser
+  accepts [{id,value}], {"6":"Name"}, {"6":["Name",…]} and {"Name":6}, and a list without 2–5 (internal ids)
+  falls back to the standard four, which then show "In progress" for custom numbers as before.
+  Check: Settings → Show ticket fields → the "Ticket statuses" line should list e.g. "6 Pending client info".
 - **Signature**: button fills `body[data-my-name]`; print shows the typed name + signed date (form
   fields: request created; task fields: task completed).
 - **Signature pictures** (owner, Nov 24, 2026, queue #14): menu → **My Signature**

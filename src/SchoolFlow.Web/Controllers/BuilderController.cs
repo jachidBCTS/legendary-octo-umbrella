@@ -88,6 +88,9 @@ public sealed class BuilderController : ControllerBase
             teams = await _db.Teams.AsNoTracking().OrderBy(t => t.Name).Select(t => t.Name).ToListAsync(ct),
             categories = await Categories.NamesAsync(_db, ct),
             letterhead = await LetterheadInfoAsync(w.Id, ct),
+            // The help desk's statuses, custom ones included, for the ticket-status choices (queue #21).
+            ticketStatuses = (await HttpContext.RequestServices.GetRequiredService<TicketStatusNames>().AllAsync(ct))
+                .Select(s => new { value = s.Value, label = s.Label }),
         }, Json.Options);
     }
 

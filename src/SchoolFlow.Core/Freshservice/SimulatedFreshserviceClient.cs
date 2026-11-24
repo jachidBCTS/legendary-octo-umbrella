@@ -177,6 +177,10 @@ public sealed class SimulatedFreshserviceClient : IFreshserviceClient
             new TicketField("cf_availability", "Availability", "custom_paragraph", false, Array.Empty<string>()),
         });
 
+    /// <summary>The standard four plus two custom ones, like a real help desk with statuses added.</summary>
+    public Task<IReadOnlyList<(int Value, string Label)>> TicketStatusesAsync(CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<(int Value, string Label)>>(TicketFields.Statuses.Concat(new[] { (6, "Pending client info"), (7, "Travel Pending") }).ToList());
+
     private static int StableHash(string s)
     {
         unchecked

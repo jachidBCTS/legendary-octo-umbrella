@@ -98,6 +98,10 @@ public interface IFreshserviceClient
     /// <summary>The fields on the ticket form, with their API names and choices (for setting up Create ticket steps).</summary>
     Task<IReadOnlyList<TicketField>> TicketFieldsAsync(CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<TicketField>>(Array.Empty<TicketField>());
+
+    /// <summary>Every ticket status with its number, including ones added in Freshservice (e.g. "Pending client info").</summary>
+    Task<IReadOnlyList<(int Value, string Label)>> TicketStatusesAsync(CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<(int Value, string Label)>>(TicketFields.Statuses);
 }
 
 public static class TicketFields
@@ -105,7 +109,22 @@ public static class TicketFields
     public static readonly (int Value, string Label)[] Priorities = { (1, "Low"), (2, "Medium"), (3, "High"), (4, "Urgent") };
     public static readonly (int Value, string Label)[] Statuses = { (2, "Open"), (3, "Pending"), (4, "Resolved"), (5, "Closed") };
 
-    /// <summary>A ticket status number as a word; custom statuses (not in the list) read "In progress".</summary>
-    public static string StatusLabel(int status) =>
-        Statuses.Where(s => s.Value == status).Select(s => s.Label).FirstOrDefault() ?? "In progress";
+    /// <summary>
+    /// A ticket status number as a word: from <paramref name="known"/> (the help desk's own list, custom
+    /// statuses included) when given, else the standard four; a number found in neither reads "In progress".
+    /// </summary>
+    public static string StatusLabel(int status, IEnumerable<(int Value, string Label)>? known = null) =>
+        (known ?? Statuses).Concat(Statuses).Where(s => s.Value == status).Select(s => s.Label).FirstOrDefault() ?? "In progress";
+
+    /// <summary>
+    /// The standard four plus the custom ones, by number. A list that lacks the standard numbers is not
+    /// trusted (its numbers are probably internal ids, not status numbers): the standard four are returned.
+    /// </summary>
+    public static IReadOnlyList<(int Value, string Label)> WithStandard(IEnumerable<(int Value, string Label)> found)
+    {
+        var list = found.Where(s => s.Value > 0 && !string.IsNullOrWhiteSpace(s.Label))
+            .GroupBy(s => s.Value).Select(g => (g.Key, g.First().Label.Trim())).ToList();
+        if (!Statuses.All(s => list.Any(f => f.Item1 == s.Value))) return Statuses;
+        return list.OrderBy(s => s.Item1).Select(s => (s.Item1, s.Item2)).ToList();
+    }
 }

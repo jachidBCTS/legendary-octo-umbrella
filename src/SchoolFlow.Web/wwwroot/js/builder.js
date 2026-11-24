@@ -97,6 +97,8 @@
     isAdmin: false,
     canEditForm: true,
     teams: [],
+    // The help desk's ticket statuses, custom ones included ([number, name]); the standard four until loaded.
+    ticketStatuses: [['2', 'Open'], ['3', 'Pending'], ['4', 'Resolved'], ['5', 'Closed']],
   };
   const autoKeys = new WeakSet(); // fields whose key still follows the label
   let preview = null;
@@ -157,6 +159,7 @@
       state.isAdmin = !!data.isAdmin;
       state.canEditForm = data.canEditForm !== false;
       state.teams = data.teams || [];
+      if (data.ticketStatuses && data.ticketStatuses.length) state.ticketStatuses = data.ticketStatuses.map((s) => [String(s.value), s.label]);
       state.def = normalise(data.definition);
       state.publishedVersion = data.publishedVersion;
       state.isPublished = data.isPublished;
@@ -406,7 +409,7 @@
       items.push(['submitter.name', 'Name of the person submitting'], ['submitter.email', 'Email of the person submitting']);
     }
     if (opts.context === 'flow') {
-      items.push(['ticket.id', 'Ticket number'], ['ticket.status', 'Ticket status (2 Open, 3 Pending, 4 Resolved, 5 Closed)'],
+      items.push(['ticket.id', 'Ticket number'], ['ticket.status', 'Ticket status (' + state.ticketStatuses.map((s) => s[0] + ' ' + s[1]).join(', ') + ')'],
         ['ticket.priority', 'Ticket priority (1 Low … 4 Urgent)'], ['ticket.subject', 'Ticket subject'],
         ['approval.by', 'Who made the last approval decision'], ['approval.comment', "The approver's comment"],
         ['approval.approved', 'True if the last decision was Approve'], ['run.id', 'Request number in Greenlight'],
@@ -446,7 +449,7 @@
     };
     const FLOW = {
       'ticket.priority': { kind: 'numchoice', options: [['1', 'Low'], ['2', 'Medium'], ['3', 'High'], ['4', 'Urgent']] },
-      'ticket.status': { kind: 'numchoice', options: [['2', 'Open'], ['3', 'Pending'], ['4', 'Resolved'], ['5', 'Closed']] },
+      'ticket.status': { kind: 'numchoice', options: state.ticketStatuses },
       'approval.approved': { kind: 'bool' }, 'ticket.id': { kind: 'number' }, 'run.id': { kind: 'number' },
     };
     const out = [];
@@ -1428,21 +1431,21 @@
     const tpl = (key, rows, placeholder) => formulaInput(c[key], set(key), { template: true, context: 'flow', rows: rows || 1, placeholder });
     const fx = (key, placeholder) => formulaInput(c[key], set(key), { context: 'flow', placeholder });
     const PRIORITY = [['1', 'Low'], ['2', 'Medium'], ['3', 'High'], ['4', 'Urgent']];
-    const STATUS = [['2', 'Open'], ['3', 'Pending'], ['4', 'Resolved'], ['5', 'Closed']];
-    /** The four standard statuses, or the number of a status you added in Freshservice (e.g. "Travel Pending"). */
+    const STATUS = state.ticketStatuses;
+    /** The help desk's statuses by name (custom ones included), or the number of one not listed. */
     const statusControl = (c, allowBlank) => {
       const standard = STATUS.map((s) => s[0]);
       const isCustom = () => !!c.status && !standard.includes(String(c.status));
       const number = h('input', { type: 'number', min: 6, max: 999, step: 1, placeholder: 'Status number from Freshservice', value: isCustom() ? c.status : '', hidden: !isCustom(), 'aria-label': 'Custom status number' });
       number.addEventListener('input', () => { c.status = number.value.trim(); markDirty(); });
-      const options = (allowBlank ? [['', 'Don\'t change']] : []).concat(STATUS, [['custom', 'A status you added in Freshservice…']]);
+      const options = (allowBlank ? [['', 'Don\'t change']] : []).concat(STATUS, [['custom', 'Another status number…']]);
       const choice = select(isCustom() ? 'custom' : (c.status || (allowBlank ? '' : '2')), options, (v) => {
         number.hidden = v !== 'custom';
         c.status = v === 'custom' ? number.value.trim() : v;
         markDirty();
       });
       return h('div', { class: 'b-status' }, choice, number,
-        h('p', { class: 'b-help' }, 'For a custom status, enter its number. Freshservice shows it in Admin → Field Manager → Ticket Fields → Status, or in ticket.status of a webhook event.'));
+        h('p', { class: 'b-help' }, 'Statuses added in Freshservice are listed by name. If one is missing, enter its number (Freshservice: Admin → Field Manager → Ticket Fields → Status).'));
     };
     // Reminder and escalation settings shared by the two approval steps.
     const people = (key, placeholder) => {

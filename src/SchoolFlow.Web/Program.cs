@@ -162,6 +162,7 @@ else
 {
     builder.Services.AddSingleton<IFreshserviceClient, SimulatedFreshserviceClient>();
 }
+builder.Services.AddSingleton<TicketStatusNames>();
 
 // ---- Notifications and email ------------------------------------------------------------
 var emailSettings = new EmailSettings(config);

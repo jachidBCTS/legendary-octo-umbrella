@@ -51,6 +51,10 @@
             </table>
         </div>
     }
+    @if (Model.TicketStatuses is { Count: > 0 } statuses)
+    {
+        <p class="small"><strong>Ticket statuses</strong> <span class="muted">(number · name, as Greenlight shows them)</span>: @string.Join(" · ", statuses.Select(s => s.Value + " " + s.Label))</p>
+    }
 </section>
 
 <section class="panel">

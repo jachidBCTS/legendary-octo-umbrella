@@ -11,7 +11,7 @@ namespace SchoolFlow.Web.Services;
 /// </summary>
 public sealed record TicketView(long Id, string Status, string Css, IReadOnlyList<TicketReply> Replies, bool Unavailable)
 {
-    public static async Task<TicketView> LoadAsync(IFreshserviceClient freshservice, IMemoryCache cache, long ticketId, CancellationToken ct)
+    public static async Task<TicketView> LoadAsync(IFreshserviceClient freshservice, IMemoryCache cache, TicketStatusNames statuses, long ticketId, CancellationToken ct)
     {
         var key = "ticket-view:" + ticketId;
         if (cache.TryGetValue(key, out TicketView? cached) && cached is not null) return cached;
@@ -25,8 +25,9 @@ public sealed record TicketView(long Id, string Status, string Css, IReadOnlyLis
             else
             {
                 var number = Values.TryToNumber(ticket.GetValueOrDefault("status"), out var n) ? (int)n : 0;
-                var label = TicketFields.StatusLabel(number);
-                var css = number switch { 4 or 5 => "ok", 3 => "warn", _ => "info" };
+                var label = TicketFields.StatusLabel(number, await statuses.AllAsync(ct));
+                // Custom statuses that wait on someone ("Pending client info") look like Pending.
+                var css = number switch { 4 or 5 => "ok", 3 => "warn", _ when label.Contains("pending", StringComparison.OrdinalIgnoreCase) => "warn", _ => "info" };
                 var replies = await freshservice.PublicRepliesAsync(ticketId, limit.Token);
                 view = new TicketView(ticketId, label, css, replies, false);
             }

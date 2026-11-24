@@ -383,3 +383,40 @@ public class FreshserviceClientTests
     public void BaseAddress_RejectsUnsafe(string input) =>
         Assert.Throws<FreshserviceException>(() => FreshserviceClient.BaseAddressFor(input));
 }
+
+/// <summary>Queue #21: custom Freshservice status names.</summary>
+public class TicketStatusTests
+{
+    private static IReadOnlyList<(int Value, string Label)> Parse(string json)
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        return FreshserviceClient.ParseStatuses(doc.RootElement);
+    }
+
+    [Theory]
+    [InlineData("""[{"id":2,"value":"Open"},{"id":3,"value":"Pending"},{"id":4,"value":"Resolved"},{"id":5,"value":"Closed"},{"id":6,"value":"Pending client info"}]""")]
+    [InlineData("""{"2":["Open","Being processed"],"3":["Pending","Awaiting"],"4":"Resolved","5":"Closed","6":"Pending client info"}""")]
+    [InlineData("""{"Open":2,"Pending":3,"Resolved":4,"Closed":5,"Pending client info":6}""")]
+    public void ParseStatuses_ReadsCustomStatusesInEachShape(string choices)
+    {
+        var list = Parse("""{"ticket_fields":[{"name":"subject","choices":[]},{"name":"status","choices":""" + choices + "}]}");
+        Assert.Equal(new[] { 2, 3, 4, 5, 6 }, list.Select(s => s.Value));
+        Assert.Equal("Pending client info", TicketFields.StatusLabel(6, list));
+        Assert.Equal("Open", TicketFields.StatusLabel(2, list));
+    }
+
+    [Fact]
+    public void ParseStatuses_InternalIdsFallBackToTheStandardFour()
+    {
+        var list = Parse("""{"ticket_fields":[{"name":"status","choices":[{"id":91000001,"value":"Open"},{"id":91000002,"value":"Pending client info"}]}]}""");
+        Assert.Equal(TicketFields.Statuses, list);
+        Assert.Equal(TicketFields.Statuses, Parse("""{"ticket_fields":[]}"""));
+    }
+
+    [Fact]
+    public void StatusLabel_UnknownNumberReadsInProgress()
+    {
+        Assert.Equal("In progress", TicketFields.StatusLabel(9));
+        Assert.Equal("Resolved", TicketFields.StatusLabel(4, new[] { (6, "Travel Pending") }));
+    }
+}

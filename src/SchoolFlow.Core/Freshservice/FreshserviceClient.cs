@@ -403,6 +403,56 @@ public sealed class FreshserviceClient : IFreshserviceClient
         return ParseTicketFields(doc!.RootElement);
     }
 
+    /// <summary>The Status field's choices from GET api/v2/ticket_form_fields, numbers and names.</summary>
+    public async Task<IReadOnlyList<(int Value, string Label)>> TicketStatusesAsync(CancellationToken ct = default)
+    {
+        using var doc = await SendAsync(HttpMethod.Get, "api/v2/ticket_form_fields", null, ct);
+        return ParseStatuses(doc!.RootElement);
+    }
+
+    /// <summary>
+    /// Status choices in any of the shapes help desks use: [{ id, value }], { "2": "Open" } or
+    /// { "2": ["Open", "Being processed"] }, or { "Open": 2 }. Unverified against real Freshservice,
+    /// so a result without the standard numbers 2–5 falls back to the standard four.
+    /// </summary>
+    public static IReadOnlyList<(int Value, string Label)> ParseStatuses(JsonElement root)
+    {
+        var found = new List<(int, string)>();
+        if (root.TryGetProperty("ticket_fields", out var fields) && fields.ValueKind == JsonValueKind.Array)
+            foreach (var f in fields.EnumerateArray())
+            {
+                if (!string.Equals(Str(f, "name"), "status", StringComparison.OrdinalIgnoreCase)) continue;
+                if (!f.TryGetProperty("choices", out var c)) break;
+                if (c.ValueKind == JsonValueKind.Array)
+                    foreach (var item in c.EnumerateArray())
+                    {
+                        if (item.ValueKind != JsonValueKind.Object) continue;
+                        var number = Int(item, "display_id") ?? Int(item, "id");
+                        var label = Str(item, "value") ?? Str(item, "name") ?? Str(item, "label");
+                        if (number is int n && label is not null) found.Add((n, label));
+                    }
+                else if (c.ValueKind == JsonValueKind.Object)
+                    foreach (var p in c.EnumerateObject())
+                    {
+                        if (int.TryParse(p.Name, out var n))
+                        {
+                            var label = p.Value.ValueKind == JsonValueKind.String ? p.Value.GetString()
+                                : p.Value.ValueKind == JsonValueKind.Array && p.Value.GetArrayLength() > 0 && p.Value[0].ValueKind == JsonValueKind.String ? p.Value[0].GetString()
+                                : null;
+                            if (label is not null) found.Add((n, label));
+                        }
+                        else if (p.Value.ValueKind == JsonValueKind.Number && p.Value.TryGetInt32(out var v)) found.Add((v, p.Name));
+                    }
+                break;
+            }
+        return TicketFields.WithStandard(found);
+    }
+
+    private static int? Int(JsonElement e, string name) =>
+        !e.TryGetProperty(name, out var v) ? null
+        : v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var n) ? n
+        : v.ValueKind == JsonValueKind.String && int.TryParse(v.GetString(), out var s) ? s : null;
+
     public static IReadOnlyList<TicketField> ParseTicketFields(JsonElement root)
     {
         var list = new List<TicketField>();

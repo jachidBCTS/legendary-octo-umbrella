@@ -1683,6 +1683,15 @@ async function login(page, email) {
   check((await page.locator('.panel .flash').first().textContent()).includes('Simulation mode'), 'test connection reports simulation');
   check((await page.locator('body').textContent()).includes('resumed 1 waiting'), 'webhook log shown');
   await page.screenshot({ path: S + '/shots/12-settings.png', fullPage: true });
+  await page.click('button:has-text("Show ticket fields")');
+  check((await page.locator('body').textContent()).includes('6 Pending client info'), 'settings lists custom ticket statuses');
+  await page.goto(base + '/Builder/Edit/1');
+  check(await page.evaluate(async () => {
+    const r = await fetch('/api/builder/1');
+    const d = await r.json();
+    return (d.ticketStatuses || []).some((s) => s.value === 6 && s.label === 'Pending client info');
+  }), 'builder gets custom ticket statuses');
+  await page.goto(base + '/Admin/Settings');
   await page.locator('tr:has-text("teacher@example.org") select').selectOption('Builder');
   await page.waitForSelector('.flash.ok');
   await page.goto(base + '/Help/Formulas');
