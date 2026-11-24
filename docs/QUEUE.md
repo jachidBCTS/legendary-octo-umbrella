@@ -28,6 +28,11 @@ Ask clarifying questions for unclear items in ONE message before starting.
   Ask at batch start: should the workflow-owner and department views keep their own subtitles
   ("Requests submitted on the workflows you own"), since "every request" would not be true there?
 
+- #19 Home "Start a request" in two columns (Nov 24): each category fold-out holds one form card
+  and they stack in one narrow column, leaving empty space between it and "Your recent requests".
+  Lay the category fold-outs side by side in 2 columns (category order kept: across, then down),
+  filling that space; one column on phones. Owner's screenshot: Home, Nov 24.
+
 ## Done
 
 - #12 Easter egg (Nov 24): `wwwroot/js/egg.js` + `.egg-*` in `app.css`; the "t" of the sidebar and
