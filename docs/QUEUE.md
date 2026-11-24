@@ -14,6 +14,8 @@ Ask clarifying questions for unclear items in ONE message before starting.
 - #13 Uploaded signature image (Nov 24): on their settings page a user can upload a PNG of their
   signature and use it instead of the script-font "Sign with my name" signature (on the form and
   printout). Server-side checks (real PNG, size limit), only the owner can set/remove it.
+  Show the recommended size next to the upload box (ⓘ tip): 600 × 200 px (3:1, wide), transparent
+  or white background, dark ink, max 500 KB; scale larger/smaller images to fit the signature line.
 
 ## Done
 
