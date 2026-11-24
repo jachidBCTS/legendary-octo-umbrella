@@ -22,6 +22,12 @@ Ask clarifying questions for unclear items in ONE message before starting.
   mark. Ask at batch start: play once on page load, on hover, or both (not a constant loop, which
   distracts)? Must keep working with the #12 easter-egg "t"; none under `prefers-reduced-motion`.
 
+- #18 All requests page (Nov 24): swap the Status and Form filters so the order is Any form, Any
+  status, Any department. Subtitle "Every request across the school." becomes "Every request from
+  across the district" (`Pages/Requests/Index.cshtml`; check other places with the same wording).
+  Ask at batch start: should the workflow-owner and department views keep their own subtitles
+  ("Requests submitted on the workflows you own"), since "every request" would not be true there?
+
 ## Done
 
 - #12 Easter egg (Nov 24): `wwwroot/js/egg.js` + `.egg-*` in `app.css`; the "t" of the sidebar and
