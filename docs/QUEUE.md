@@ -7,7 +7,10 @@ Ask clarifying questions for unclear items in ONE message before starting.
 
 ## Open
 
-(none)
+- #12 Form logic area too technical (Nov 24): make the builder's form logic (show/hide rules,
+  required-if, calculations) friendlier for non-technical staff — plain-language "When … then …"
+  rule builder with pick-lists for fields/values, formulas only as an "advanced" fold-out. Look at
+  the current UI and ask the owner what feels hardest before designing (big feature).
 
 ## Done
 
