@@ -72,7 +72,7 @@
   // Matches FieldTypes.InTask on the server.
   const TASK_FIELD_TYPES = [['text', 'Text'], ['textarea', 'Paragraph'], ['email', 'Email'], ['phone', 'Phone number'], ['number', 'Number'], ['currency', 'Currency'],
     ['date', 'Date'], ['time', 'Time'], ['select', 'Dropdown'], ['radio', 'Choice buttons'], ['multiselect', 'Checkboxes'], ['checkbox', 'Yes / no'],
-    ['attachments', 'Attachments'], ['calculated', 'Calculated'], ['staff', 'Staff member'], ['section', 'Section heading']];
+    ['attachments', 'Attachments'], ['calculated', 'Calculated'], ['staff', 'Staff member'], ['signature', 'Signature'], ['section', 'Section heading']];
   NODE_INFO.start = { type: 'start', label: 'Start', hint: '', tone: 'indigo' };
   const APPROVAL_PORTS = [['approved', 'Approved'], ['rejected', 'Rejected']];
   const PORTS = { condition: [['true', 'Yes'], ['false', 'No']], approval: APPROVAL_PORTS, approval_chain: APPROVAL_PORTS, end: [] };

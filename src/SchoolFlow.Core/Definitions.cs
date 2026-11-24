@@ -96,7 +96,7 @@ public static class FieldTypes
     /// <summary>Field types a Task step can ask its assignee for.</summary>
     public static readonly string[] InTask =
     {
-        Text, TextArea, Email, Number, Currency, Date, Time, Phone, Select, Radio, MultiSelect, Checkbox, Calculated, Attachments, Section, Staff,
+        Text, TextArea, Email, Number, Currency, Date, Time, Phone, Select, Radio, MultiSelect, Checkbox, Calculated, Attachments, Section, Staff, Signature,
     };
 
     /// <summary>Field types that can be placed inside a worksheet row.</summary>

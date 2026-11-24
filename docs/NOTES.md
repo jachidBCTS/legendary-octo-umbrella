@@ -515,3 +515,6 @@ Known gaps (not requested yet, worth raising):
 - **Chains**: personal → shared template is a move (owner's choice), builders/admins only.
 - **Email suggestion list** is re-parented into an open modal `<dialog>` so it shows on top.
 - **Review brief** for outside reviewers (Anti-Gravity): `docs/REVIEW.md`.
+- **Anti-Gravity review Nov 24** (at 0beb608), all 4 fixed: rule maker saved `field == ""` / empty
+  calc when the shown default was never written (now draw, then save); Signature allowed in Task steps;
+  staff caches split (`staff-info:` / `staff-places:`); request track names go through `PersonName.Tidy`.

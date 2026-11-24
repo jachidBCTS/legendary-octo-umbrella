@@ -72,7 +72,7 @@ public sealed class StaffLookup
     public async Task<SchoolFlow.Core.StaffInfo?> FindAsync(string email, CancellationToken ct)
     {
         email = email.Trim().ToLowerInvariant();
-        if (_cache.TryGetValue("staff:" + email, out SchoolFlow.Core.StaffInfo? hit)) return hit;
+        if (_cache.TryGetValue("staff-info:" + email, out SchoolFlow.Core.StaffInfo? hit)) return hit;
         IReadOnlyList<StaffMember> rows;
         try { rows = await _staff.FindByEmailAsync(email, ct); }
         catch (Exception ex) when (ex is SqlException or InvalidOperationException)
@@ -81,7 +81,7 @@ public sealed class StaffLookup
             return null;   // not cached: try again next time
         }
         var info = Merge(rows);
-        _cache.Set("staff:" + email, info, TimeSpan.FromMinutes(2));
+        _cache.Set("staff-info:" + email, info, TimeSpan.FromMinutes(2));
         return info;
     }
 

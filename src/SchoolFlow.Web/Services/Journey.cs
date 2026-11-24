@@ -258,7 +258,7 @@ public static class Journey
         var wanted = emails.Select(e => e.Trim().ToLowerInvariant()).Where(e => e.Contains('@')).Distinct().Take(500).ToList();
         var names = wanted.Count == 0 ? new Dictionary<string, string>()
             : (await db.Users.AsNoTracking().Where(u => wanted.Contains(u.Email)).Select(u => new { u.Email, u.Name }).ToListAsync(ct))
-                .Where(u => u.Name.Length > 0).GroupBy(u => u.Email.ToLowerInvariant()).ToDictionary(g => g.Key, g => g.First().Name);
+                .Where(u => u.Name.Length > 0).GroupBy(u => u.Email.ToLowerInvariant()).ToDictionary(g => g.Key, g => SchoolFlow.Core.PersonName.Tidy(g.First().Name));
         return email => names.TryGetValue(email.Trim().ToLowerInvariant(), out var name) ? name : email;
     }
 

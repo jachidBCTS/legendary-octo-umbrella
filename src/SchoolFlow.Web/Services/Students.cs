@@ -328,9 +328,9 @@ public sealed class StudentScopeService
     {
         email = email.Trim().ToLowerInvariant();
         if (email.Length == 0) return Array.Empty<StaffMember>();
-        if (_cache.TryGetValue("staff:" + email, out IReadOnlyList<StaffMember>? cached) && cached is not null) return cached;
+        if (_cache.TryGetValue("staff-places:" + email, out IReadOnlyList<StaffMember>? cached) && cached is not null) return cached;
         var rows = await _staff.FindByEmailAsync(email, ct);
-        _cache.Set("staff:" + email, rows, TimeSpan.FromMinutes(10));
+        _cache.Set("staff-places:" + email, rows, TimeSpan.FromMinutes(10));
         return rows;
     }
 

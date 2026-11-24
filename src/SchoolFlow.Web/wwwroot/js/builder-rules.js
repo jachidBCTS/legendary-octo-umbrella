@@ -203,7 +203,8 @@
           advanced.open = true;
           return;
         }
-        drawSimple(simple, model, changed, () => { changed(); draw(); });
+        // Draw first: drawing fills in defaults (first choice, starting fields) that the formula must include.
+        drawSimple(simple, model, changed, () => { draw(); changed(); });
       }
       draw();
       return h('div', { class: 'b-logic' }, simple, advanced);
