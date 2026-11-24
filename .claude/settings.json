@@ -10,5 +10,10 @@
   },
   "enabledPlugins": {
     "ponytail@ponytail": true
+  },
+  "permissions": {
+    "allow": [
+      "mcp__Claude_Docs"
+    ]
   }
 }

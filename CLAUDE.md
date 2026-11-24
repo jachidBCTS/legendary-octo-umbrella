@@ -53,6 +53,8 @@ deploy/                Install/Update scripts, SQL, templates      docs/DEPLOY-I
 - **Ponytail plugin** (owner, Nov 24, 2026): enabled in `.claude/settings.json`, pinned to v5.3.3 after a
   review of its hooks (no network unless a webhook is set — never set one). Decline its status-line offer.
   Project rules here still win (tests, security, owner's UI taste). Off: set it to false there.
+- **Claude Docs** (owner, Nov 24, 2026): `.claude/settings.json` allows every Claude Docs tool without asking
+  (`mcp__Claude_Docs`), so docs can be read and updated freely. Remove that line to ask again.
 - Develop on `claude/school-agentic-workflow-5wdvee`; push as usual — every green CI run makes a
   complete update package. Don't watch or report CI runs — the owner checks GitHub Actions
   themselves (Nov 23, 2026). Build a zip only when asked.
