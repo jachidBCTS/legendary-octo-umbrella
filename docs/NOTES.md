@@ -19,6 +19,14 @@ The full design notes moved out of CLAUDE.md (Nov 22, 2026) to keep every sessio
 - **Formulas are evaluated on the server only.** The browser posts current answers to
   `/api/forms/evaluate` and renders what comes back; submit re-runs the same `FormEvaluator`.
   Do not add a JavaScript copy of the formula engine — one source of truth was a deliberate choice.
+- **Rule maker** (queue #13, Nov 24, 2026; owner wanted the logic area less technical): `wwwroot/js/builder-rules.js`.
+  Every logic box (show when, required when, validation rules, Decision, Continue when, Only start when) is
+  "When [all/any] of: [field] [test] [value]"; Calculated fields get "Result: Add up / Same as / Subtract /
+  Multiply / Divide / Days between / School days between" (+ round to cents). It only WRITES formula text in
+  fixed shapes and READS those shapes back (no evaluation in JS); anything else shows under the folded
+  "Advanced: edit as a formula" box, which is the real formula field (smoke test uses it). Opening a
+  field never rewrites its formula; only an edit in the simple editor does. Fields offered come from
+  `ruleSubjects()` in builder.js (kind per field type; lookups/people only "filled in / empty").
 - **`WorkflowEngine`** is persistence-free: it advances a `RunState` until it finishes, fails, or
   waits (approval / ticket event). `RunService` (Web) loads, saves, creates approval tasks and
   notifications. All run state changes go through `RunService`.

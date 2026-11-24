@@ -427,6 +427,52 @@
     return items;
   }
 
+  /** Fields a rule can test, with the kind of value each holds (for the plain-language rule maker). */
+  function ruleSubjects(opts) {
+    const byKey = new Map();
+    const add = (f) => { if (f.key) byKey.set(f.key.toLowerCase(), f); };
+    (opts.columns || []).forEach(add);
+    if (isFormTrigger()) state.def.form.fields.forEach(add);
+    if (opts.context === 'flow') state.def.flow.nodes.forEach((n) => { if (n.type === 'task') (n.fields || []).forEach(add); });
+    const numeric = ['number', 'currency', 'calculated'];
+    const kindOf = (f) => {
+      const choices = (f.options || []).map((o) => [o, o]);
+      if (numeric.includes(f.type)) return { kind: 'number' };
+      if (f.type === 'date') return { kind: 'date' };
+      if (f.type === 'select' || f.type === 'radio') return { kind: 'choice', options: choices };
+      if (f.type === 'multiselect') return { kind: 'multi', options: choices };
+      if (f.type === 'checkbox') return { kind: 'bool' };
+      return { kind: 'text' };
+    };
+    const FLOW = {
+      'ticket.priority': { kind: 'numchoice', options: [['1', 'Low'], ['2', 'Medium'], ['3', 'High'], ['4', 'Urgent']] },
+      'ticket.status': { kind: 'numchoice', options: [['2', 'Open'], ['3', 'Pending'], ['4', 'Resolved'], ['5', 'Closed']] },
+      'approval.approved': { kind: 'bool' }, 'ticket.id': { kind: 'number' }, 'run.id': { kind: 'number' },
+    };
+    const out = [];
+    for (const [code, label] of pickerValues(opts)) {
+      if (/^COUNT\(/i.test(code)) { out.push({ code, label, kind: 'number' }); continue; }
+      if (code.includes('(')) continue;
+      const dot = code.indexOf('.');
+      const f = byKey.get((dot < 0 ? code : code.slice(0, dot)).toLowerCase());
+      if (FLOW[code]) out.push(Object.assign({ code, label }, FLOW[code]));
+      else if (f && dot < 0) out.push(Object.assign({ code, label }, kindOf(f)));
+      else if (f && f.type === 'table') {
+        const col = (f.columns || []).find((c) => c.key && c.key.toLowerCase() === code.slice(dot + 1).toLowerCase());
+        if (opts.forCalc && col && numeric.includes(col.type)) out.push({ code, label: (f.label || f.key) + ' → ' + (col.label || col.key) + ' (all rows)', kind: 'column' });
+      } else if (f && (f.type === 'lookup' && code.endsWith('.id') || f.type === 'perdiem')) out.push({ code, label, kind: 'number' });
+      else if (f || dot >= 0) out.push({ code, label, kind: 'text' });
+      else out.push({ code, label, kind: 'any' });  // a value set by a "Set value" step: could be text or a number
+    }
+    // Picked things (a device, a department, a person…) can at least be tested for "filled in / empty".
+    for (const f of byKey.values())
+      if (['lookup', 'department', 'location', 'staff', 'student'].includes(f.type) && !out.some((x) => x.code.toLowerCase() === f.key.toLowerCase()))
+        out.push({ code: f.key, label: f.label || f.key, kind: 'presence' });
+    return out;
+  }
+
+  const rules = SF.builderRules({ h, formulaInput, markDirty: () => markDirty(), subjects: ruleSubjects });
+
   function openPicker(area, opts, done) {
     const search = h('input', { type: 'search', placeholder: 'Search fields and functions…' });
     const list = h('div', { class: 'picker-list' });
@@ -841,8 +887,8 @@
 
     if (isCalc) {
       panel.append(
-        row('Formula', formulaInput(field.formula, (v) => { field.formula = v; refresh(); }, { rows: 4, placeholder: 'e.g. quantity * unit_price' }),
-          'Recalculated whenever the fields it mentions change.'),
+        row('Calculation', rules.calc(field.formula, (v) => { field.formula = v; refresh(); }, { rows: 4, placeholder: 'e.g. quantity * unit_price' }),
+          'Recalculated whenever the fields it uses change.'),
         h('div', { class: 'b-pair' },
           row('Show as', select(field.format || '', [['', 'Automatic'], ['number', 'Number'], ['currency', 'Currency ($)']], (v) => { field.format = clean(v); })),
           row('Decimal places', numberInput(field.decimals, (v) => { field.decimals = v === null ? null : Math.max(0, Math.min(10, Math.round(v))); }, { min: 0, max: 10, step: 1 }))));
@@ -867,8 +913,8 @@
     // ---- logic ----
     if (isPage) return;
     panel.append(h('h4', { class: 'b-section' }, 'Logic'));
-    panel.append(row('Show this ' + (isSection ? 'heading' : 'field') + ' only when', formulaInput(field.visibleWhen, (v) => { field.visibleWhen = clean(v); refresh(); },
-      { placeholder: 'Always shown. e.g. kind == "Software"' }), isSection ? null : 'While hidden, the field is cleared and never required.'));
+    panel.append(row('Show this ' + (isSection ? 'heading' : 'field') + ' only when', rules.condition(field.visibleWhen, (v) => { field.visibleWhen = clean(v); refresh(); },
+      { placeholder: 'Always shown. e.g. kind == "Software"', empty: 'Always shown.' }), isSection ? null : 'While hidden, the field is cleared and never required.'));
 
     if (!isSection && !isCalc && state.def.form.allowCopy)
       panel.append(toggle("Don't copy from previous requests", field.noCopy, (v) => { if (v) field.noCopy = true; else delete field.noCopy; refresh(); }),
@@ -877,7 +923,8 @@
     if (!isSection && !isCalc) {
       panel.append(
         toggle('Always required', field.required, (v) => { field.required = v; refresh(); }),
-        row('Required when', formulaInput(field.requiredWhen, (v) => { field.requiredWhen = clean(v); refresh(); }, { placeholder: 'e.g. total >= 500' })));
+        row('Required when', rules.condition(field.requiredWhen, (v) => { field.requiredWhen = clean(v); refresh(); },
+          { placeholder: 'e.g. total >= 500', empty: field.required ? 'Always required (see above).' : 'Never, unless "Always required" is ticked.' })));
       if (field.type === 'perdiem')
         panel.append(h('p', { class: 'b-help' }, 'Required here means GSA\'s own rates for the travel dates are needed (for example "Required when" meals or a hotel are claimed: '
           + 'meal_days > 0 || lodging_nights > 0). A trip in a year GSA has not published yet (rates come out each August) then cannot be submitted.'));
@@ -889,7 +936,7 @@
           rulesBox.appendChild(h('div', { class: 'b-rule' },
             h('div', { class: 'row-between' }, h('span', { class: 'b-label' }, 'Must be true'),
               h('button', { type: 'button', class: 'icon-btn danger', 'aria-label': 'Remove rule', onclick: () => { field.rules.splice(i, 1); if (!field.rules.length) delete field.rules; markDirty(); renderRules(); refresh(); } }, '×')),
-            formulaInput(rule.check, (v) => { rule.check = v; }, { placeholder: 'e.g. ' + (field.key || 'value') + ' <= 100' }),
+            rules.condition(rule.check, (v) => { rule.check = v; }, { placeholder: 'e.g. ' + (field.key || 'value') + ' <= 100', defaultCode: field.key }),
             row('Message if not', textInput(rule.message, (v) => { rule.message = v; }, { placeholder: 'Shown to the person filling in the form' }))));
         });
         rulesBox.appendChild(h('button', { type: 'button', class: 'btn small', onclick: () => {
@@ -916,7 +963,7 @@
           extra.textContent = '';
           if (col.type === 'select') extra.append(row('Options', textArea((col.options || []).join('\n'), (v) => { col.options = v.split('\n').map((o) => o.trim()).filter(Boolean); }, 3), 'One per line.'));
           if (col.type === 'calculated') extra.append(
-            row('Formula', formulaInput(col.formula, (v) => { col.formula = v; }, { columns: field.columns, extra: field.columns.map((c) => (c.key || '').toLowerCase()), placeholder: 'e.g. qty * unit_price' }),
+            row('Calculation', rules.calc(col.formula, (v) => { col.formula = v; }, { columns: field.columns, extra: field.columns.map((c) => (c.key || '').toLowerCase()), placeholder: 'e.g. qty * unit_price' }),
               'Use the other column keys for values in the same row.'),
             h('div', { class: 'b-pair' },
               row('Show as', select(col.format || '', [['', 'Automatic'], ['number', 'Number'], ['currency', 'Currency ($)']], (v) => { col.format = clean(v); })),
@@ -1439,7 +1486,8 @@
           : 'The flow begins when Freshservice sends a ticket event that passes the start condition (see the Settings tab). The ticket is available as ticket.id, ticket.status and so on.'));
         break;
       case 'condition':
-        panel.append(row('Condition', fx('expression', 'e.g. total >= 500'), 'True follows the Yes line; false follows the No line.'));
+        panel.append(row('Condition', rules.condition(c.expression, set('expression'), { context: 'flow', placeholder: 'e.g. total >= 500' }),
+          'When it is true the request follows the Yes line; otherwise the No line.'));
         break;
       case 'approval':
         panel.append(
@@ -1520,12 +1568,12 @@
               box.append(row('Options', textArea((f.options || []).join('\n'), (v) => { f.options = v.split('\n').map((o) => o.trim()).filter(Boolean); }, 3), 'One option per line.'));
             if (f.type === 'section') { list.appendChild(box); return; }
             if (f.type === 'calculated')
-              box.append(row('Formula', formulaInput(f.formula, (v) => { f.formula = v; }, { context: 'flow', placeholder: 'e.g. total - actual_total' })));
+              box.append(row('Calculation', rules.calc(f.formula, (v) => { f.formula = v; }, { context: 'flow', placeholder: 'e.g. total - actual_total' })));
             else
               box.append(
                 toggle('Required', f.required, (v) => { f.required = v; }),
-                row('Required when', formulaInput(f.requiredWhen, (v) => { f.requiredWhen = clean(v); }, { context: 'flow', placeholder: 'e.g. total >= 150' })));
-            box.append(row('Show only when', formulaInput(f.visibleWhen, (v) => { f.visibleWhen = clean(v); }, { context: 'flow', placeholder: 'Always shown' })));
+                row('Required when', rules.condition(f.requiredWhen, (v) => { f.requiredWhen = clean(v); }, { context: 'flow', placeholder: 'e.g. total >= 150', empty: 'Never, unless "Required" is ticked.' })));
+            box.append(row('Show only when', rules.condition(f.visibleWhen, (v) => { f.visibleWhen = clean(v); }, { context: 'flow', placeholder: 'Always shown', empty: 'Always shown.' })));
             if (!['calculated', 'attachments', 'checkbox'].includes(f.type))
               box.append(row('Starts as (formula)', formulaInput(f.default, (v) => { f.default = clean(v); }, { context: 'flow', placeholder: 'e.g. budget_account' }), 'Filled in when the task opens. Can use the request\'s answers.'));
             if (!['calculated', 'section'].includes(f.type))
@@ -1616,7 +1664,7 @@
         break;
       case 'wait_ticket':
         panel.append(ticketRow(),
-          row('Continue when', fx('until', 'e.g. IN(ticket.status, 4, 5)'), 'Checked each time Freshservice reports a change to the ticket. Leave blank to continue on any change.'),
+          row('Continue when', rules.condition(c.until, set('until'), { context: 'flow', placeholder: 'e.g. IN(ticket.status, 4, 5)', empty: 'Continues on any change.' }), 'Checked each time Freshservice reports a change to the ticket. Leave blank to continue on any change.'),
           h('p', { class: 'b-help' }, 'Needs the Freshservice webhook to be set up (Admin → Settings).'));
         break;
       case 'end':
@@ -1736,7 +1784,7 @@
       triggerChoice('form', 'Someone fills in a form', 'Appears on the home page for everyone who signs in.'),
       state.isAdmin || trigger.type === 'ticket' ? triggerChoice('ticket', 'A Freshservice ticket event', 'Starts when Freshservice sends a ticket to the Greenlight webhook. Runs once per ticket.') : null);
     if (trigger.type === 'ticket') {
-      panel.append(row('Only start when', formulaInput(trigger.condition, (v) => { trigger.condition = clean(v); }, { context: 'flow', placeholder: 'e.g. ticket.priority >= 3' }),
+      panel.append(row('Only start when', rules.condition(trigger.condition, (v) => { trigger.condition = clean(v); }, { context: 'flow', placeholder: 'e.g. ticket.priority >= 3', empty: 'Every ticket event starts it.' }),
         'Leave blank to start for every ticket event. Uses the ticket\'s API values: status 2 Open … 5 Closed, priority 1 Low … 4 Urgent.'));
       if (state.def.form.fields.length) panel.append(h('p', { class: 'flash warn' }, 'This workflow has form fields from when it was form-based. They are ignored while it starts from a ticket event.'));
     }

@@ -470,6 +470,29 @@ html.a11y .pal-group > summary::after { transition: none; }
 .b-fx-status.warn { color: var(--warn); }
 .b-fx-btn { border: 0; background: none; color: var(--brand-ink); font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; padding: 0; white-space: nowrap; }
 .b-fx-btn:hover { text-decoration: underline; }
+.b-logic { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.b-maker { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.b-maker-empty { margin: 0; font-size: 13.5px; color: var(--muted); }
+.b-maker-join { font-size: 13.5px; font-weight: 600; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.b-maker-join select { width: auto; max-width: 100%; min-width: 0; }
+.b-cond { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 6px; align-items: center;
+  border: 1px solid var(--line); border-radius: 10px; padding: 6px; background: #fbfbfe; }
+.b-cond > select:first-child { grid-column: 1 / 3; }
+.b-cond > .icon-btn { grid-column: 3; grid-row: 1; }
+.b-cond select, .b-cond input { min-width: 0; width: 100%; }
+.b-cond.b-calc { display: flex; flex-wrap: wrap; }
+.b-cond.b-calc > select, .b-cond.b-calc > input { flex: 1 1 8em; width: auto; min-width: 0; }
+.b-cond-lead { font-size: 13px; font-weight: 700; color: var(--muted); min-width: 1.2em; }
+.b-cond-many { display: flex; flex-wrap: wrap; gap: 2px 12px; grid-column: 1 / -1; font-size: 13.5px; }
+.b-cond-many label { display: inline-flex; gap: 4px; align-items: center; }
+.b-cond-many input { width: auto; }
+.b-cond-date { display: grid; grid-template-columns: 5em minmax(0, 1fr); gap: 6px; min-width: 0; grid-column: 1 / -1; }
+.b-cond-date > [hidden] + select, .b-cond-date > select:first-child { grid-column: 1 / -1; }
+.b-cond-date > input[type=date] { grid-column: 1 / -1; }
+.b-cond-date > [hidden] { display: none; }
+.b-maker > .btn.small { justify-self: start; }
+.b-advanced > summary { font-size: 12.5px; font-weight: 700; color: var(--brand-ink); cursor: pointer; }
+.b-advanced[open] > summary { margin-bottom: 4px; }
 .b-rule, .b-column, .b-cf-row { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-bottom: 8px; background: #fbfbfe; }
 .b-cf-row .row-between { margin-bottom: 6px; }
 .b-lookup { display: grid; gap: 6px; }

@@ -210,6 +210,15 @@ async function login(page, email) {
   await addField('Currency', 'Hourly rate');
   await addField('Calculated', 'Cost');
   check(await page.locator('.bld-inspector .mono').first().inputValue() === 'cost', 'key auto-generated from label');
+  // The guided calculation maker writes the formula: Multiply Hours × Hourly rate.
+  const calcBox = page.locator('.bld-inspector .b-logic').first();
+  await calcBox.locator('select[aria-label="Kind of calculation"]').selectOption('mul');
+  await calcBox.locator('button:has-text("Pick a value")').click();
+  await calcBox.locator('button:has-text("Multiply by another")').click();
+  await calcBox.locator('select[aria-label="Value 2"]').selectOption('hourly_rate');
+  check(await calcBox.locator('textarea.b-formula').inputValue() === 'hours * hourly_rate', 'the calculation maker writes the formula (Hours × Hourly rate)');
+  await page.screenshot({ path: S + '/shots/10b-calc-maker.png' });
+  await calcBox.locator('.b-advanced summary').click();
   await page.locator('.bld-inspector textarea.b-formula').first().fill('hours * hourly_rat');
   await page.waitForSelector('.b-fx-status.warn');
   check((await page.locator('.b-fx-status.warn').first().textContent()).includes('hourly_rat'), 'unknown name hint shown');
@@ -222,6 +231,18 @@ async function login(page, email) {
   await page.locator('.bld-issues .issue').first().click();
   await page.locator('.bld-inspector textarea.b-formula').first().fill('hours * hourly_rate');
   await page.waitForSelector('.b-fx-status.ok');
+  check(await page.locator('.bld-inspector .b-logic').first().locator('select[aria-label="Kind of calculation"]').inputValue() === 'mul', 'a typed formula in a simple shape shows again in the calculation maker');
+  // The plain-language rule maker: "Required when Hours is more than 10".
+  await page.locator('.fld-card:has-text("Hourly rate")').first().click();
+  const req = page.locator('.bld-inspector .b-row:has(> label:text-is("Required when"))');
+  await req.locator('button:has-text("Add a condition")').click();
+  await req.locator('select[aria-label="Test"]').selectOption('gt');
+  await req.locator('input[aria-label="Value"]').fill('10');
+  check(await req.locator('textarea.b-formula').inputValue() === 'hours > 10', 'the rule maker writes "Hours is more than 10" as a formula');
+  check(await req.locator('.b-advanced').getAttribute('open') === null, 'the formula itself stays folded away under Advanced');
+  await req.screenshot({ path: S + '/shots/10c-rule-maker.png' });
+  await req.locator('button[aria-label="Remove this condition"]').click();
+  check(await req.locator('textarea.b-formula').inputValue() === '', 'removing the condition clears the rule');
   await page.locator('.bld-palette .pal-group:has(summary:has-text("Layout")) summary').click();
   await page.click('.bld-palette .pal-item:has(strong:text-is("Line break"))');
   await page.locator('.bld-inspector label:has-text("Draw a line across") input').check();
