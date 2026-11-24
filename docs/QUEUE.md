@@ -15,6 +15,13 @@ Ask clarifying questions for unclear items in ONE message before starting.
   Mapbox, Google). Lookups go through our server (CSP, rate limit, cache, no user details sent),
   NJ/nearby results first, typed text always allowed if the service is down.
 
+- #16 Menu icon hover animation (Nov 24): the small icons in the left sidebar get a playful little
+  animation on hover (and keyboard focus) for "a bit more pizzazz". Keep it short and subtle; none
+  under `prefers-reduced-motion`; must not clash with the existing bell ring on unread notifications.
+- #17 Traffic-light logo (Nov 24): a red → yellow → green light animation on the Greenlight logo
+  mark. Ask at batch start: play once on page load, on hover, or both (not a constant loop, which
+  distracts)? Must keep working with the #12 easter-egg "t"; none under `prefers-reduced-motion`.
+
 ## Done
 
 - #12 Easter egg (Nov 24): `wwwroot/js/egg.js` + `.egg-*` in `app.css`; the "t" of the sidebar and
