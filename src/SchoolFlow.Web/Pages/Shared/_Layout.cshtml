@@ -43,10 +43,12 @@
 {
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-inner">
-        <a class="brand" href="/">
-            <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M9 16.5l4.5 4.5L23 11.5" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-            <span>Greenlight</span>
-        </a>
+        @* The last letter of the name is its own button: it plays a small easter egg (js/egg.js). *@
+        <div class="brand">
+            <a class="brand-link" href="/" aria-label="Greenlight home">
+                <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M9 16.5l4.5 4.5L23 11.5" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                <span>Greenligh</span></a><button type="button" class="egg-t" aria-label="A little surprise">t</button>
+        </div>
         <nav>
             <a class="@Active("/", true)" href="/"><partial name="_Icons" model='"home"' /> Home</a>
             <a class="@Active("/Requests")" href="/Requests"><partial name="_Icons" model='"inbox"' /> My Requests</a>
@@ -103,7 +105,7 @@
     {
         <header class="mobile-bar">
             <button type="button" class="icon-btn" data-toggle-sidebar aria-label="Menu"><svg viewBox="0 0 24 24" class="icon"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
-            <strong>Greenlight</strong>
+            <strong>Greenligh<button type="button" class="egg-t" aria-label="A little surprise">t</button></strong>
         </header>
         @if (!Freshservice.IsLive)
         {
@@ -128,6 +130,10 @@
     </main>
 </div>
 <script src="~/js/common.js" asp-append-version="true"></script>
+@if (signedIn)
+{
+    <script src="~/js/egg.js" asp-append-version="true"></script>
+}
 @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>

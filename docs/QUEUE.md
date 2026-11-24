@@ -7,19 +7,6 @@ Ask clarifying questions for unclear items in ONE message before starting.
 
 ## Open
 
-- #12 **Easter egg on the "t" in Greenlight** (Nov 24; owner approved the mockup:
-  https://claude.ai/artifact/BhD3YztxxrHGB8NkTqDXM2; copy in `docs/mockups/easter-egg.html`).
-  Clicking the last letter of the sidebar / phone-bar logo plays a ~12 s pixel-art scene along the
-  bottom of the page: he walks out from behind the menu, waves with an "I'm out!" bubble, sunglasses
-  drop on, he walks to the convertible parked just beside him, hops in, faces the viewer and waves,
-  revs and drives off right with white smoke. Sprites (checkerboard removed, sunglasses drawn in,
-  car mirrored to face right) are already in `wwwroot/img/egg/` (~200 KB, unused so far). To build:
-  move the mockup's script to `wwwroot/js/egg.js` (CSP: no inline script; the smoke-puff SVG can
-  stay a data: URI in `app.css`, since `img-src` allows data:), split "Greenligh" link + a `<button>`
-  "t" in `_Layout.cshtml` (logo link must still go Home), load sprites only on click, skip when
-  `prefers-reduced-motion`, Escape stops it, stage `pointer-events: none`. Walk = alternating
-  legs-apart / legs-passing poses with a 6 px lift (owner: "good enough"). Optional later: two
-  frames with the other leg leading would make the walk more natural.
 - #13 Form logic area too technical (Nov 24): make the builder's form logic (show/hide rules,
   required-if, calculations) friendlier for non-technical staff — plain-language "When … then …"
   rule builder with pick-lists for fields/values, formulas only as an "advanced" fold-out. Look at
@@ -31,6 +18,11 @@ Ask clarifying questions for unclear items in ONE message before starting.
   or white background, dark ink, max 500 KB; scale larger/smaller images to fit the signature line.
 
 ## Done
+
+- #12 Easter egg (Nov 24): `wwwroot/js/egg.js` + `.egg-*` in `app.css`; the "t" of the sidebar and
+  phone-bar logo is a button (`.egg-t`), the rest stays the Home link (`.brand-link`). Sprites in
+  `img/egg/` load on first click; skipped with reduced motion; Escape stops; stage ignores clicks.
+  Mockup kept in `docs/mockups/easter-egg.html`. Optional later: two more walk frames.
 
 - #4 Table field with "Add row" (Nov 23): already exists — builder field type **Table**
   (columns, "+ Add row", optional max rows). Told the owner; reopen if something is missing.
