@@ -9,6 +9,17 @@ Ask clarifying questions for unclear items in ONE message before starting.
 
 (none)
 
+- #16 Database-down banner (Nov 25): today the app has the same problem as the other apps — the
+  database is touched at startup (`Program.cs` migrations/seed: the site won't start, IIS 500.30), on
+  every signed-in request (`RoleClaimsTransformation`, `_Layout` badge counts) and by the Error page
+  itself (uses `_Layout`), so an outage while running gives a bare error. Wanted: the site still loads
+  and shows a big red banner at the top, "Database connection failed. Technology has been notified."
+  Plan: start even if the database is down (retry the migrations in the background); catch database
+  errors and show a plain, database-free page/banner; a cheap health check so normal pages show the
+  banner too; "notified" can't use the email outbox (it lives in the database) — send directly via
+  Graph to an address in appsettings, at most once per outage, plus a Windows event log entry. Ask:
+  which address is "Technology" (help desk mailbox, or open a Freshservice ticket instead?).
+
 ## Done
 
 - #21 Custom ticket status names (Nov 24): `TicketStatusNames` (Web service) reads the Status field's
