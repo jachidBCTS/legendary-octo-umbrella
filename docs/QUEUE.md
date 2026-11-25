@@ -7,9 +7,7 @@ Ask clarifying questions for unclear items in ONE message before starting.
 
 ## Open
 
-(none)
-
-- #16 Database-down banner (Nov 25): today the app has the same problem as the other apps — the
+- #22 Database-down banner (Nov 25): today the app has the same problem as the other apps — the
   database is touched at startup (`Program.cs` migrations/seed: the site won't start, IIS 500.30), on
   every signed-in request (`RoleClaimsTransformation`, `_Layout` badge counts) and by the Error page
   itself (uses `_Layout`), so an outage while running gives a bare error. Wanted: the site still loads
@@ -17,8 +15,9 @@ Ask clarifying questions for unclear items in ONE message before starting.
   Plan: start even if the database is down (retry the migrations in the background); catch database
   errors and show a plain, database-free page/banner; a cheap health check so normal pages show the
   banner too; "notified" can't use the email outbox (it lives in the database) — send directly via
-  Graph to an address in appsettings, at most once per outage, plus a Windows event log entry. Ask:
-  which address is "Technology" (help desk mailbox, or open a Freshservice ticket instead?).
+  Graph, at most once per outage, plus a Windows event log entry. Owner (Nov 25): email the owner —
+  address set only in the server's appsettings.Production.json (e.g. `Alerts:DatabaseDownEmail`),
+  never in the repo (public); document the setting in README/DEPLOY-IIS.
 
 ## Done
 
