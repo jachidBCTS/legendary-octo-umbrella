@@ -30,10 +30,12 @@ everything committed here (owner's request: don't name the vendor in GitHub).
   **Purchasing** (group) → **Business Administrator** (one person).
 - **Send back**: each approver can send it back **to a chosen earlier step** or reject outright
   (allowed choices differ per step).
-- **Editing**: AP, Purchasing, the business office and the Business Administrator may change
+- **Business office** = Accounts Payable + Purchasing + Business Administrator (the fixed steps).
+- **Editing**: the business office (AP, Purchasing, Business Administrator) may change
   anything on the requisition at their step (every change recorded in the timeline). Earlier
   approvers approve / send back / reject only.
 - **Private notes** (new): staff-to-staff notes the requester can't see (e.g. Purchasing → BA).
+  Readable/writable by every approver on the route (picked approvers + business office).
   Greenlight has only one comment thread today, visible to everyone on the request.
 - **New vendor rejected by Purchasing**: the requisition is held, the requester is told, and it is
   sent back to them to choose another vendor. New-vendor form: name, address, contact, phone,
