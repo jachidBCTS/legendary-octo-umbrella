@@ -1,0 +1,269 @@
+<title>Greenlight Easter Egg</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&family=Press+Start+2P&display=swap">
+<style>
+/* Layout: the Greenlight home page as it is now (direction B), with the easter egg playing along the bottom. */
+:root {
+  --bg: #eef2ef; --panel: #ffffff; --ink: #0f1d16; --muted: #4b5d53; --line: #dde6e0;
+  --brand: #047857; --side: #0b1f17; --side-ink: #cfe3d7; --band: #0f2e22; --band-accent: #9fd8b5;
+  --go: #22c55e; --go-ink: #06281a; --note: #fff7e0; --note-line: #f1d48a;
+  --font: "Plus Jakarta Sans", -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --pixel: "Press Start 2P", ui-monospace, monospace;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--font); }
+.app { display: grid; grid-template-columns: 236px minmax(0, 1fr); min-height: 100vh; }
+.sidebar { background: var(--side); color: var(--side-ink); padding: 18px 12px; display: flex; flex-direction: column; gap: 2px; position: relative; z-index: 5; }
+.brand-row { display: flex; align-items: center; padding: 4px 8px 18px; color: #fff; font-weight: 800; font-size: 19px; letter-spacing: -.01em; }
+.brand { display: flex; align-items: center; gap: 10px; color: inherit; text-decoration: none; }
+.brand-mark { width: 34px; height: 34px; border-radius: 50%; background: var(--go); display: grid; place-items: center; color: var(--go-ink); box-shadow: 0 0 0 4px rgba(34,197,94,.18); flex: none; }
+.brand-mark svg { width: 22px; height: 22px; }
+/* The secret: the last letter is its own button, styled to read as part of the word. */
+.egg-t { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; line-height: inherit; border-radius: 4px; }
+.egg-t:focus-visible { outline: 2px solid var(--go); outline-offset: 2px; }
+.hint .egg-t-demo { font-family: var(--font); font-weight: 800; }
+.sidebar a.nav { display: block; padding: 9px 10px; border-radius: 9px; color: var(--side-ink); text-decoration: none; font-weight: 500; }
+.sidebar a.nav.active { background: #14382a; color: #fff; font-weight: 700; }
+.mobile-bar { display: none; }
+main { min-width: 0; padding: 0 28px 220px; }
+.inner { max-width: 1080px; margin: 0 auto; }
+.note { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; background: var(--note); border-bottom: 1px solid var(--note-line); margin: 0 -28px; padding: 10px 28px; font-size: 14px; color: #5b4100; }
+.note strong { color: #3d2c00; }
+.note button { font: inherit; font-weight: 700; font-size: 13px; min-height: 36px; padding: 6px 14px; border-radius: 9px; border: 1px solid #d9b65a; background: #fff; color: #3d2c00; cursor: pointer; }
+.hero { position: relative; color: #fff; padding: 28px 0 84px; }
+.hero::before { content: ""; position: absolute; inset: 0 -100vmax; background: var(--band); z-index: -1; }
+.wrap { position: relative; isolation: isolate; overflow-x: clip; }
+.kicker { margin: 0 0 6px; color: var(--band-accent); font-weight: 600; font-size: 14px; }
+h1 { margin: 0; font-size: 32px; line-height: 1.2; font-weight: 800; letter-spacing: -.02em; }
+.tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: -60px 0 26px; position: relative; }
+.tile { background: var(--panel); border-radius: 16px; padding: 16px 20px; border-top: 4px solid var(--brand); box-shadow: 0 6px 20px rgba(15,46,34,.10); display: grid; }
+.tile b { font-size: 32px; font-weight: 800; line-height: 1.15; }
+.tile span { font-weight: 700; font-size: 14px; }
+.tile.w { border-top-color: #f59e0b; } .tile.i { border-top-color: #3b82f6; } .tile.o { border-top-color: var(--go); }
+h2 { font-size: 18px; font-weight: 800; margin: 0 0 12px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); gap: 14px; }
+.card { display: flex; gap: 14px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
+.dot { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; color: #fff; flex: none; }
+.card strong { display: block; } .card small { color: var(--muted); font-size: 13px; }
+
+/* ---- the easter egg stage ---- */
+.egg-stage { position: fixed; left: 236px; right: 0; bottom: 0; height: 60vh; pointer-events: none; overflow: hidden; z-index: 4; }
+.egg-scene { position: absolute; left: 0; bottom: 0; transform-origin: 0 100%; }
+.egg-scene img { position: absolute; display: block; max-width: none; user-select: none; }
+.egg-scene [hidden] { display: none; }
+.egg-wheel { transform-origin: 50% 50%; }
+.egg-bubble { position: absolute; font: 40px/1 var(--pixel); color: var(--ink); background: #fff; border: 6px solid var(--ink); padding: 22px 26px; white-space: nowrap; box-shadow: 8px 8px 0 rgba(15,29,22,.25); }
+.egg-bubble::after { content: ""; position: absolute; left: 30px; bottom: -30px; border: 12px solid transparent; border-top: 18px solid var(--ink); border-left: 18px solid var(--ink); }
+.egg-puff { position: absolute; width: 64px; height: 48px; image-rendering: pixelated;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 12' shape-rendering='crispEdges'%3E%3Cpath fill='%23cfd6d2' d='M3 4h10v1h2v5h-2v1H3v-1H1V5h2z'/%3E%3Cpath fill='%23ffffff' d='M5 1h4v1h2v2h2v4h-2v1H4V8H2V5h1V3h2z'/%3E%3C/svg%3E") center / contain no-repeat;
+  animation: egg-puff 1s ease-out forwards; }
+@keyframes egg-puff {
+  from { transform: translate(0, 0) scale(.5); opacity: .95; }
+  to { transform: translate(var(--dx), var(--dy)) scale(1.9); opacity: 0; }
+}
+.egg-glint { position: absolute; width: 10px; height: 10px; background: #fff; transform: rotate(45deg); animation: egg-glint .5s ease-out forwards; }
+@keyframes egg-glint { 0% { opacity: 0; transform: rotate(45deg) scale(.2); } 40% { opacity: 1; transform: rotate(45deg) scale(1.6); } 100% { opacity: 0; transform: rotate(45deg) scale(.2); } }
+
+@media (max-width: 860px) {
+  .app { display: block; }
+  .sidebar { display: none; }
+  .mobile-bar { display: flex; align-items: center; gap: 10px; padding: 10px max(16px, env(safe-area-inset-left, 0px)); background: var(--side); color: #fff; font-weight: 800; font-size: 17px; position: sticky; top: 0; z-index: 6; }
+  .mobile-bar .brand-mark { width: 28px; height: 28px; } .mobile-bar .brand-mark svg { width: 18px; height: 18px; }
+  main { padding: 0 16px 200px; }
+  .note { margin: 0 -16px; padding: 10px 16px; }
+  .hero { padding: 20px 0 72px; } h1 { font-size: 24px; }
+  .tiles { gap: 8px; margin-top: -56px; } .tile { padding: 10px 12px; border-radius: 12px; } .tile b { font-size: 24px; } .tile span { font-size: 12.5px; }
+  .egg-stage { left: 0; }
+}
+</style>
+
+<div class="app">
+  <aside class="sidebar" aria-label="Main">
+    <div class="brand-row">
+      <a class="brand" href="#"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M9 16.5l4.5 4.5L23 11.5" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Greenligh</span></a><button type="button" class="egg-t" aria-label="A little surprise">t</button>
+    </div>
+    <a class="nav active" href="#">Home</a>
+    <a class="nav" href="#">My requests</a>
+    <a class="nav" href="#">Approvals &amp; tasks</a>
+    <a class="nav" href="#">Notifications</a>
+    <a class="nav" href="#">Away / stand-in</a>
+  </aside>
+  <div>
+    <div class="mobile-bar">
+      <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M9 16.5l4.5 4.5L23 11.5" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span>Greenligh<button type="button" class="egg-t" aria-label="A little surprise">t</button></span>
+    </div>
+    <main>
+      <div class="wrap"><div class="inner">
+        <div class="note hint">
+          <span><strong>Mockup.</strong> Click the <span class="egg-t-demo">t</span> in “Greenlight” to play the easter egg.</span>
+          <button type="button" id="replay">Play it</button>
+        </div>
+        <div class="hero">
+          <p class="kicker">Tuesday, November 24</p>
+          <h1>Good morning, Taylor</h1>
+        </div>
+        <div class="tiles">
+          <div class="tile w"><b>2</b><span>Waiting on you</span></div>
+          <div class="tile i"><b>3</b><span>In progress</span></div>
+          <div class="tile o"><b>7</b><span>Completed this month</span></div>
+        </div>
+        <h2>Start a request</h2>
+        <div class="cards">
+          <div class="card"><span class="dot" style="background:#0b8a83">?</span><span><strong>Report an Issue</strong><small>Something broken? Goes to the help desk.</small></span></div>
+          <div class="card"><span class="dot" style="background:#1d6fd8">✈</span><span><strong>Work Related Travel</strong><small>Conferences and workshops, with GSA rates.</small></span></div>
+          <div class="card"><span class="dot" style="background:#1a8a4c">⌂</span><span><strong>Field Trip</strong><small>Plan a trip and choose who signs it off.</small></span></div>
+        </div>
+      </div></div>
+    </main>
+  </div>
+</div>
+<div class="egg-stage" aria-hidden="true"></div>
+
+<script>
+/* Greenlight easter egg: he walks out, waves, puts on his shades, hops into the convertible,
+   looks at you and drives off in a puff of smoke. Everything is in "sprite pixels" (the man is
+   300 tall, the car 760 wide); the scene is scaled to fit the screen. */
+(() => {
+  const SRC = 'sprites/';
+  const F = { // width, height, anchor x (middle of his body); bottoms line up at his feet
+    f1: [158, 295, 68], f2: [160, 295, 76], f3: [168, 297, 69], fwave: [163, 300, 66],
+    wave: [159, 300, 64], 'wave-g': [159, 300, 64],
+    's1-g': [159, 300, 71], 's2-g': [157, 300, 70], 's3-g': [158, 300, 69],
+    'h1-g': [121, 300, 47], 'h2-g': [106, 287, 42], 'h3-g': [122, 277, 38],
+  };
+  const CAR = { w: 760, h: 255, door: 181, seat: 318, wheels: [[145, 192], [580, 194]], R: 46, exhaust: [18, 62] };
+  const stage = document.querySelector('.egg-stage');
+  let running = null;
+
+  const preload = () => [...Object.keys(F), 'shades', 'car', 'wheel0', 'wheel1'].forEach((n) => { const i = new Image(); i.src = SRC + n + '.png'; });
+  const img = (name, cls) => { const i = document.createElement('img'); i.src = SRC + name + '.png'; i.alt = ''; if (cls) i.className = cls; return i; };
+  const ease = (t) => 1 - Math.pow(1 - t, 3);
+  const lerp = (a, b, t) => a + (b - a) * t;
+
+  function play() {
+    if (running) running.stop();
+    preload();
+    const vw = stage.clientWidth;
+    const k = Math.min(0.5, Math.max(0.27, vw / 1500));       // screen px per sprite px
+    const W = vw / k;                                          // stage width in sprite px
+    const scene = document.createElement('div'); scene.className = 'egg-scene';
+    scene.style.width = W + 'px'; scene.style.height = 1000 + 'px'; scene.style.transform = `scale(${k})`;
+    stage.replaceChildren(scene);
+    const G = 40;                                              // ground line above the screen's bottom
+
+    const waveX = Math.max(240, W * 0.2);
+    const carX = waveX + 300;                                  // parked just beside where he stops
+
+    const car = img('car'); const wheels = CAR.wheels.map((_, i) => img('wheel' + i, 'egg-wheel'));
+    const man = img('f1'); const shades = img('shades'); shades.hidden = true;
+    const bubble = document.createElement('div'); bubble.className = 'egg-bubble'; bubble.textContent = "I'm out!"; bubble.hidden = true;
+    scene.append(car, man, ...wheels, shades, bubble);
+
+    const st = { frame: 'f1', x: -140, y: 0, rot: 0, clip: 0, carX, carY: 0, spin: 0 };
+    function draw() {
+      const [w, h, ax] = F[st.frame];
+      if (man.dataset.f !== st.frame) { man.src = SRC + st.frame + '.png'; man.dataset.f = st.frame; }
+      man.style.left = (st.x - ax) + 'px'; man.style.bottom = (G + st.y) + 'px';
+      man.style.width = w + 'px'; man.style.height = h + 'px';
+      man.style.transformOrigin = `${ax}px 100%`; man.style.transform = `rotate(${st.rot}deg)`;
+      man.style.clipPath = st.clip > 0 ? `inset(0 0 ${st.clip}px 0)` : 'none';
+      car.style.left = st.carX + 'px'; car.style.bottom = (G + st.carY) + 'px';
+      wheels.forEach((wh, i) => {
+        const [cx, cy] = CAR.wheels[i];
+        wh.style.left = (st.carX + cx - CAR.R) + 'px'; wh.style.bottom = (G + st.carY + CAR.h - cy - CAR.R) + 'px';
+        wh.style.transform = `rotate(${st.spin}deg)`;
+      });
+    }
+    // Inside the car, everything of him below the top of the door is hidden.
+    const doorClip = () => { st.clip = Math.max(0, CAR.door + st.carY - st.y); };
+
+    const puffs = [];
+    function puff(strong) {
+      const p = document.createElement('div'); p.className = 'egg-puff';
+      p.style.left = (st.carX + CAR.exhaust[0] - 50) + 'px'; p.style.bottom = (G + st.carY + CAR.exhaust[1]) + 'px';
+      p.style.setProperty('--dx', -(80 + Math.random() * (strong ? 160 : 70)) + 'px');
+      p.style.setProperty('--dy', -(30 + Math.random() * 70) + 'px');
+      scene.append(p); setTimeout(() => p.remove(), 1000);
+    }
+    function glint() {
+      const g = document.createElement('div'); g.className = 'egg-glint';
+      g.style.left = (st.x - 64 + 52) + 'px'; g.style.bottom = (G + st.y + 300 - 33) + 'px';
+      scene.append(g); setTimeout(() => g.remove(), 600);
+    }
+
+    // A step is two poses: legs apart (feet planted, body low), then legs passing (body lifted).
+    // Speed matches the stride so the feet do not skate.
+    const STEP_FPS = 5;
+    const front = [['f2', 0], ['f1', 6], ['f3', 0], ['f1', 6]];
+    const side = [['s1-g', 0], ['h1-g', 6], ['s3-g', 0], ['h1-g', 6]];
+    const walk = (cycle, t) => { const [f, lift] = cycle[Math.floor(t * STEP_FPS) % cycle.length]; st.frame = f; st.y = lift; };
+    const SPEED = 230, SIDE_SPEED = 260;
+    const jumpFrom = carX - 80, seatX = carX + CAR.seat, seatY = 18;
+
+    const phases = [
+      // walk out from behind the menu
+      { d: (waveX + 140) / SPEED, run(t, d) { walk(front, t); st.x = lerp(-140, waveX, t / d); } },
+      // wave hello
+      { d: 1.5, start() { bubble.hidden = false; bubble.style.left = (waveX + 40) + 'px'; bubble.style.bottom = (G + 320) + 'px'; },
+        run(t) { st.frame = 'wave'; st.y = 0; st.rot = Math.sin(t * 14) * 3; }, end() { bubble.hidden = true; st.rot = 0; } },
+      // shades drop on
+      { d: 1.2, start() { shades.hidden = false; },
+        run(t) {
+          const p = Math.min(1, t / 0.55), drop = (1 - ease(p)) * 140 + (p >= 1 ? 0 : 0);
+          shades.style.left = (st.x - 64 + 46) + 'px'; shades.style.bottom = (G + 300 - 31 - 16 + drop) + 'px';
+          if (t >= 0.55 && st.frame !== 'wave-g') { st.frame = 'wave-g'; shades.hidden = true; glint(); }
+        } },
+      // stroll to the car
+      { d: Math.max(0.8, (jumpFrom - waveX) / SIDE_SPEED), run(t, d) { walk(side, t); st.x = lerp(waveX, jumpFrom, t / d); } },
+      // crouch...
+      { d: 0.35, run(t) { st.frame = t < 0.12 ? 'h1-g' : 'h2-g'; st.y = 0; } },
+      // ...and hop in
+      { d: 0.7, run(t, d) {
+          const p = t / d; st.frame = 'h3-g';
+          st.x = lerp(jumpFrom, seatX, ease(p)); st.y = lerp(0, seatY, p) + Math.sin(p * Math.PI) * 230;
+          st.clip = p > 0.5 ? Math.max(0, CAR.door - st.y) : 0;
+        } },
+      // the car settles under him
+      { d: 0.45, run(t) { st.carY = -Math.sin(Math.min(1, t / 0.3) * Math.PI) * 6; st.y = seatY + st.carY; doorClip(); } },
+      // look at you (and wave)
+      { d: 1.5, start() { st.x = seatX + 30; st.y = seatY - 23; },
+        run(t) { st.frame = 'wave-g'; st.rot = Math.sin(t * 12) * 2; doorClip(); if (t > 0.2 && t < 0.25 && !this.g) { this.g = 1; glint(); } } },
+      // rev the engine
+      { d: 0.7, run(t) { st.rot = 0; st.carY = Math.sin(t * 60) * 1.5; st.y = seatY - 23 + st.carY; doorClip(); if (Math.random() < 0.25) puff(false); } },
+      // drive off
+      { d: 3, start() { this.x0 = st.carX; this.m0 = st.x; },
+        run(t) {
+          const dx = 260 * t * t * t + 120 * t;                       // slow start, then away
+          st.carX = this.x0 + dx * 2.2; st.x = this.m0 + dx * 2.2;
+          st.carY = Math.abs(Math.sin(t * 18)) * 2; st.y = seatY - 23 + st.carY; doorClip();
+          st.spin = (dx * 2.2) / CAR.R * (180 / Math.PI);
+          if (Math.random() < 0.7) puff(true);
+          if (st.carX > W + 200) this.done = true;
+        } },
+    ];
+
+    let i = 0, t0 = null, raf;
+    function tick(now) {
+      if (t0 === null) { t0 = now; phases[0].start?.(); }
+      const ph = phases[i], t = (now - t0) / 1000;
+      ph.run(Math.min(t, ph.d), ph.d); draw();
+      if (t >= ph.d || ph.done) {
+        ph.end?.(); i++; t0 = now;
+        if (i >= phases.length) { stop(); return; }
+        phases[i].start?.();
+      }
+      raf = requestAnimationFrame(tick);
+    }
+    function stop() { cancelAnimationFrame(raf); stage.replaceChildren(); running = null; document.removeEventListener('keydown', onKey); }
+    function onKey(e) { if (e.key === 'Escape') stop(); }
+    document.addEventListener('keydown', onKey);
+    draw(); raf = requestAnimationFrame(tick);
+    running = { stop };
+  }
+
+  document.querySelectorAll('.egg-t').forEach((b) => b.addEventListener('click', play));
+  document.getElementById('replay')?.addEventListener('click', play);
+})();
+</script>

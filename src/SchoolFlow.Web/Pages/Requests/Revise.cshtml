@@ -1,0 +1,28 @@
+@page "/Requests/Revise/{id:int}"
+@model SchoolFlow.Web.Pages.Requests.ReviseModel
+@{
+    ViewData["Title"] = "Edit and resubmit";
+}
+<a class="back-link" href="/Requests/Detail/@Model.Run.Id"><partial name="_Icons" model='"back"' /> Back to the request</a>
+<div class="form-shell@(Model.LetterheadUrl is null ? "" : " has-letterhead")">
+    @if (Model.LetterheadUrl is string letterhead) { <img class="letterhead" src="@letterhead" alt="@Model.Run.WorkflowName letterhead" /> }
+    <header class="form-head">
+        <div>
+            <h1>@Model.Run.WorkflowName <span class="muted">#@Model.Run.Id</span></h1>
+            <p class="sub" data-tip>Make the changes that were asked for, then resubmit. It goes back to the same approver.</p>
+        </div>
+    </header>
+    @if (Model.Asked is not null)
+    {
+        <div class="copy-bar filled"><span class="grow"><strong>Changes asked for@(Model.Asked.DecidedBy is null ? "" : " by " + Model.Asked.DecidedBy):</strong> <span class="pre">@Model.Asked.Comment</span></span></div>
+    }
+    <div id="form-root" data-run-id="@Model.Run.Id" data-workflow-id="@Model.Run.WorkflowId"></div>
+    <script type="application/json" id="form-definition">@Html.Raw(Model.FormJson)</script>
+    <script type="application/json" id="form-values">@Html.Raw(Model.ValuesJson)</script>
+    <script type="application/json" id="form-previous">@Html.Raw(Model.PreviousJson)</script>
+</div>
+@section Scripts {
+    <script src="~/js/chain-editor.js" asp-append-version="true"></script>
+    <script src="~/js/form-runtime.js" asp-append-version="true"></script>
+    <script src="~/js/revise.js" asp-append-version="true"></script>
+}

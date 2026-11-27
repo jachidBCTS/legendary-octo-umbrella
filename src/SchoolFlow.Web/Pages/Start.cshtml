@@ -1,0 +1,32 @@
+@page "/Start/{id:int}"
+@model StartModel
+@{
+    ViewData["Title"] = Model.Workflow.Name;
+}
+<a class="back-link" href="/"><partial name="_Icons" model='"back"' /> All forms</a>
+<div class="form-shell tone-@Model.Workflow.Color@(Model.LetterheadUrl is null ? "" : " has-letterhead")">
+    @if (Model.LetterheadUrl is string letterhead) { <img class="letterhead" src="@letterhead" alt="@Model.Workflow.Name letterhead" /> }
+    <header class="form-head">
+        <span class="wf-dot big"><partial name="_Icons" model="Ui.WorkflowIcon(Model.Workflow.Name, Model.Workflow.Category)" /></span>
+        <div>
+            <h1>@Model.Workflow.Name</h1>
+            @if (Model.Workflow.Description.Length > 0) { <p class="sub">@Model.Workflow.Description</p> }
+        </div>
+    </header>
+    @if (Model.ClosedMessage is not null)
+    {
+        <div class="empty"><p><strong>@Model.ClosedMessage</strong></p><p class="muted">It is not taking requests at the moment.</p></div>
+    }
+    else
+    {
+        <div id="draft-bar"></div>
+        <div id="copy-bar"></div>
+        <div id="form-root" data-workflow-id="@Model.Workflow.Id"></div>
+        <script type="application/json" id="form-definition">@Html.Raw(Model.FormJson)</script>
+    }
+</div>
+@section Scripts {
+    <script src="~/js/chain-editor.js" asp-append-version="true"></script>
+    <script src="~/js/form-runtime.js" asp-append-version="true"></script>
+    <script src="~/js/start.js" asp-append-version="true"></script>
+}

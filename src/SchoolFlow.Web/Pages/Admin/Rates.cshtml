@@ -1,0 +1,50 @@
+@page
+@model SchoolFlow.Web.Pages.Admin.RatesModel
+@{
+    ViewData["Title"] = "Rates";
+    var us = System.Globalization.CultureInfo.GetCultureInfo("en-US");
+}
+<div class="page-head">
+    <div><h1>Rates</h1><p class="sub" data-tip>Fixed amounts that forms use in their calculations, such as the mileage rate. Staff see them on the form but cannot change them.</p></div>
+</div>
+
+@if (Model.Rates.Any(r => r.Value == 0))
+{
+    <div class="flash warn">Some rates are still 0. A form that needs one will ask the person to contact an administrator instead of working out a cost of $0.</div>
+}
+
+@if (Model.Rates.Count == 0) { <div class="empty small"><p>No rates yet.</p></div> }
+else
+{
+    <div class="panel table-wrap"><table class="table stack">
+        <thead><tr><th>Rate</th><th>Amount ($)</th><th>In formulas</th><th>Last changed</th><th></th></tr></thead>
+        <tbody>
+        @foreach (var r in Model.Rates)
+        {
+            <tr>
+                <td><input form="rate-@r.Id" name="label" value="@r.Label" maxlength="200" required aria-label="Name of the rate" /></td>
+                <td data-label="Amount ($)"><input form="rate-@r.Id" name="value" value="@r.Value.ToString("0.00##", us)" inputmode="decimal" required class="rate-amount" aria-label="Amount for @r.Label" /></td>
+                <td data-label="In formulas"><code>rates.@r.Key</code></td>
+                <td data-label="Last changed" class="muted small">@(r.UpdatedBy.Length > 0 ? $"{Ui.Local(r.UpdatedAt):MMM d, yyyy} by {r.UpdatedBy}" : "Not set yet")</td>
+                <td class="actions">
+                    <form id="rate-@r.Id" method="post" asp-page-handler="Save"><input type="hidden" name="id" value="@r.Id" /><button class="btn small primary">Save</button></form>
+                    <form method="post" asp-page-handler="Remove" data-confirm="Remove “@r.Label”?"><input type="hidden" name="id" value="@r.Id" /><button class="btn small ghost-danger">Remove</button></form>
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table></div>
+}
+<p class="muted small" data-tip="page">A change applies to requests submitted from now on. Requests already submitted keep the amounts they were submitted with. Every change is recorded in the audit log.</p>
+<p class="muted small" data-tip="page">Meal rates and hotel limits on the travel form come from gsa.gov, looked up for each trip's ZIP code and dates. The two “GSA fallback” amounts are used only when gsa.gov cannot be reached (the request is then marked for the business office to check). Set them to GSA's standard rate for the current year, which GSA publishes each October.</p>
+
+<section class="panel">
+    <h2>Add a rate</h2>
+    <form method="post" asp-page-handler="Add" class="dept-form">
+        <div><label class="lbl" for="r-label">Name</label><input id="r-label" name="label" required maxlength="200" placeholder="e.g. Overnight stipend" /></div>
+        <div><label class="lbl" for="r-key">Short name for formulas</label><input id="r-key" name="key" required maxlength="60" placeholder="e.g. stipend" pattern="[A-Za-z][A-Za-z0-9_]*" /></div>
+        <div><label class="lbl" for="r-value">Amount ($)</label><input id="r-value" name="value" required inputmode="decimal" placeholder="0.00" /></div>
+        <div class="dept-save"><button class="btn primary">Add</button></div>
+    </form>
+    <p class="muted small" data-tip>A workflow builder can then use it in any form as <code>rates.</code> followed by the short name, for example a calculated field with the formula <code>nights * rates.stipend</code>.</p>
+</section>

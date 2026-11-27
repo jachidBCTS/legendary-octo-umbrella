@@ -1,0 +1,147 @@
+@using Microsoft.AspNetCore.Antiforgery
+@using Microsoft.EntityFrameworkCore
+@using SchoolFlow.Core.Freshservice
+@inject IAntiforgery Antiforgery
+@inject AppDbContext Db
+@inject IFreshserviceClient Freshservice
+@inject AccessService Access
+@{
+    var signedIn = User.Identity?.IsAuthenticated == true;
+    var email = User.Email();
+    var name = User.DisplayName();
+    var path = Context.Request.Path.Value ?? "/";
+    string Active(string prefix, bool exact = false) =>
+        (exact ? path == prefix || path == "/Index" : path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) ? "active" : "";
+    var pendingCount = 0;
+    var unreadCount = 0;
+    int? signatureId = null;
+    if (signedIn && email.Length > 0)
+    {
+        signatureId = await Db.Users.Where(u => u.Email == email).Select(u => u.SignatureImageId).FirstOrDefaultAsync();
+        var needle = ";" + email + ";";
+        pendingCount = await Db.ApprovalTasks.CountAsync(t => t.Status == ApprovalStatus.Pending && (t.Assignees.Contains(needle) || t.Extra.Contains(needle)) && !t.ApprovedBy.Contains(needle));
+        unreadCount = await Db.Notifications.CountAsync(n => n.UserEmail == email && n.ReadAt == null);
+    }
+    var wide = ViewData["Wide"] as bool? == true;
+    var showBuild = signedIn && (User.IsBuilder() || await Access.OwnsAnyWorkflowAsync(User));
+    var a11y = Context.Request.Cookies[SchoolFlow.Web.Pages.Account.DisplayModel.CookieName] == "1";
+}
+<!DOCTYPE html>
+<html lang="en" class="@(a11y ? "a11y" : "")">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@ViewData["Title"] · Greenlight</title>
+    @if (signedIn)
+    {
+        <meta name="csrf-token" content="@Antiforgery.GetAndStoreTokens(Context).RequestToken" />
+    }
+    <link rel="stylesheet" href="~/css/app.css" asp-append-version="true" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%2322c55e'/%3E%3Cpath d='M9 16.5l4.5 4.5L23 11.5' fill='none' stroke='%2306281a' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+</head>
+<body class="@(wide ? "wide" : "") @(signedIn ? "has-sidebar" : "")" data-alerts="@(signedIn && email.Length > 0 ? "on" : null)" data-my-name="@(signedIn ? name : null)" data-my-signature="@(signatureId is int sig ? $"/signatures/mine?v={sig}" : null)">
+<a class="skip-link" href="#main">Skip to main content</a>
+@if (signedIn)
+{
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-inner">
+        @* The last letter of the name is its own button: it plays a small easter egg (js/egg.js). *@
+        <div class="brand">
+            <a class="brand-link" href="/" aria-label="Greenlight home">
+                <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32"><path class="brand-check" d="M9 16.5l4.5 4.5L23 11.5" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                <span>Greenligh</span></a><button type="button" class="egg-t" aria-label="A little surprise">t</button>
+        </div>
+        <nav>
+            <a class="@Active("/", true)" href="/"><partial name="_Icons" model='"home"' /> Home</a>
+            <a class="@Active("/Requests")" href="/Requests"><partial name="_Icons" model='"inbox"' /> My Requests</a>
+            <a class="@Active("/Approvals")" href="/Approvals"><partial name="_Icons" model='"check"' /> Approvals &amp; Tasks
+                @if (pendingCount > 0) { <span class="badge">@pendingCount</span> }
+            </a>
+            <a class="@Active("/Notifications")" href="/Notifications"><partial name="_Icons" model='"bell"' /> Notifications
+                <span class="badge" data-note-badge hidden="@(unreadCount == 0)">@(unreadCount > 99 ? "99+" : unreadCount.ToString())</span>
+            </a>
+            <a class="@Active("/Chains")" href="/Chains"><partial name="_Icons" model='"chain"' /> Approval Chains</a>
+            <a class="@Active("/Away")" href="/Away"><partial name="_Icons" model='"clock"' /> Away / Stand-In</a>
+            <a class="@Active("/Account/Signature")" href="/Account/Signature"><partial name="_Icons" model='"pen"' /> My Signature</a>
+            <a class="@Active("/Account/Display")" href="/Account/Display"><partial name="_Icons" model='"eye"' /> Accessibility@(a11y ? " (on)" : "")</a>
+            @if (showBuild)
+            {
+                var buildHere = new[] { "/Builder", "/Reports", "/Help" }.Any(p => Active(p) == "active");
+                <details class="nav-group" data-nav-group="build" open="@buildHere" data-here="@(buildHere ? "true" : null)">
+                <summary class="nav-label">Build</summary>
+                <a class="@Active("/Builder")" href="/Builder"><partial name="_Icons" model='"flow"' /> Workflows</a>
+                <a class="@Active("/Reports")" href="/Reports"><partial name="_Icons" model='"chart"' /> Reports</a>
+                <a class="@Active("/Help")" href="/Help/Formulas"><partial name="_Icons" model='"fx"' /> Formula Guide</a>
+                </details>
+            }
+            @if (User.IsAdmin())
+            {
+                var adminHere = Active("/Admin") == "active";
+                <details class="nav-group" data-nav-group="admin" open="@adminHere" data-here="@(adminHere ? "true" : null)">
+                <summary class="nav-label">Admin</summary>
+                <a class="@Active("/Admin/Departments")" href="/Admin/Departments"><partial name="_Icons" model='"building"' /> Departments</a>
+                <a class="@Active("/Admin/Categories")" href="/Admin/Categories"><partial name="_Icons" model='"tag"' /> Categories</a>
+                <a class="@Active("/Admin/Teams")" href="/Admin/Teams"><partial name="_Icons" model='"people"' /> Teams</a>
+                <a class="@Active("/Admin/Locations")" href="/Admin/Locations"><partial name="_Icons" model='"pin"' /> Locations</a>
+                <a class="@Active("/Admin/Calendar")" href="/Admin/Calendar"><partial name="_Icons" model='"calendar"' /> School Calendar</a>
+                <a class="@Active("/Admin/Rates")" href="/Admin/Rates"><partial name="_Icons" model='"dollar"' /> Rates</a>
+                <a class="@Active("/Admin/StudentAccess")" href="/Admin/StudentAccess"><partial name="_Icons" model='"alert"' /> Student Access</a>
+                <a class="@Active("/Admin/Audit")" href="/Admin/Audit"><partial name="_Icons" model='"clock"' /> Audit Log</a>
+                <a class="@Active("/Admin/Settings")" href="/Admin/Settings"><partial name="_Icons" model='"gear"' /> Settings</a>
+                </details>
+            }
+        </nav>
+        <div class="sidebar-user">
+            <span class="avatar">@Ui.Initials(name)</span>
+            <span class="who"><strong>@name</strong><small>@email</small></span>
+            <form method="post" action="/Account/SignOut" class="signout-form">
+                @Html.AntiForgeryToken()
+                <button type="submit" title="Sign out" aria-label="Sign out"><partial name="_Icons" model='"signout"' /></button>
+            </form>
+        </div>
+      </div>
+    </aside>
+    <div class="sidebar-backdrop" data-toggle-sidebar></div>
+}
+<div class="shell @(signedIn ? "" : "no-sidebar")">
+    @if (signedIn)
+    {
+        <header class="mobile-bar">
+            <button type="button" class="icon-btn" data-toggle-sidebar aria-label="Menu"><svg viewBox="0 0 24 24" class="icon"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+            <strong>Greenligh<button type="button" class="egg-t" aria-label="A little surprise">t</button></strong>
+        </header>
+        @if (!Freshservice.IsLive)
+        {
+            <div class="sim-banner"><partial name="_Icons" model='"alert"' />
+                <span><strong>Simulation mode.</strong> Freshservice is not connected yet, so tickets are pretend and nothing is sent.
+                @if (User.IsAdmin()) { <a href="/Admin/Settings">Connect Freshservice</a> }</span>
+            </div>
+        }
+    }
+    <main id="main" tabindex="-1" class="@(wide ? "main-wide" : "main") @(IsSectionDefined("Hero") ? "under-hero" : "")">
+        @* A page may put its title in a deep-green band across the top (design direction B). It stays inside
+           <main> (so "Skip to main content" lands on it); CSS runs its colour out to the edges. *@
+        @if (IsSectionDefined("Hero"))
+        {
+            <div class="hero">@await RenderSectionAsync("Hero")</div>
+        }
+        @if (TempData["Flash"] is string flash)
+        {
+            <div class="flash @(TempData["FlashKind"] as string ?? "ok")" role="status">@flash</div>
+        }
+        @RenderBody()
+    </main>
+</div>
+@if (signedIn && !wide && !path.StartsWith("/Guide", StringComparison.OrdinalIgnoreCase))
+{
+    @* Floating help button on every signed-in page (queue #20); builder pages (wide) leave it out. *@
+    <a class="help-fab" href="/Guide" aria-label="Help: how to use Greenlight" title="Help">?</a>
+}
+<script src="~/js/common.js" asp-append-version="true"></script>
+@if (signedIn)
+{
+    <script src="~/js/egg.js" asp-append-version="true"></script>
+}
+@await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

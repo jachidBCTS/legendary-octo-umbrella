@@ -1,0 +1,43 @@
+@page "/Account/Signature"
+@model SchoolFlow.Web.Pages.Account.SignatureModel
+@{
+    ViewData["Title"] = "My Signature";
+}
+<div class="page-head">
+    <div><h1>My Signature</h1><p class="sub" data-tip>Upload a picture of your signature. “Sign” on a form then signs with it instead of your name in script.</p></div>
+</div>
+
+@if (Model.Error is string error)
+{
+    <div class="flash bad" role="alert">@error</div>
+}
+
+<section class="panel">
+    <h2>@(Model.PictureId is null ? "No signature picture yet" : "Your signature picture")</h2>
+    @if (Model.PictureId is int id)
+    {
+        <div class="sig-preview"><img src="/signatures/mine?v=@id" alt="Your signature" /></div>
+        <p class="muted small">@Model.Width × @Model.Height pixels. Requests you already signed keep the picture they were signed with.</p>
+    }
+    else
+    {
+        <p class="muted">Until you upload one, “Sign with my name” fills in your name in a script font.</p>
+    }
+
+    <form method="post" asp-page-handler="Upload" enctype="multipart/form-data" class="sig-upload">
+        <label for="sig-file">@(Model.PictureId is null ? "Upload a PNG picture" : "Replace it with a new PNG picture")</label>
+        <input id="sig-file" type="file" name="file" accept="image/png,.png" required />
+        <p class="muted small sig-size">Best size: <strong>600 × 200 pixels</strong> PNG, 500 KB at most.</p>
+        <p class="muted small" data-tip>About three times as wide as tall, dark ink on a transparent or white background. Other sizes are scaled to fit the signature line. Tip: sign on white paper, take a photo, crop it close to the ink and save it as PNG.</p>
+        <div>
+            <button class="btn primary">Upload</button>
+        </div>
+    </form>
+
+    @if (Model.PictureId is not null)
+    {
+        <form method="post" asp-page-handler="Remove">
+            <button class="btn danger">Remove my signature picture</button>
+        </form>
+    }
+</section>

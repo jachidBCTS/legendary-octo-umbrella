@@ -1,0 +1,147 @@
+@page "/Guide"
+@* The staff help guide (queue #20, approved by the owner Nov 24, 2026; draft in Claude Docs "Greenlight Help
+   Guide"). Everyday staff only: no builder or admin pages. Screenshots: wwwroot/img/help, made with
+   docs/help/help-shots.js. When a feature changes, change its section here too. *@
+@{
+    ViewData["Title"] = "Help";
+}
+<div class="page-head">
+    <div>
+        <h1>Help</h1>
+        <p class="sub">How to use Greenlight: the same forms you already know, now filled in online instead of on paper.</p>
+    </div>
+</div>
+
+<div class="help">
+<p class="help-lead">Submit a form once and Greenlight sends it to the right people in the right order, and shows you where it is at every step. Tap a topic to open it.</p>
+
+<details class="help-section" open id="getting-around">
+<summary>Getting around</summary>
+<div class="help-body">
+<p>Sign in with your school Microsoft account; there is no separate Greenlight password.</p>
+<div class="help-table"><table>
+<thead><tr><th>Menu item</th><th>What it is for</th></tr></thead>
+<tbody>
+<tr><td>Home</td><td>Start a new request and see your latest ones</td></tr>
+<tr><td>My Requests</td><td>Every request you have submitted, with its status</td></tr>
+<tr><td>Approvals &amp; Tasks</td><td>Requests waiting for your decision or for you to fill something in</td></tr>
+<tr><td>Notifications</td><td>Updates about your requests and approvals, and your email settings</td></tr>
+<tr><td>Approval Chains</td><td>Saved lists of approvers you can reuse on forms that ask you to choose them</td></tr>
+<tr><td>Away / Stand-In</td><td>Name someone to approve for you while you are out</td></tr>
+<tr><td>My Signature</td><td>Upload a picture of your signature</td></tr>
+<tr><td>Accessibility</td><td>Larger text and stronger contrast on this device</td></tr>
+</tbody></table></div>
+<p>A red number beside a menu item means something is waiting for you there.</p>
+<p>The <strong>Home page</strong> shows three tiles at the top: how many requests are waiting on you, how many of yours are in progress, and how many of yours finished this month. Tap a tile to jump to that list.</p>
+<p><strong>On a phone</strong>, tap the menu button (three lines) at the top left to open the menu. Everything works the same as on a computer.</p>
+<figure class="help-shot"><img src="~/img/help/1-home.webp" width="1280" height="760" loading="lazy" alt="The Home page with the menu, number tiles, forms and recent requests marked 1 to 4" />
+<figcaption><ol class="help-key"><li>The menu</li><li>Your numbers at a glance</li><li>Forms grouped by category (tap a name to fold it)</li><li>Your latest requests</li></ol></figcaption></figure>
+</div>
+</details>
+
+<details class="help-section" id="start">
+<summary>Starting a request</summary>
+<div class="help-body">
+<ol>
+<li>On <strong>Home</strong>, find your form under its category (Help Desk, Purchasing, Travel, Trips and so on). Tap a category name to fold it open or closed.</li>
+<li>Fill in the form. Longer forms have several pages; use <strong>Next</strong> and <strong>Back</strong> to move between them. Boxes marked with a red * are required. Look for the small &#9432; beside a question for extra help.</li>
+<li>Add any files the form asks for (quotes, agendas, receipts).</li>
+<li>If the form has a signature, tap <strong>Sign with my name</strong>. If you have uploaded a signature picture, it signs with that instead.</li>
+<li>Tap the button at the bottom to send it (on some forms it is called <strong>Send for approval</strong> or <strong>Submit request</strong>). A green bar confirms it was sent, and you land on the request's own page.</li>
+</ol>
+<p><strong>Not finished yet?</strong> Tap <strong>Save for later</strong>. Your draft shows on Home under “Your drafts”; tap <strong>Continue</strong> to pick up where you left off. Once you have saved once, Greenlight keeps saving as you type.</p>
+<p><strong>Doing something similar to last time?</strong> Some forms offer <strong>Start from a previous request</strong>, which fills in the answers from an earlier one so you only change what is different (handy for a yearly field trip). You can also open an old request and tap <strong>Start a new request from this one</strong>.</p>
+<p><strong>Totals and rates fill themselves in.</strong> On forms like travel or purchasing, Greenlight works out totals, mileage and meal rates for you.</p>
+<p><strong>Addresses:</strong> on some address boxes, matching addresses appear under the box as you type. Tap one to fill it in, or just keep typing.</p>
+<figure class="help-shot"><img src="~/img/help/2-form.webp" width="830" height="1300" loading="lazy" alt="The Field Trip form with its main buttons marked 1 to 5" />
+<figcaption><ol class="help-key"><li>Start from a previous request</li><li>Tap &#9432; for help with a question</li><li>Save the approvers you picked as your chain</li><li>Save for later</li><li>Send it (this button's name depends on the form)</li></ol></figcaption></figure>
+</div>
+</details>
+
+<details class="help-section" id="following">
+<summary>Following your request</summary>
+<div class="help-body">
+<p>Open any request from Home or <strong>My Requests</strong>. The green band at the top shows a ring with how many steps are done and a line saying where it is now and who it is waiting on. Below that, <strong>Where this request is</strong> shows every stop from submitted to finished.</p>
+<div class="help-table"><table>
+<thead><tr><th>Status</th><th>What it means</th></tr></thead>
+<tbody>
+<tr><td>Awaiting approval</td><td>Waiting for someone to approve it</td></tr>
+<tr><td>Waiting on a task</td><td>Waiting for someone to add something (for example the business office entering a PO)</td></tr>
+<tr><td>Changes requested</td><td>Sent back to you to fix something</td></tr>
+<tr><td>Submitted / With help desk</td><td>Passed to the help desk as a ticket</td></tr>
+<tr><td>Completed</td><td>All done</td></tr>
+<tr><td>Not approved</td><td>Someone declined it; their note explains why</td></tr>
+<tr><td>Cancelled</td><td>Withdrawn or cancelled</td></tr>
+</tbody></table></div>
+<p><strong>A step taking a while?</strong> A small tag shows how long it has waited, in school days. Approvers get automatic reminders, so you do not need to chase them.</p>
+<p><strong>Help desk requests</strong> show the ticket number and, once the help desk replies, their status and replies right on the request page.</p>
+<p><strong>Sent back for changes?</strong> You get a notification with the approver's note. Open the request, tap <strong>Edit and resubmit</strong>, fix what was asked and submit again. Approvals already given usually still count, so it carries on from where it stopped. (If you raise a cost, earlier approvers may need to approve again.)</p>
+<p><strong>Changed your mind?</strong> While a request is still waiting, tap <strong>Withdraw</strong> on its page. It is cancelled and the approvers are told.</p>
+<p><strong>Need a paper copy?</strong> Tap <strong>Print</strong> on the request page. Requests with two or more files have a button to download them all at once.</p>
+<figure class="help-shot"><img src="~/img/help/3-request.webp" width="1044" height="540" loading="lazy" alt="A field trip request's page with its progress ring, current step, buttons and stops marked 1 to 4" />
+<figcaption><ol class="help-key"><li>How many steps are done</li><li>Where it is now, who it is waiting on, and its status</li><li>Start a new one from it, print, or withdraw</li><li>Every stop from submitted to done</li></ol></figcaption></figure>
+</div>
+</details>
+
+<details class="help-section" id="approving">
+<summary>Approving and doing tasks</summary>
+<div class="help-body">
+<p>Everything waiting for you is under <strong>Approvals &amp; Tasks</strong>, and the “Waiting on you” tile on Home shows the count. Open one to see the full request, its files and its history before you decide.</p>
+<p><strong>Approvals.</strong> On the request you have four choices:</p>
+<ul>
+<li><strong>Approve</strong>: it moves on to the next step.</li>
+<li><strong>Send back for changes</strong>: it goes back to the requester with your note (required) saying what to fix. When they resubmit, it comes back to you, and changed answers are marked “Was: …” so you can see what changed.</li>
+<li><strong>Reject</strong>: it stops here as Not approved. Add a note so the requester knows why.</li>
+<li><strong>Pass to someone else</strong>: hand it to a colleague who is better placed to decide.</li>
+</ul>
+<figure class="help-shot"><img src="~/img/help/4-approve.webp" width="1044" height="425" loading="lazy" alt="The approval box with the comment and the four choices marked 1 to 5" />
+<figcaption><ol class="help-key"><li>Your comment (required when sending back)</li><li>Approve</li><li>Send back for changes</li><li>Reject</li><li>Pass to someone else</li></ol></figcaption></figure>
+<p><strong>Tasks.</strong> Some steps ask you to add information rather than approve, such as a budget account, a PO number or bus details. Fill in the boxes and tap the button to finish the task. If something in the request needs fixing first, use <strong>Send back</strong> with a note.</p>
+<p><strong>Due dates.</strong> Some steps have a due date. You get a heads-up 3 days before and a notice on the day if it is overdue.</p>
+<p><strong>Reminders and escalation.</strong> If an approval sits too long, Greenlight sends reminders and, on some forms, passes it up to someone else. Deal with it promptly to keep things moving.</p>
+<p><strong>Signing.</strong> If a step asks for your signature, tap <strong>Sign with my name</strong>. To sign with a picture of your real signature instead, upload one once under <strong>My Signature</strong> (a PNG image, about 600 × 200 pixels works best).</p>
+</div>
+</details>
+
+<details class="help-section" id="notifications">
+<summary>Notifications, time away and accessibility</summary>
+<div class="help-body">
+<p><strong>Notifications.</strong> Greenlight tells you when something needs you or when your request moves. You see them under <strong>Notifications</strong> (the bell) and by email. While Greenlight is open in your browser, it can also play a chime and show a pop-up; switch these on or off for each device on the Notifications page.</p>
+<p><strong>Fewer emails.</strong> On the Notifications page you can choose to get emails right away, or as one summary email a day at a time you pick (6 AM to 6 PM). Summaries go out on school days only. Urgent ones (sent back to you, escalated to you, overdue) always come straight away.</p>
+<figure class="help-shot"><img src="~/img/help/5a-notifications.webp" width="1036" height="466" loading="lazy" alt="Email timing and device alert settings on the Notifications page, marked 1 and 2" />
+<figcaption><ol class="help-key"><li>When emails come (right away, or one summary a day)</li><li>Sound and pop-ups on this device</li></ol></figcaption></figure>
+<p><strong>Going away?</strong> Before time off, open <strong>Away / Stand-In</strong>, pick the dates and the person who can approve for you. While you are away, your approvals also go to them, and their decision counts as yours. Requests that arrive while you are away still show in your own list.</p>
+<figure class="help-shot"><img src="~/img/help/5b-away.webp" width="1044" height="300" loading="lazy" alt="The Away / Stand-In page with its boxes and Save button marked 1 to 4" />
+<figcaption><ol class="help-key"><li>Who approves for you</li><li>First day away</li><li>Last day away</li><li>Save</li></ol></figcaption></figure>
+<p><strong>Easier to read.</strong> Open <strong>Accessibility</strong> and turn accessibility mode on. Text and buttons get bigger, colours and borders get stronger, and links are always underlined. It applies to the device you turn it on from.</p>
+</div>
+</details>
+
+<details class="help-section" id="tips">
+<summary>Tips and common questions</summary>
+<div class="help-body">
+<ul>
+<li>Save time on forms that ask you to choose approvers: pick them once, then <strong>Save as my chain</strong>. Next time, choose <strong>Start from a saved chain</strong>.</li>
+<li>Use <strong>Save for later</strong> if you are waiting on a quote or a date; nothing is sent until you send it.</li>
+<li>Add a comment on a request's page to ask the approver a question; everyone on the request can see it.</li>
+<li>Check the &#9432; tips beside questions before guessing what a box wants.</li>
+<li>Set up <strong>Away / Stand-In</strong> before a conference or leave, so nothing waits on you.</li>
+</ul>
+<h3>I can't find the form I need.</h3>
+<p>Some forms are only shown to certain groups of staff, and some are only open on certain dates (the card says when). If you think you should see it, contact the person listed under “Getting more help”.</p>
+<h3>Can I change a request after submitting it?</h3>
+<p>Only if it is sent back to you for changes. Otherwise, withdraw it while it is still waiting and start a new one from it.</p>
+<h3>Who can see my request?</h3>
+<p>You, the people who approve or work on it, and Greenlight administrators.</p>
+<h3>My approver is out. What now?</h3>
+<p>If they set up a stand-in, it goes to that person automatically. If not, reminders and escalation (on some forms) keep it moving.</p>
+<h3>Why does my request say “Waiting 3 school days”?</h3>
+<p>That is how long the current step has been waiting. Weekends and school closures are not counted.</p>
+</div>
+</details>
+
+<section class="help-contact" aria-labelledby="help-contact-title">
+<h2 id="help-contact-title">Getting more help</h2>
+<p>Stuck, or something in Greenlight looks wrong? Contact <strong>Jacob Hidalgo</strong>, who looks after Greenlight.</p>
+</section>
+</div>
